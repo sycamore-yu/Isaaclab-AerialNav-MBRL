@@ -55,6 +55,6 @@ RSL-RL 的优化器、共享编码器、价值损失和归一化差异须保留�
 [`../PHYSX_CLOSED_LOOP_COMPARISON.md`](../PHYSX_CLOSED_LOOP_COMPARISON.md)。
 网络共享方式、Hummingbird 原版 USD 和跨环境碰撞隔离现已确定。
 原始代码基线不再作为需要用户决定的事项。
-完整导航环境、共享场景碰撞过滤测试和 RSL-RL 训练尚未完成。
+导航环境和 RSL-RL 训练入口已实现；小规模共享场景与碰撞隔离检查已通过。1024 环境正式训练和最终成功率验收尚待完成，状态见 [实现与验证状态](../IMPLEMENTATION_STATUS.md)。
 详细来源、数值配置、已通过的电机单元测试和迁移验收见
 [`../NAVRL_ISAACLAB_3_MIGRATION.md`](../NAVRL_ISAACLAB_3_MIGRATION.md)。

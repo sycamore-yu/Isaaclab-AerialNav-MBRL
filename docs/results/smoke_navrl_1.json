@@ -1,0 +1,23 @@
+{
+  "method": "navrl",
+  "num_envs": 1,
+  "steps": 128,
+  "static_obstacles": 350,
+  "dynamic_obstacles": 100,
+  "physics_dt": 0.016,
+  "policy_dt": 0.016,
+  "episode_steps": 2200,
+  "elapsed_s": 2.859690676035825,
+  "transitions_per_s": 44.76008579271826,
+  "cuda_peak_allocated_mb": 8.21484375,
+  "device_free_after_reset_mb": 9796.9375,
+  "device_total_mb": 24082.875,
+  "completed_episodes": 0,
+  "min_lidar_range_m": 4.0,
+  "hover_max_height_error_m": 0.0,
+  "hover_completed_episodes": 0,
+  "forward_speed_after_command_m_s": 0.9733538627624512,
+  "depth_shape": null,
+  "last_depth_change_m": null,
+  "shared_obstacles_survive_drone_reset": true
+}

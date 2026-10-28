@@ -1,0 +1,44 @@
+"""Explicit units and defaults for the approved Zhang migration."""
+
+from dataclasses import dataclass
+
+
+@dataclass
+class ZhangTrainCfg:
+    timesteps: int = 150
+    max_iterations: int = 2200
+    physics_dt: float = 0.01
+    policy_dt: float = 0.1
+    velocity_window_s: float = 6.0
+    grad_decay: float = 0.4
+    lr: float = 0.001
+    cosine_cycles: int = 5
+    min_lr_ratio: float = 0.01
+    max_grad_norm: float = 5.0
+    coef_v: float = 1.0
+    coef_v_pred: float = 2.0
+    coef_obj_avoidance: float = 3.0
+    coef_collide: float = 7.5
+    coef_d_acc: float = 0.01
+    coef_d_jerk: float = 0.001
+    action_delay_steps: int = 1
+    seed: int = 0
+
+    @property
+    def velocity_window_steps(self) -> int:
+        steps = round(self.velocity_window_s / self.policy_dt)
+        if steps < 1 or abs(steps * self.policy_dt - self.velocity_window_s) > 1e-7:
+            raise ValueError("velocity_window_s must be a positive integer number of policy steps")
+        return steps
+
+    def validate(self) -> None:
+        if self.physics_dt != 0.01 or self.policy_dt != 0.1:
+            raise ValueError("The approved task requires 100 Hz physics and a 10 Hz policy")
+        if self.timesteps < 2 or self.max_iterations < 1:
+            raise ValueError("Training requires at least two rollout steps and one update")
+        if not 0 < self.grad_decay <= 1 or self.max_grad_norm <= 0:
+            raise ValueError("grad_decay must be in (0, 1] and max_grad_norm must be positive")
+        if self.action_delay_steps != 1:
+            raise ValueError("Preserve the source's one policy-step command delay")
+        _ = self.velocity_window_steps
+

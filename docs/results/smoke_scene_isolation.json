@@ -1,0 +1,13 @@
+{
+  "num_envs": 2,
+  "steps": 64,
+  "initial_positions_identical": true,
+  "cross_environment_collisions_filtered": true,
+  "same_world_observations_identical": true,
+  "max_state_difference": 0.0,
+  "shared_dynamic_collection_shape": [
+    1,
+    100,
+    7
+  ]
+}

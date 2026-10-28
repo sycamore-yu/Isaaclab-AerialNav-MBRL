@@ -1,6 +1,6 @@
 # NavRL → Isaac Lab 3.0：迁移决策与验收
 
-状态：**动力学闭环对照已通过；完整 NavRL 任务及 RSL-RL 训练待实现**。修订：2026-10-29。
+状态：**NavRL 任务与 RSL-RL 训练入口已实现；小规模 PhysX 场景及受控闭环对照已通过；正式训练与成功率验收待完成**。修订：2026-10-29。具体已通过与待验证项目见 [实现与验证状态](IMPLEMENTATION_STATUS.md)。
 采用以下固定控制链：
 
 ```text
@@ -404,7 +404,7 @@ OMNI_KIT_ACCEPT_EULA=YES \
 
 三组施力对照结果见
 [`PHYSX_CLOSED_LOOP_COMPARISON.md`](PHYSX_CLOSED_LOOP_COMPARISON.md)。
-完整 NavRL 共享场景、RSL-RL 训练和正式成功率评估尚未完成。
+NavRL 共享场景已实现，并通过 1/16 环境 smoke 和两机同位置碰撞隔离检查。1024 环境正式训练和五难度成功率评估尚待完成；后续实测统一记录在 [实现与验证状态](IMPLEMENTATION_STATUS.md)。
 
 ## 七、来源
 

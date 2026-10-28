@@ -1,0 +1,32 @@
+{
+  "full_resolution": [
+    480,
+    640
+  ],
+  "pooled_resolution": [
+    12,
+    16
+  ],
+  "max_depth_error_m": 0.0,
+  "dynamic_obstacles_visible_in_depth": true,
+  "dynamic_obstacles_excluded_from_navrl_lidar": true,
+  "intrinsics": [
+    [
+      [
+        554.2546997070312,
+        0.0,
+        320.5
+      ],
+      [
+        0.0,
+        554.2546997070312,
+        240.5
+      ],
+      [
+        0.0,
+        0.0,
+        1.0
+      ]
+    ]
+  ]
+}
