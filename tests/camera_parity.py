@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from contextlib import nullcontext
 from pathlib import Path
 
 from isaaclab.app import add_launcher_args, launch_simulation
@@ -13,6 +14,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=Path("logs/smoke/camera_parity.json"))
     parser.add_argument("--camera_batch_size", type=int, default=16)
+    parser.add_argument("--dynamic_obstacles", type=int, choices=(60, 100, 120), default=100)
     add_launcher_args(parser)
     parser.set_defaults(visualizer=["none"])
     args = parser.parse_args()
@@ -22,6 +24,7 @@ def main():
     num_envs = batch_size + 1
     import gymnasium as gym
     import torch
+    import warp as wp
     from isaaclab.utils.math import quat_apply, quat_from_euler_xyz
     from isaaclab.utils.string import ResolvableString
 
@@ -31,7 +34,7 @@ def main():
 
     cfg = ZhangNavRLEnvCfg()
     cfg.training_curriculum = False
-    cfg.num_dynamic_obstacles = 100
+    cfg.num_dynamic_obstacles = args.dynamic_obstacles
     cfg.scene.num_envs = num_envs  # One full camera batch plus a one-camera tail.
     cfg.evaluation = True
     cfg.sim.device = args.device
@@ -41,6 +44,7 @@ def main():
     cfg.scene.reference_depth.class_type = ResolvableString("isaaclab.sensors:MultiMeshRayCasterCamera")
     result = {
         "status": "running", "num_envs": num_envs, "camera_batch_size": batch_size,
+        "dynamic_obstacles": args.dynamic_obstacles,
         "full_resolution": [120, 160], "pooled_resolution": [12, 16],
         "atol": 2e-5, "rtol": 1e-5, "stages": {},
     }
@@ -105,6 +109,14 @@ def main():
                 native = reference.data.output["distance_to_image_plane"].torch.permute(0, 3, 1, 2).clone()
                 noise = None if noise_batches[0] is None else torch.cat(noise_batches)
                 expected = depth_features(native, noise)
+                # Compare the complete rectangular tables with the unchanged
+                # official per-target refresh, on the same stream as the clones.
+                pose_tables = [wp.to_torch(camera._mesh_positions_w), wp.to_torch(camera._mesh_orientations_w)]
+                aggregate_poses = [table.clone() for table in pose_tables]
+                stream = (wp.stream_from_torch(torch.cuda.current_stream(env.device))
+                          if str(env.device).startswith("cuda") else None)
+                with wp.ScopedStream(stream) if stream is not None else nullcontext():
+                    super(depth_module.BatchedDepthCamera, camera)._update_mesh_transforms()
                 chosen = slice(None) if selected is None else selected
                 details = {
                     "batch_sizes": [len(batch) for batch in raw_batches],
@@ -112,6 +124,14 @@ def main():
                     "depth": errors(raw[chosen], native[chosen]),
                     "pooled": errors(pooled, expected),
                     "pixel_noise_std": camera.cfg.pixel_noise_std,
+                    "mesh_pose_table": {
+                        label: {"max_abs_error": float((actual - expected_table).abs().max()),
+                                "mismatches": int((actual != expected_table).sum()),
+                                "elements": actual.numel(), "atol": 0.0, "rtol": 0.0}
+                        for label, actual, expected_table in zip(
+                            ("position", "orientation"), aggregate_poses, pose_tables, strict=True
+                        )
+                    },
                 }
                 result["stages"][name] = details
                 persist()
@@ -131,6 +151,8 @@ def main():
                     persist()
                 torch.testing.assert_close(raw[chosen], native[chosen], atol=2e-5, rtol=1e-5)
                 torch.testing.assert_close(pooled, expected, atol=2e-5, rtol=1e-5)
+                for actual, expected_table in zip(aggregate_poses, pose_tables, strict=True):
+                    torch.testing.assert_close(actual, expected_table, atol=0, rtol=0)
                 return raw, pooled
 
             measure("initial")
@@ -192,6 +214,26 @@ def main():
             camera.set_intrinsic_matrices(initial_intrinsics)
             reference.set_intrinsic_matrices(initial_intrinsics)
             measure("restored_shared_intrinsics")
+            # Request deliberately reversed owner paths. Read the actual returned
+            # prim_paths again; PhysX is not assumed to preserve request order.
+            create_view = camera._create_tracked_target_view
+            shuffled_request = []
+
+            def create_shuffled_view(paths):
+                requested = list(reversed(paths))
+                shuffled_request.extend(requested)
+                return create_view(requested)
+
+            camera._create_tracked_target_view = create_shuffled_view
+            try:
+                camera._initialize_shared_mesh_tracking()
+            finally:
+                camera._create_tracked_target_view = create_view
+            assert shuffled_request == list(reversed(camera.mesh_transform_info["mesh_order_body_paths"]))
+            result["shuffled_mesh_transform_request"] = {
+                "requested_body_paths": shuffled_request, "actual_tracking": camera.mesh_transform_info,
+            }
+            measure("shuffled_tracked_view_request")
             result["cached_local_rays_exact"] = True
             result["status"] = "completed"
             persist()

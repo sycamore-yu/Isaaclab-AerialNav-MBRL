@@ -59,3 +59,50 @@
 
 这个合并尚未测出独立性能增益，不能将前述 16→64 的测量归因于它。
 原四组正式运行与后续 h5 运行均在改动前已载入相机代码。
+
+## 后续：聚合动态物体的 PhysX 位姿读取
+
+在五组正式训练并发的 profile 中，旧路径逐个读取 60 个动态物体位姿，
+仅 `_update_mesh_transforms()` 的中位耗时已达 67.987 ms。相机现在保留官方
+逐 target 的初始化与几何表，从旧单体 view 的公开 `prim_paths` 取得刚体
+owner 路径，再创建一个聚合 view。映射依据新 view 的真实 `prim_paths`，
+不假定请求列表或 glob 的顺序。每帧一次 `get_transforms()`，按映射重排后
+复用官方 `copy_mesh_transforms_to_table_kernel` 广播到原有的完整表。
+
+静态 mesh、相机射线、几何局部坐标和深度变换不变。物理 view 失效后清理
+引用与映射；重新初始化时重建。实际路径和列／行映射保存在
+`world_mesh_info.mesh_transform_tracking`。
+
+### 正确性
+
+100 与 120 个动态物体分别完成 65 环境、64+1 批次的八场景检查。
+每个场景将完整位置／四元数表与原官方逐 target 更新逐元素比较，
+另将 raw／pooled 深度与官方传感器比较。第八个场景故意反序请求聚合 view，
+再依据实际返回路径重建映射。两次检查的全部位姿表、原始深度与池化最大误差
+均为 0，mismatch 均为 0。
+
+- `logs/sim_to_real_checks/camera_160x120_aggregate_view_parity.json`
+- `logs/sim_to_real_checks/camera_160x120_aggregate_view_120_parity.json`
+
+### 性能
+
+两次 profile 均使用批次 64、1024 环境、300 静态 / 60 动态障碍、无像素噪声，
+预热 3 次、采样 25 次，五组正式训练持续并发，GPU 非独占。
+
+| 中位耗时 / ms | 逐物体读取 | 聚合读取 |
+| --- | ---: | ---: |
+| mesh 位姿更新 | 67.987 | 1.344 |
+| 固定场景完整相机 | 119.016 | 39.569 |
+| 完整环境步 | 477.865 | 423.409 |
+
+本次完整环境步中位耗时降低约 11.4%。分项独立计时并同步，不能严格相加；
+这些也不是独占 GPU 或完整 BPTT 更新的加速比。当前五组的现有阶段在修改前
+已导入旧代码；后续新进程使用该优化，默认相机批次仍为 16。
+
+- `logs/benchmark/camera_d160_b64_fusion_fivetrain_profile.json`
+- `logs/benchmark/camera_d160_b64_aggregate_fivetrain_profile.json`
+
+API 依据：
+
+- [Isaac Lab 3.0 PhysxManager](https://isaac-sim.github.io/IsaacLab/v3.0.0/source/api/lab_physx/isaaclab_physx.physics.html)
+- [Omni Physics Tensor API](https://docs.omniverse.nvidia.com/kit/docs/omni_physics/108.0/extensions/runtime/source/omni.physics.tensors/docs/api/python.html)

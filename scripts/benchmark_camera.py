@@ -1,4 +1,4 @@
-"""Measure full-resolution depth and one complete Zhang policy transition."""
+"""Measure mesh poses, full-resolution depth, and one Zhang policy transition."""
 
 from __future__ import annotations
 
@@ -82,7 +82,7 @@ def main():
                 env.step(action)
                 return env.get_zhang_observation()["depth_features"]
 
-            def measure(operation):
+            def measure(operation, *, check_output=True):
                 for _ in range(args.warmup):
                     operation()
                 torch.cuda.synchronize(env.device)
@@ -96,13 +96,16 @@ def main():
                     # PhysX and Warp may use several streams; wall time waits for all of them.
                     torch.cuda.synchronize(env.device)
                     elapsed.append((time.perf_counter() - started) * 1000)
-                assert torch.isfinite(last).all()
+                if check_output:
+                    assert torch.isfinite(last).all()
                 stats = summarize(elapsed)
                 stats["torch_peak_allocated_mb"] = torch.cuda.max_memory_allocated(env.device) / 2**20
                 return stats
 
+            # This in-place update returns None; time the same native sensor method.
+            mesh_transform_stats = measure(camera._update_mesh_transforms, check_output=False)
             camera_stats = measure(refresh_camera)
-            # The second measurement includes all ten physical steps, dynamic motion,
+            # The transition measurement includes all ten physical steps, dynamic motion,
             # collision checks, observations, and the synchronized depth-camera frame.
             env.reset()
             transition_stats = measure(complete_policy_transition)
@@ -119,6 +122,7 @@ def main():
                 "pixel_noise_std": camera.cfg.pixel_noise_std,
                 "nominal_physics_parameters": True,
                 "warmup": args.warmup, "samples": args.samples,
+                "mesh_transform_update": mesh_transform_stats,
                 "camera_fixed_scene": camera_stats,
                 "env_step_with_depth": transition_stats,
                 "policy_transitions_per_s": env.num_envs * 1000 / transition_stats["mean_ms"],
