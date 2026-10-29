@@ -17,7 +17,7 @@ class ZhangTrainCfg:
     stop_after_acceptance: bool = False
     physics_dt: float = 0.05
     policy_dt: float = 0.05
-    velocity_loss_mode: Literal["variant_default", "per_step", "truncated_window", "full_window"] = "full_window"
+    velocity_loss_mode: Literal["variant_default", "per_step", "truncated_window", "full_window"] | None = None
     velocity_window_s: float = 2.0
     grad_decay: float = 0.4
     lr: float = 0.001
@@ -63,6 +63,10 @@ class ZhangTrainCfg:
     seed: int = 0
     gradient_diagnostic_updates: tuple[int, ...] = ()
     gradient_projection: Literal["none", "height_priority"] = "none"
+
+    def __post_init__(self):
+        if self.velocity_loss_mode is None:
+            self.velocity_loss_mode = "per_step" if self.algorithm == "shac" else "full_window"
 
     @property
     def resolved_velocity_loss_mode(self) -> Literal["per_step", "window", "truncated_window"]:

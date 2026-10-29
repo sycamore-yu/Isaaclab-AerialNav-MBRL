@@ -248,6 +248,12 @@ class NavRLEnv(DirectRLEnv):
             "executed_action": self.executed_actions.clone(),
             "action_delay_steps": self.executed_action_lags.clone(),
         }
+        if self.cfg.method == "zhang" and self.cfg.capture_terminal_observation:
+            # Capture before DirectRLEnv autoresets sensors, targets and randomization.
+            transition = self.extras["transition"]
+            transition["depth_features"] = self.scene["depth_camera"].data.output["policy_depth"].torch.permute(0, 3, 1, 2).clone()
+            transition["input_delay_steps"] = self.perturbation.observation_buffer.time_lags.clone()
+            transition["critic_parameters"] = {k: v.detach().clone() for k, v in self.zhang_parameters.items()}
         return terminated, timed_out
 
     def _termination_mask(self, terms):

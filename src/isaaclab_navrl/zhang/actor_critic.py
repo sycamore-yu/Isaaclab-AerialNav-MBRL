@@ -1,10 +1,10 @@
 """Cost-form SHAC/AHAC value learning, independent of the PhysX rollout.
 
 The runner supplies Zhang's actual per-transition costs and augmented critic
-states. A reset ends a derivative/TD trace, but is not an absorbing zero-cost
-state: its next value comes from the actual reset state and is detached by the
-runner. At an ordinary rollout endpoint, the frozen critic retains input
-derivatives, including position and recurrent-memory derivatives.
+states. SHAC supplies zero next values at absorbing terminals and the original
+pre-reset endpoint value at time truncations. AHAC retains its continuing-reset
+adaptation with detached reset-state values. At an ordinary rollout endpoint,
+the frozen critic retains position and recurrent-memory input derivatives.
 
 SHAC uses one critic and an exponential-moving-average target. AHAC uses two
 critics with a frozen per-rollout copy, not a delayed EMA target. Cost values

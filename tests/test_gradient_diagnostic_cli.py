@@ -61,7 +61,7 @@ class GradientDiagnosticCliTests(unittest.TestCase):
         self.assertEqual(args.stage, "pretrain_s0")
         self.assertEqual(args.algorithm, "bptt")
         self.assertEqual(args.critic_value_transform, "linear")
-        self.assertEqual(args.velocity_loss_mode, "full_window")
+        self.assertIsNone(args.velocity_loss_mode)  # Resolved after parsing from the selected algorithm.
         self.assertEqual(args.height_loss_mode, "target_exp")
         self.assertEqual((args.height_target_min, args.height_target_max), (0.5, 2.5))
         self.assertEqual(args.plateau_patience, 2)

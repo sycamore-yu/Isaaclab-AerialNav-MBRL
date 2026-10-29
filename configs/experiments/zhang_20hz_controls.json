@@ -61,7 +61,7 @@
         "variant": "dcol",
         "algorithm": "shac",
         "timesteps": 32,
-        "velocity_loss_mode": "full_window",
+        "velocity_loss_mode": "per_step",
         "velocity_window_s": 2.0,
         "height_loss_mode": "target_exp",
         "height_target_min": 0.5,

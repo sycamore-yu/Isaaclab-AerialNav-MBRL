@@ -217,6 +217,7 @@ class ZhangNavRLEnvCfg(NavRLEnvCfg):
     method = "zhang"
     variant: str = "dcol"
     timing: str = "unified_20hz"
+    capture_terminal_observation: bool = False
     depth_camera_batch_size: int = 64
     height_target_range: tuple[float, float] = (0.5, 2.5)
     decimation = 10

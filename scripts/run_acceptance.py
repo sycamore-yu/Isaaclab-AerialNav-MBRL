@@ -215,7 +215,7 @@ def validate_stage_result(
     variant: str = "dcol",
     algorithm: str = "bptt",
     report_episodes: int | None = None,
-    velocity_loss_mode: str = "full_window",
+    velocity_loss_mode: str | None = None,
     screening: bool = False,
 ) -> list[str]:
     """Validate one real training report against the fixed acceptance protocol."""
@@ -225,6 +225,8 @@ def validate_stage_result(
         if not condition:
             errors.append(message)
 
+    if velocity_loss_mode is None:
+        velocity_loss_mode = "per_step" if algorithm == "shac" else "full_window"
     expected = STAGE_CONFIG[stage]
     expect(result.get("method") == method, "method does not match the launched trainer")
     if method == "zhang":
@@ -395,7 +397,7 @@ def run_pipeline(args: argparse.Namespace, train_args: dict[str, TrainArgValue])
                         variant=train_args.get("variant", "dcol"),
                         algorithm=train_args.get("algorithm", "bptt"),
                         report_episodes=getattr(args, "report_episodes", None),
-                        velocity_loss_mode=train_args.get("velocity_loss_mode", "full_window"),
+                        velocity_loss_mode=train_args.get("velocity_loss_mode"),
                         screening=screening,
                     )
                 checkpoint = log_dir / "checkpoint_stage.pt"

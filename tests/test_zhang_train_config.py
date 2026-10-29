@@ -48,7 +48,7 @@ class ZhangTrainConfigTests(unittest.TestCase):
             ZhangTrainCfg(variant="continuous", velocity_loss_mode=mode).validate()
 
     def test_invalid_velocity_modes_fail_and_explicit_modes_keep_window_validation(self):
-        for value in ("window", "step", "truncated", "TRUNCATED_WINDOW", "", None, True):
+        for value in ("window", "step", "truncated", "TRUNCATED_WINDOW", "", True):
             with self.subTest(value=value):
                 cfg = ZhangTrainCfg(velocity_loss_mode=value)
                 with self.assertRaisesRegex(ValueError, "velocity_loss_mode"):

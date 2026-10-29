@@ -23,6 +23,9 @@ class CriticHistory:
         sample = torch.cat((velocity / 10, target_velocity.detach() / 10,
                             velocity.new_ones(velocity.shape[0], 1)), dim=-1)
         self.samples = self.samples[1:] + [sample]
+        self.reset(done)
+
+    def reset(self, done):
         self.samples = [torch.where(done[:, None], torch.zeros_like(value), value) for value in self.samples]
 
     def features(self):
@@ -43,8 +46,9 @@ def critic_observation(state, observation, hidden, previous_command, parameters,
                        history, action_delay, observation_delay, episode_steps, max_episode_steps, action_lags):
     """Use h_t before its actor call, and h_(t+1) for the resulting next state.
 
-    The runner must detach the entire reset-state bootstrap. The ordinary
-    endpoint keeps state, hidden, temporal-memory and delayed-command paths.
+    AHAC detaches its continuing-reset bootstrap. SHAC uses pre-reset endpoint
+    features and masks absorbing terminals. Live endpoints keep state, hidden,
+    temporal-memory and delayed-command paths.
     All mutable environment buffers are cloned or consumed into fresh tensors.
     """
     scales = {"max_speed": 10, "pitch_ctl_delay": 12, "yaw_ctl_delay": 12,

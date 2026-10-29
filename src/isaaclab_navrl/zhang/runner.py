@@ -351,6 +351,8 @@ class ZhangTrainer:
             "max_updates": self.cfg.max_iterations,
             "rollout_steps": self.last_rollout_steps,
             "configured_rollout_steps": self.cfg.timesteps,
+            "bootstrap_semantics": ("absorbing_zero_timeout_pre_reset_live_endpoint"
+                                    if self.cfg.algorithm == "shac" else "continuing_reset" if self.actor_critic else None),
             "adaptive_horizon": self.cfg.algorithm == "ahac",
             "checkpoint": str(checkpoint) if checkpoint is not None else None,
             "elapsed_s": self.elapsed_s, "nonfinite_grad_events": self.nonfinite_grad_events,
@@ -505,6 +507,8 @@ class ZhangTrainer:
                     )
                     with torch.no_grad():
                         _, _, terminated, timeout, info = self.env.step(command.detach())
+                        # DirectRLEnv reuses these buffers on the next simulation step.
+                        terminated, timeout = terminated.clone(), timeout.clone()
                         done = terminated | timeout
                         next_observation = self.env.get_zhang_observation()
                     transition = info["transition"]
@@ -550,11 +554,27 @@ class ZhangTrainer:
                         collision_obstacles = transition["dynamic_positions_by_substep"][pose_index]
                         terminal_gap = self._dcol_gap(collision_position, parameters["margin"], collision_obstacles)
                         history["dcol_gap"].append(torch.cat((dcol_lookahead, terminal_gap[:, None]), dim=1))
+                    if self.cfg.algorithm == "shac":
+                        # DiffAero: absorbing terminals have no future cost; timeouts
+                        # and the ordinary horizon use the pre-reset endpoint graph.
+                        critic_history.push(terminal_state.velocity, target_velocity, torch.zeros_like(done))
+                        endpoint = critic_observation(
+                            terminal_state, transition, hidden, command, transition["critic_parameters"],
+                            critic_history, action_history, observation_history,
+                            transition["step"], self.env.max_episode_length, transition["action_delay_steps"],
+                        )
+                        live_value = self.actor_critic.actor_value(endpoint)
+                        actor_next_value = torch.where(terminated, torch.zeros_like(live_value), live_value)
+                        history["actor_next_value"].append(actor_next_value)
+                        history["critic_next_value"].append(actor_next_value.detach())
+                        history["absorbing_terminal"].append(terminated)
+                        history["time_truncated"].append(timeout & ~terminated)
+                        critic_history.reset(done)
                     hidden = torch.where(done[:, None], torch.zeros_like(hidden), hidden)
                     previous_command = torch.where(done[:, None], torch.zeros_like(command), command)
                     action_history.reset(done)
                     observation_history.reset(done)
-                    if self.actor_critic is not None:
+                    if self.cfg.algorithm == "ahac":
                         critic_history.push(terminal_state.velocity, target_velocity, done)
                         next_critic_observation = self._critic_observation(
                             state, next_observation, hidden, previous_command, critic_history,
@@ -586,6 +606,12 @@ class ZhangTrainer:
                     actor_loss = actor_terms["objective"]
                     algorithm_metrics.update({f"ActorCritic/{name}": float(value.detach())
                                               for name, value in actor_terms.items()})
+                    if self.cfg.algorithm == "shac":
+                        absorbing = torch.stack(history["absorbing_terminal"])
+                        values = torch.stack(history["critic_next_value"])
+                        algorithm_metrics["ActorCritic/absorbing_terminal_count"] = float(absorbing.sum())
+                        algorithm_metrics["ActorCritic/absorbing_bootstrap_abs_sum"] = float(values.masked_select(absorbing).abs().sum())
+                        algorithm_metrics["ActorCritic/pre_reset_timeout_count"] = float(torch.stack(history["time_truncated"]).sum())
                 risk = None
                 if self.horizon_controller is not None:
                     risk = self.horizon_controller.risk(torch.stack(history["dcol_gap"]))

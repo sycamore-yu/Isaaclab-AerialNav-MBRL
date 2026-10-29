@@ -24,7 +24,9 @@ run_pipeline, validate_stage_result = protocol.run_pipeline, protocol.validate_s
 
 
 def report_fixture(stage="pretrain_s0", parent=None, algorithm="bptt", variant="dcol",
-                   velocity_loss_mode="full_window", num_envs=1024):
+                   velocity_loss_mode=None, num_envs=1024):
+    if velocity_loss_mode is None:
+        velocity_loss_mode = "per_step" if algorithm == "shac" else "full_window"
     config = STAGE_CONFIG[stage].copy()
     final = stage == "finetune_s2"
     return {

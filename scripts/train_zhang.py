@@ -47,7 +47,7 @@ def main():
                         help="ahac selects AHAC-derived DCOL synchronous adaptation")
     parser.add_argument("--timesteps", type=int, default=150)
     parser.add_argument("--velocity_loss_mode", choices=("variant_default", "per_step", "truncated_window", "full_window"),
-                        default="full_window", help="Velocity supervision; truncated_window completes unscored "
+                        default=None, help="Default: SHAC per_step, otherwise full_window; truncated_window completes unscored "
                         "short terminal windows; variant_default preserves each variant's current loss")
     parser.add_argument("--velocity_window_s", type=float, default=2.0)
     parser.add_argument("--camera_batch_size", type=int, default=64,
@@ -96,6 +96,8 @@ def main():
     add_launcher_args(parser)
     parser.set_defaults(visualizer=["none"])
     args = parser.parse_args()
+    if args.velocity_loss_mode is None:
+        args.velocity_loss_mode = "per_step" if args.algorithm == "shac" else "full_window"
     if args.num_envs < 1 or (args.max_iterations is not None and args.max_iterations < 1):
         parser.error("num_envs and max_iterations must be positive")
     if args.camera_batch_size < 1:
@@ -128,6 +130,7 @@ def main():
     cfg.timing = args.timing
     cfg.training_report_episodes = args.report_episodes
     cfg.height_target_range = (args.height_target_min, args.height_target_max)
+    cfg.capture_terminal_observation = args.algorithm == "shac"
     cfg.scene.num_envs = args.num_envs
     cfg.seed, cfg.terrain_seed = args.seed, args.terrain_seed
     cfg.num_static_obstacles = stage["static_obstacles"]
@@ -166,6 +169,7 @@ def main():
                         "variant": args.variant, "drone_collision_response": args.variant != "continuous",
                         "height_target_range": list(cfg.height_target_range),
                         "height_target_source": "current_episode_navigation_goal_z",
+                        "capture_terminal_observation": cfg.capture_terminal_observation,
                         "dynamic_obstacle_collision_response": False,
                         "collision_terminates": args.variant != "continuous",
                         "bounds_terminates": args.variant != "continuous",

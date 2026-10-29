@@ -47,3 +47,9 @@ def test_new_defaults_match_the_retained_twenty_hz_configuration():
     hz50 = replace(cfg, physics_dt=.02, policy_dt=.02)
     hz50.validate()
     assert hz50.velocity_window_steps == 100
+
+
+def test_shac_default_velocity_supervision_is_per_step():
+    cfg = ZhangTrainCfg(algorithm="shac")
+    cfg.validate()
+    assert cfg.velocity_loss_mode == cfg.resolved_velocity_loss_mode == "per_step"
