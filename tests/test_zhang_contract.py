@@ -282,7 +282,8 @@ class AnalyticEnv:
         self.velocity += command * self.step_dt
         self.position += self.velocity * self.step_dt
         transition = {"position": self.position.clone(), "velocity": self.velocity.clone(),
-                      "executed_action": command.clone(), "actuator": command.clone()}
+                      "executed_action": command.clone(), "actuator": command.clone(),
+                      "bounds": torch.zeros(2, dtype=torch.bool)}
         done = torch.tensor([self.total_steps % 2 == 0, False])
         if done[0]:
             self.position[0] = torch.tensor([0.0, 0.0, 2.0])

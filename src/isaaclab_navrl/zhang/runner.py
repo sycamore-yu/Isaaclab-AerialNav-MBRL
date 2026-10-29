@@ -26,6 +26,31 @@ def cosine_learning_rate(update, cfg):
     return cfg.lr * (cfg.min_lr_ratio + (1 - cfg.min_lr_ratio) * (1 + math.cos(math.pi * cycle_progress)) / 2)
 
 
+@torch.no_grad()
+def rollout_diagnostics(history):
+    """Describe measured trajectories without changing losses or acceptance counts."""
+    position = torch.stack(history["position"])
+    velocity = torch.stack(history["velocity"])
+    command = torch.stack(history["executed_command"])
+    delta = torch.stack(history["model_velocity_delta"])
+    bounds = torch.stack(history["bounds"])
+    low = bounds & (position[..., 2] < 0.2)
+    high = bounds & (position[..., 2] > 4.0)
+    return {
+        "mean_altitude_m": float(position[..., 2].mean()),
+        "mean_horizontal_speed_mps": float(velocity[..., :2].norm(dim=-1).mean()),
+        "mean_vertical_speed_mps": float(velocity[..., 2].mean()),
+        "mean_abs_vertical_speed_mps": float(velocity[..., 2].abs().mean()),
+        "mean_executed_vertical_acceleration_mps2": float(command[..., 2].mean()),
+        "mean_abs_executed_vertical_acceleration_mps2": float(command[..., 2].abs().mean()),
+        "terminal_lower_bound_count": int(low.sum()),
+        "terminal_upper_bound_count": int(high.sum()),
+        "terminal_bound_recovered_count": int((bounds & ~low & ~high).sum()),
+        "surrogate_velocity_error_mps": float(delta.norm(dim=-1).mean()),
+        "surrogate_vertical_velocity_bias_mps": float(delta[..., 2].mean()),
+    }
+
+
 class ZhangTrainer:
     def __init__(self, env, cfg, log_dir):
         cfg.validate()
@@ -190,6 +215,10 @@ class ZhangTrainer:
                     )
                     applied_command = align_state(applied_command, transition["executed_action"])
                     prediction = policy_transition(state, applied_command, rotation, parameters, self.cfg)
+                    history["position"].append(transition["position"])
+                    history["bounds"].append(transition["bounds"])
+                    history["executed_command"].append(transition["executed_action"])
+                    history["model_velocity_delta"].append(prediction.velocity.detach() - transition["velocity"])
                     terminal_state, state = align_transition(
                         prediction, transition["position"], transition["velocity"], state.velocity, done,
                         next_observation["position"], next_observation["velocity"], self.cfg.policy_dt,
@@ -234,6 +263,7 @@ class ZhangTrainer:
                 self.schedule_updates += 1
                 self.elapsed_s = previous_elapsed_s + time.perf_counter() - started
                 metrics = {name: float(value.detach()) for name, value in losses.items()}
+                metrics.update(rollout_diagnostics(history))
                 metrics.update(update=self.completed_updates, learning_rate=learning_rate, grad_norm=float(grad_norm),
                                elapsed_s=self.elapsed_s, update_s=time.perf_counter() - update_started,
                                completed_episodes=int(terminated_count),
