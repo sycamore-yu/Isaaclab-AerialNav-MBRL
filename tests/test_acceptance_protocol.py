@@ -1,76 +1,182 @@
-"""Acceptance tuning cannot silently change the task through argparse aliases."""
+"""Unit tests for command construction and report validation, not training results."""
 
+import argparse
+import copy
 import importlib.util
 import json
+import subprocess
+import tempfile
+import unittest
 from pathlib import Path
-from types import SimpleNamespace
+from unittest.mock import patch
 
-import pytest
-
-
-def protocol_module():
-    path = Path(__file__).resolve().parents[1] / "scripts/run_acceptance.py"
-    spec = importlib.util.spec_from_file_location("run_acceptance", path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-def test_approved_zhang_hyperparameters_are_allowed():
-    protocol_module().validate_train_args("zhang", [
-        "--lr", "0.001", "--max_grad_norm=3", "--timesteps", "96", "--grad_decay", "0.4",
-        "--coef_obj_avoidance", "3", "--coef_collide", "7.5", "--velocity_window_s", "6",
-        "--coef_d_acc", "0.01", "--coef_d_jerk", "0.001",
-    ])
+spec = importlib.util.spec_from_file_location(
+    "run_acceptance", Path(__file__).resolve().parents[1] / "scripts" / "run_acceptance.py"
+)
+protocol = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(protocol)
+STAGE_CONFIG, STAGES = protocol.STAGE_CONFIG, protocol.STAGES
+build_command, parse_train_args = protocol.build_command, protocol.parse_train_args
+run_pipeline, validate_stage_result = protocol.run_pipeline, protocol.validate_stage_result
 
 
-@pytest.mark.parametrize("option", ["--static=0", "--dynamic=0", "--physics=newton", "--num_e=1"])
-def test_task_and_budget_overrides_cannot_use_argparse_abbreviations(option):
-    with pytest.raises(ValueError):
-        protocol_module().validate_train_args("zhang", [option])
+def report_fixture(stage="pretrain_s1", parent=None):
+    config = STAGE_CONFIG[stage].copy()
+    final = stage == "finetune_s2"
+    return {
+        "method": "zhang",
+        "status": "completed",
+        "stage": stage,
+        "num_envs": 1024,
+        "stage_passed": True,
+        "max_updates": None,
+        "parent_checkpoint": str(parent) if parent is not None else None,
+        "fresh": parent is None,
+        "acceptance_passed": final,
+        "curriculum": {
+            "stage": stage,
+            "stage_passed": True,
+            "stage_config": config,
+            "active_dynamic_obstacles": config["dynamic_obstacles"],
+            "promotion_success_rate": 0.8,
+            "episodes_per_report_min": 1024,
+            "acceptance_passed": final,
+            "latest_training_report": {"stage": stage, **config, "episodes": 1024, "success_rate": 0.8},
+        },
+    }
 
 
-@pytest.mark.parametrize("method", ["navrl", "zhang"])
-def test_acceptance_runs_training_only_without_a_budget(method, tmp_path):
-    command = protocol_module().training_command(method, tmp_path / "fresh", 0, "cuda:0", [])
-    assert command[1].endswith(f"train_{method}.py")
-    assert "--max_iterations" not in command
-    assert "--checkpoint" not in command
-    assert "--eval_seed" not in command
-    assert command[command.index("--num_envs") + 1] == "1024"
-    assert command[command.index("--static_obstacles") + 1] == "350"
+class AcceptanceProtocolTests(unittest.TestCase):
+    def command(self, **overrides):
+        arguments = {
+            "method": "zhang",
+            "stage": "pretrain_s1",
+            "log_dir": Path("/runs/new/zhang/pretrain_s1"),
+            "scripts_dir": Path("/repo/scripts"),
+            "num_envs": 1024,
+            "seed": 7,
+            "device": "cuda:0",
+            "finetune_lr": 5e-5,
+            "train_args": {"timesteps": 150, "lr": 1e-3},
+            "parent_checkpoint": None,
+            "executable": "/repo/.venv/bin/python",
+        }
+        arguments.update(overrides)
+        return build_command(**arguments)
+
+    def validate(self, value, stage="pretrain_s1", parent=None):
+        return validate_stage_result(value, method="zhang", stage=stage, num_envs=1024, parent_checkpoint=parent)
+
+    def test_requested_stages(self):
+        self.assertEqual(
+            [(STAGE_CONFIG[s]["static_obstacles"], STAGE_CONFIG[s]["dynamic_obstacles"], STAGE_CONFIG[s]["randomization"]) for s in STAGES],
+            [(300, 60, False), (400, 120, False), (300, 60, True), (400, 100, True)],
+        )
+
+    def test_allowed_parameters(self):
+        self.assertEqual(
+            parse_train_args(["--timesteps", "150", "--lr=0.001", "--coef_d_jerk", "0"]),
+            {"timesteps": 150, "lr": 0.001, "coef_d_jerk": 0.0},
+        )
+
+    def test_reject_process_overrides_and_bad_values(self):
+        cases = [
+            ["--checkpoint", "/old/run.pt"], ["--max_updates", "2000"], ["--stage", "finetune_s2"],
+            ["--num_envs", "128"], ["--timesteps"], ["--timesteps", "0"], ["--lr", "nan"],
+            ["--lr", "inf"], ["--coef_d_acc", "-1"], ["--lr", "1e-3", "--lr", "1e-4"],
+        ]
+        for tokens in cases:
+            with self.subTest(tokens=tokens), self.assertRaises(ValueError):
+                parse_train_args(tokens)
+
+    def test_fresh_initial_stage_has_no_checkpoint_or_training_limit(self):
+        command = self.command()
+        self.assertEqual(command[:2], ["/repo/.venv/bin/python", "/repo/scripts/train_zhang.py"])
+        self.assertNotIn("--checkpoint", command)
+        self.assertNotIn("--max_updates", command)
+        self.assertIn("--stop_after_acceptance", command)
+        self.assertEqual(command[command.index("--seed") + 1], "7")
+        self.assertEqual(command[command.index("--terrain_seed") + 1], "7")
+
+    def test_finetune_uses_internal_parent_and_single_finetune_lr(self):
+        parent = Path("/runs/new/zhang/pretrain_s2/checkpoint_stage.pt")
+        command = self.command(stage="finetune_s1", parent_checkpoint=parent)
+        self.assertEqual(command[command.index("--checkpoint") + 1], str(parent))
+        self.assertEqual(command.count("--lr"), 1)
+        self.assertEqual(float(command[command.index("--lr") + 1]), 5e-5)
+        self.assertEqual(command[command.index("--timesteps") + 1], "150")
+
+    def test_zhang_parameters_do_not_enter_navrl_command(self):
+        command = self.command(method="navrl", stage="finetune_s1")
+        self.assertNotIn("--timesteps", command)
+        self.assertEqual(command.count("--lr"), 1)
+        self.assertEqual(float(command[command.index("--lr") + 1]), 5e-5)
+
+    def test_exact_threshold_passes_each_stage(self):
+        for index, stage in enumerate(STAGES):
+            parent = Path(f"/runs/new/zhang/{STAGES[index - 1]}/checkpoint_stage.pt") if index else None
+            with self.subTest(stage=stage):
+                self.assertEqual(self.validate(report_fixture(stage, parent), stage, parent), [])
+
+    def test_rejects_wrong_stage_counts_randomization_and_statistics(self):
+        fixture = report_fixture()
+        mutations = [
+            (("stage",), "finetune_s2"), (("stage_passed",), False), (("status",), "running"),
+            (("num_envs",), 128), (("max_updates",), 2000), (("parent_checkpoint",), "/old/run.pt"),
+            (("curriculum", "stage_config", "static_obstacles"), 350),
+            (("curriculum", "active_dynamic_obstacles"), 100),
+            (("curriculum", "latest_training_report", "randomization"), True),
+            (("curriculum", "latest_training_report", "success_rate"), 0.79),
+            (("curriculum", "latest_training_report", "success_rate"), float("nan")),
+            (("curriculum", "latest_training_report", "episodes"), 1023),
+            (("curriculum", "latest_training_report", "stage"), "finetune_s2"),
+        ]
+        for keys, value in mutations:
+            result = copy.deepcopy(fixture)
+            target = result
+            for key in keys[:-1]:
+                target = target[key]
+            target[keys[-1]] = value
+            with self.subTest(keys=keys, value=value):
+                self.assertTrue(self.validate(result))
+
+    def test_final_stage_requires_both_acceptance_flags(self):
+        parent = Path("/runs/new/zhang/finetune_s1/checkpoint_stage.pt")
+        for source in ("trainer", "curriculum"):
+            result = report_fixture("finetune_s2", parent)
+            target = result if source == "trainer" else result["curriculum"]
+            target["acceptance_passed"] = False
+            with self.subTest(source=source):
+                self.assertTrue(self.validate(result, "finetune_s2", parent))
+
+    def test_stage_directory_is_empty_when_trainer_starts(self):
+        # These temporary reports exercise orchestration only; no trainer is launched.
+        visited = []
+
+        def unit_process(command, **kwargs):
+            stage = command[command.index("--stage") + 1]
+            log_dir = Path(command[command.index("--log_dir") + 1])
+            parent = Path(command[command.index("--checkpoint") + 1]) if "--checkpoint" in command else None
+            self.assertEqual(list(log_dir.iterdir()), [])
+            self.assertEqual(Path(kwargs["stdout"].name), log_dir.parent / f"{stage}.stdout.log")
+            (log_dir / "training_result.json").write_text(json.dumps(report_fixture(stage, parent)), encoding="utf-8")
+            (log_dir / "checkpoint_stage.pt").write_bytes(b"Unit-test checkpoint fixture")
+            visited.append(stage)
+            return subprocess.CompletedProcess(command, 0)
+
+        with tempfile.TemporaryDirectory(prefix="acceptance_protocol_unit_") as temporary:
+            output = Path(temporary) / "unit_run"
+            args = argparse.Namespace(
+                method="zhang", output=str(output), num_envs=1024, train_seed=0,
+                device="cuda:0", finetune_lr=5e-5,
+            )
+            with patch.object(protocol.subprocess, "run", side_effect=unit_process), patch("builtins.print"):
+                self.assertEqual(run_pipeline(args, {}), 0)
+            self.assertEqual(visited, list(STAGES))
+            summary = json.loads((output / "training_result.json").read_text(encoding="utf-8"))
+            for record in summary["methods"]["zhang"]["stages"]:
+                self.assertEqual(Path(record["stdout_log"]), output / "zhang" / f"{record['stage']}.stdout.log")
 
 
-@pytest.mark.parametrize("navrl_passes", [True, False])
-def test_two_methods_start_fresh_in_order_and_require_training_acceptance(tmp_path, monkeypatch, navrl_passes):
-    protocol = protocol_module()
-    output = tmp_path / "fresh"
-    monkeypatch.setattr(protocol.sys, "argv", [
-        "run_acceptance.py", "--method", "both", "--output", str(output),
-        "--train_args", "--timesteps", "150",
-    ])
-    calls = []
-
-    def train(command, env, check):
-        calls.append(command)
-        run_dir = Path(command[command.index("--log_dir") + 1])
-        assert not run_dir.exists()
-        run_dir.mkdir(parents=True)
-        passed = navrl_passes if len(calls) == 1 else True
-        (run_dir / "training_result.json").write_text(json.dumps({
-            "status": "completed", "acceptance_passed": passed,
-        }))
-        return SimpleNamespace(returncode=0)
-
-    monkeypatch.setattr(protocol.subprocess, "run", train)
-    if navrl_passes:
-        protocol.main()
-        assert [Path(command[1]).stem for command in calls] == ["train_navrl", "train_zhang"]
-        assert "--timesteps" not in calls[0]
-        assert calls[1][calls[1].index("--timesteps") + 1] == "150"
-    else:
-        with pytest.raises(RuntimeError, match="before acceptance"):
-            protocol.main()
-        assert len(calls) == 1
-    assert all("--stop_after_acceptance" in command for command in calls)
-    assert all("--checkpoint" not in command and "--max_iterations" not in command for command in calls)
+if __name__ == "__main__":
+    unittest.main()

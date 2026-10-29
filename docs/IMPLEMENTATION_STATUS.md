@@ -1,69 +1,67 @@
 # 实现与验证状态
 
-2026-10-29：两个任务已接入训练内课程。验收采用 100 动态障碍阶段的训练成功率，目标约 80%。正式训练没有更新上限，也不运行独立评测。口径见 [训练课程与验收](TRAINING_CURRICULUM.md)。当前训练达标状态以对应运行目录的 `training_result.json` 为准。
+2026-10-29：两任务已接入共享扰动和四阶段训练。正式验收要求本轮随机初始化的策略依次通过全部阶段，最终在 400 静态、100 动态障碍、开启扰动的环境中达到至少 80% 训练首次到达率。是否达标以真实运行目录的 `training_result.json` 和 `training_statistics.jsonl` 为准。
+
+## 基线
+
+改动前的代码和既有决策已保存为提交 `2456a5b`，标签 `baseline/navrl-zhang-pre-sim2real-20261029`。
+
+旧正式 NavRL 运行 `logs/curriculum/fresh_seed0_20261029/navrl/` 在 2785 次更新后中断。350 静态、60 动态障碍阶段最高首次到达率为 49.28%（511/1037），碰撞率 48.99%，超时率 1.74%，成功到达平均用时 14.38 秒，平均 return 5945.19。旧运行没有通过验收，也没有启动正式 Zhang。原日志保留；本轮不加载其权重。
 
 ## 当前实现
 
-环境使用正式 Isaac Lab 3.0.0、Isaac Sim 6.2 和 PhysX。NavRL 使用原 Hummingbird 资产、Lee 控制律、RotorGroup、静态地形、观测、奖励和终止条件，训练使用官方 RSL-RL 5.5.1 PPO。
+环境为正式 Isaac Lab 3.0.0、Isaac Sim 6.2 和 PhysX。NavRL 使用官方 RSL-RL 5.5.1 PPO；Zhang 使用独立 BPTT 优化器与原六项损失。两任务保留 Hummingbird 资产、Lee 控制器和 RotorGroup。
 
-两任务默认预分配 120 个全局动态物体，从 60 个开始。成功率超过 80% 后，依次增加到 80、100、120 个。阶段切换使用同一个场景，保留网络和优化器。未激活物体不参与动态观测、碰撞或 Zhang 损失。所有无人机在晋级时开始新回合，清空跨阶段历史。
+| 阶段 | 静态障碍 | 动态障碍 | 额外扰动 |
+|---|---:|---:|---|
+| 预训练 S1 | 300 | 60 | 关闭 |
+| 预训练 S2 | 400 | 120 | 关闭 |
+| 微调 S1 | 300 | 60 | 开启 |
+| 微调 S2 | 400 | 100 | 开启 |
 
-统计按原 NavRL `EpisodeStats` 的频率汇总已完成的训练回合。每回合锁定一个首次结果，在自然终止时计数。Zhang 按 100 Hz 物理子步记录首次事件。训练回报、原即时 `reach_goal` 与首次到达率分别记录。
+每阶段完成至少 `num_envs` 个自然终止回合后汇总。首次到达率达到 0.8 后保存阶段检查点。下一阶段重建地图和传感器，加载同一轮前序模型与优化器，并清空所有回合历史。正式编排没有更新次数上限。
 
-Zhang 保留 CNN + GRU192、10 维状态输入、六维交错输出和现有损失。控制为世界坐标系三维加速度。PhysX 前向结果逐策略步对齐可微质点模型。物理频率 100 Hz，策略频率 10 Hz，展开 150 个策略步，速度窗口 60 个策略步。深度相机完整查询 640×480 像素，再变换并池化为 12×16。
+共享配置覆盖观测噪声、输入延迟、动作延迟、控制响应、动作差分与质量/惯量/推力随机化。物理延迟由官方 `DelayBuffer` 管理，质量和惯量由官方 Event Manager 随机化。Zhang 不重复增加动作队列或 Jerk 损失；每次更新校验可微路径和 PhysX 实际执行动作相等。
+
+Zhang 保留 100 Hz 物理步、10 Hz 策略步，默认展开 150 策略步，速度窗口 60 策略步。深度采样为完整 640×480，随后逆深度变换、噪声和 12×16 池化。预训练学习率默认 0.001；微调默认 0.00005；余弦周期 400 更新，梯度范数裁剪 5。
 
 ## 本轮验证
 
-| 检查 | 结果 | 原始记录 |
+| 检查 | 结果 | 记录 |
 |---|---|---|
-| CPU 回归测试 | 56 项通过 | `logs/curriculum_checks/full_tests.log`、`full_tests.xml` |
-| 课程统计与晋级 | 首次结果、自然终止、按样本数汇总及四阶段通过 | `tests/test_training_curriculum.py` |
-| 官方 PPO 连续更新 | 参数、优化器、Adam 步计数及 TensorBoard writer 连续保留 | `tests/test_continuous_runner.py` |
-| Zhang 跨阶段更新 | 状态、GRU 和速度历史清空，优化器保持连续 | `tests/test_zhang_contract.py` |
-| 真实 PhysX 四阶段切换 | 60/80/100/120 数量、共享物体、深度及位置梯度检查通过 | `logs/curriculum_checks/scene_v2.json` |
-| NavRL 1024 环境短训练 | 从随机初始化完成 3 次 PPO 更新，非有限状态事件 0 | `logs/curriculum_checks/navrl_1024/training_result.json` |
-| Zhang 激活检查点 | 递归输出、参数梯度、状态输入梯度逐元素相等 | `logs/curriculum_checks/activation_checkpoint_tests.log` |
-| 回报统计与正式入口回归 | 31 项通过；覆盖终止步奖励、不同回合数加权、PPO 连续更新、Zhang 重置和顺序验收入口 | `tests/test_training_curriculum.py`、`test_continuous_runner.py`、`test_acceptance_protocol.py`、`test_zhang_contract.py` |
-| Zhang 1024 环境连续更新 | H=150、速度窗口=60 策略步，随机初始化连续完成 2 次更新；非有限梯度和仿真状态事件均为 0 | `logs/curriculum_checks/zhang_current_1024_h150/training_result.json`、`updates.jsonl` |
+| CPU 回归 | 71 项通过，另有 29 项子检查 | `logs/sim_to_real_checks/unit_tests.log`、`unit_tests.xml` |
+| 延迟与反向传播 | 0/1/2 步动作执行与历史梯度对应；部分重置切断旧回合；重复观测读取不推进历史 | `tests/test_sim_to_real.py` |
+| 四阶段门限与检查点 | 恰好 80% 可晋级；父阶段、障碍数量和扰动校验；网络与 Adam 状态连续；实际采样步数累计 | `test_training_stages.py`、`test_acceptance_protocol.py`、`test_zhang_contract.py` |
+| 真实 PhysX 扰动 | Zhang 16 环境、12 策略步通过；执行动作最大误差 0；部分重置通过；无非有限状态 | `logs/sim_to_real_checks/zhang_enabled.json` |
+| 相机官方对照 | 17 环境覆盖完整批16和尾批1；7种情况原始深度与池化特征最大误差均为0 | `logs/sim_to_real_checks/camera_shared_rays_parity.json` |
+| Zhang 完整 BPTT | 64 环境、H=150；关闭与开启扰动各完成两次更新；执行动作误差均为0，非有限梯度与状态均为0 | `logs/sim_to_real_checks/zhang_nominal_bptt/`、`zhang_randomized_bptt/` |
+| NavRL 完整 PPO | 64 环境、开启扰动完成两次更新；非有限状态为0 | `logs/sim_to_real_checks/navrl_randomized_ppo/` |
 
-场景切换检查使用合成结果触发晋级，未作为策略成功率。有限步训练用于检查完整执行链；正式运行仍从随机初始化开始。
+CPU 检查中的合成训练报告仅用于测试控制流程，不计入正式成功率。真实有限步检查只证明执行链可运行。
 
-### 已修正的特征顺序
+启动时读取的资产总质量为 0.71600002 kg，base_link 的惯量对角为 [0.00700000, 0.00700000, 0.011999999] kg·m²。真实扰动检查中的总质量比例为 0.90235–1.09888，姿态响应所用惯量比例为 0.90441–1.09751，均在配置范围内。每阶段保存 `nominal_dynamics.json`。这些值来自当前资产，不是实机飞行辨识结果。
 
-原版 TorchRL `CatTensors` 默认排序输入键。实际拼接顺序为 CNN 特征 128 维、动态物体特征 64 维、状态 8 维。旧迁移将状态放在动态特征之前。本轮执行原版 `CatTensors` 构造与前向后复现差异，并修正迁移顺序。原版检查点动作及反归一化价值对照已通过。旧迁移检查点保留为历史结果，本轮不加载。
+## 相机性能
 
-### 显存检查
+固定标定时复用局部射线，缓存分别保留批量16与尾批的原始计算形状。异构内参仍逐批生成射线；更新内参会刷新缓存。分辨率、动态障碍、采样频率、噪声位置和池化算法保持一致。
 
-首个 1024 环境、150 策略步 Zhang 检查因显存不足退出，记录保留在 `logs/curriculum_checks/zhang_1024_h150/`。当时其他两个进程合计占用约 14.4 GiB，该检查进程约占用 9 GiB。未停止其他项目的进程。
+在同一台共享 RTX 4090 上，以 1024 环境、100 动态障碍、2 次预热和5次测量得到：
 
-已加入非重入激活检查点，重算网络中间量以减少存储。完整 1024 环境复测位于 `logs/curriculum_checks/zhang_1024_h150_checkpointed/`。随后使用当前代码完成两次连续更新，记录在 `logs/curriculum_checks/zhang_current_1024_h150/`：总训练时间 250.77 秒，两次更新分别约 126.99、123.73 秒，PyTorch 峰值 allocated 显存 1305.48 MiB。该数字不包含 Kit、Warp 和其他进程的显存，不代表整个进程峰值。
+| 指标 | 缓存前 | 缓存后 | 耗时减少 |
+|---|---:|---:|---:|
+| 固定场景相机 | 532.92 ms | 428.97 ms | 19.5% |
+| 含深度的策略步 | 745.54 ms | 625.34 ms | 16.1% |
 
-两次更新的裁剪前梯度范数为 28.66、24.71，均按配置裁剪到上限 5；总损失为 8.2579、8.2097。满足同一回合内连续 60 策略步条件的速度窗口比例为 39.83%、40.36%。短检查的 60 障碍首次到达率最高为 0.51%，仅证明执行链完成，不代表验收通过。
+原记录为 `logs/benchmark/camera_cache_before_1024.json` 和 `camera_cache_after_1024.json`。这些是共享 GPU 条件下的环境测量，不是完整训练更新耗时。
 
-### 相机性能测量
+## 方法边界
 
-`scripts/profile_step.py` 只测零指令下的环境开销，不包含网络、反向传播或优化器。1024 环境、100 动态障碍、完整 640×480 深度图下，每批 16 个相机的未插桩基线约 726.60 ms/策略步；插桩测得深度采样约 547.55 ms/策略步。将批量增加到 64 后，未插桩基线约 864.04 ms，深度采样约 560.40 ms，未测得提速，因此正式配置保留 16。
+Zhang 的可微模型仍为已批准的质点近似。质量、推力和响应参数与前向采用相同采样值；惯量通过响应速率近似，并逐步对齐 PhysX 的位置、速度及执行器状态。动作一致不等于完整刚体 Jacobian 精确一致。
 
-原始记录为 `logs/profile/zhang_1024_current.json` 和 `logs/profile/zhang_1024_batch64.json`。测量时有其他训练任务共享 GPU，且插桩会改变 CUDA 调度；这些数字用于定位当前瓶颈，不能视为独占 GPU 的训练吞吐量。相机分辨率、采样频率、噪声与池化语义均未更改。
+NavRL 保留已批准的官方 PPO 差异：单一 Adam、平方价值损失、官方梯度裁剪，没有原自定义循环的 ValueNorm、Huber 价值损失或动作维数乘数。具体设置写入每次运行的 `run_config.json`。
 
-随后将固定像素网格缓存，并把内参求逆从每帧的 64 个批次移到初始化和内参更新时。逐环境内参更新保留原求逆错误检查，射线矩阵乘法、换轴、归一化及后续深度处理的顺序保持原样。当前测得未插桩基线 673.40 ms/策略步，深度采样 498.57 ms/策略步，分别比之前减少约 7.3% 和 8.9%；这是上述共享 GPU 条件下的环境测量，不是端到端训练提速承诺。记录为 `logs/profile/zhang_1024_cached_intrinsics.json`。
+## 正式训练记录
 
-`logs/smoke/camera_cached_intrinsics_parity.json` 覆盖初始姿态、倾斜姿态、所有动态物体移动、部分环境重置、像素噪声及部分相机内参更新。17 个环境同时覆盖 16 相机整批和 1 相机尾批；六种情况下原始深度及池化特征的最大绝对误差均为 0。缓存版本保留，正式 Zhang 启动时使用该版本。同步行为依据 PyTorch 2.11 官方文档：https://docs.pytorch.org/docs/2.11/generated/torch.linalg.inv.html 。
+正式 Zhang 启动前的真实 BPTT 检查已完成。本轮有限步检查不计入正式验收。正式运行从新目录和随机权重开始，后续状态记录在该目录的实时 JSON。
 
-## 已有迁移检查
-
-原地形、Lee 控制与电机响应、LiDAR 排列与偏航、NavRL 奖励与终止、共享场景碰撞隔离等检查保留。相机加速采用原生局部三角网格与顶层包围盒筛选；`logs/smoke/camera_tlas_parity.json` 中，17 个环境的初始、倾斜、动态物体移动、局部重置和噪声处理对照均为深度误差 0。控制器 CUDA Graph 的 1024 环境输出、部分重置和随机数状态对照见 `logs/profile/controller_cuda_graph_1024.json`。
-
-## 官方 PPO 的差异
-
-本项目采用已批准的官方 PPO。它使用单一优化器、平方价值损失及自身梯度裁剪，不复刻原自定义训练循环的三个优化器、`ValueNorm`、Huber 价值损失及策略损失乘动作维数。网络结构与 Beta 动作语义保留。差异在 `run_config.json` 中记录。
-
-## 验收结果
-
-正式结果来自 `training_statistics.jsonl`，按难度分别记录。`checkpoint_best_100.pt` 保存 100 障碍阶段的最佳策略。`training_result.json` 中的 `acceptance_passed` 要求 1024 并行环境、350 静态障碍和 100 动态障碍阶段的训练成功率至少 0.8。旧固定难度训练及独立评测文件不用于本轮验收。
-
-已启动 `run_acceptance.py --method both`，输出根目录为 `logs/curriculum/fresh_seed0_20261029/`，启动代码提交为 `e50ba1f`。NavRL 从随机初始化持续训练，未设置更新上限。100 阶段通过并完成首次 120 阶段报告后，入口将启动同样从随机初始化开始的 Zhang 正式训练。两次更新的 Zhang 短检查不会作为该训练的初始权重。
-
-截至 2026-10-29 03:12 UTC，正式 NavRL 最新统计在第 319 次更新：60 动态障碍，1045 个完成回合，首次到达率 0.287%、碰撞率 67.368%、高度越界率 1.818%、超时率 30.526%、无效状态率 0，平均 return 3772.03。尚未进入 80/100/120 阶段，验收未通过；正式 Zhang 尚未启动。此处是一次进度快照，后续状态以运行目录实时 JSON 为准。
-
-TensorBoard 服务地址为 `http://100.92.244.71:6012/`，日志根目录 `logs/curriculum/`。两任务均按阶段记录 `Train/<动态障碍数>/success_rate`、`collision_rate`、`bounds_rate`、`timeout_rate`、`invalid_rate`、`success_time_mean_s`、`episode_return_mean`、`episode_length_mean` 和 `reward_per_step_mean`。
+TensorBoard 地址为 `http://100.92.244.71:6012/`，日志根目录为 `logs/curriculum/`。两任务按阶段记录 `Train/<stage>/success_rate`、`collision_rate`、`bounds_rate`、`timeout_rate`、`invalid_rate`、`success_time_mean_s`、`episode_return_mean`、`episode_length_mean` 和 `reward_per_step_mean`。Zhang 另记录原损失、梯度范数、有效速度窗口比例、更新耗时与执行动作误差。

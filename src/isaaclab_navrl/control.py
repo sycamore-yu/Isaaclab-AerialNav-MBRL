@@ -162,7 +162,8 @@ class LeeRotorController:
         self.mixer = allocation.T @ (allocation @ allocation.T).inverse() @ inertia
         self.attitude_gain = torch.tensor([0.7, 0.7, 0.035], device=device) @ inertia[:3, :3].inverse()
         self.angular_rate_gain = torch.tensor([0.1, 0.1, 0.025], device=device) @ inertia[:3, :3].inverse()
-        self.velocity_gain = torch.tensor([2.2, 2.2, 2.2], device=device)
+        self.nominal_velocity_gain = torch.tensor([2.2, 2.2, 2.2], device=device)
+        self.velocity_gain = self.nominal_velocity_gain.expand(num_envs, -1).clone()
         self.gravity = torch.tensor([0.0, 0.0, GRAVITY], device=device)
         self.rotation_velocities = torch.tensor(ROTOR_CONFIG["max_rotation_velocities"], device=device)
         self.directions = self.rotor_group.directions

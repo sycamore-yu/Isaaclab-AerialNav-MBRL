@@ -11,6 +11,7 @@ import pytest
 import torch
 from torch.nn import functional as F
 
+from isaaclab_navrl.tasks.navigation.randomization import PolicyPerturbation, SimToRealCfg
 from isaaclab_navrl.zhang.config import ZhangTrainCfg
 from isaaclab_navrl.zhang.dynamics import (
     PointMassState,
@@ -234,18 +235,22 @@ class AnalyticEnv:
 
     def __init__(self):
         self.cfg = SimpleNamespace(seed=7, terrain_seed=0, num_static_obstacles=350,
-                                   num_dynamic_obstacles=100, evaluation=False)
+                                   num_dynamic_obstacles=100, evaluation=False, training_stage=None,
+                                   sim_to_real=SimToRealCfg())
+        self.perturbation = PolicyPerturbation(self.cfg.sim_to_real, 2, "cpu", 7, nominal_action_delay=1)
         self.zhang_parameters = nominal_parameters(2)
         self.position = torch.zeros(2, 3)
         self.velocity = torch.zeros(2, 3)
         self.episode_id = torch.zeros(2, dtype=torch.long)
         self.depth = torch.ones(2, 1, 12, 16)
         self.total_steps = 0
+        self.perturbation.reset(torch.arange(2))
         self.queried_at_steps = []
         self.nonfinite_events = torch.zeros((), dtype=torch.long)
         self.curriculum = None
 
     def reset(self):
+        self.perturbation.reset(torch.arange(2))
         self.position.zero_()
         self.position[:, 2] = 2
         self.velocity.zero_()
@@ -253,10 +258,15 @@ class AnalyticEnv:
         self.total_steps = 0
 
     def get_zhang_observation(self):
-        return {"position": self.position.clone(), "velocity": self.velocity.clone(),
+        observation = {"position": self.position.clone(), "velocity": self.velocity.clone(),
                 "quaternion": torch.tensor([[0.0, 0.0, 0.0, 1.0]]).expand(2, -1),
                 "target": torch.tensor([[10.0, 0.0, 2.0]]).expand(2, -1),
                 "episode_id": self.episode_id, "depth_features": self.depth}
+        observation.update({f"policy_{name}": observation[name] for name in (
+            "position", "velocity", "quaternion", "target", "depth_features"
+        )})
+        observation["input_delay_steps"] = torch.zeros(2, dtype=torch.long)
+        return observation
 
     def nearest_obstacle_vector(self, query):
         self.queried_at_steps.append(self.total_steps)
@@ -267,10 +277,12 @@ class AnalyticEnv:
         return surface - query
 
     def step(self, command):
+        command = self.perturbation.execute(command)
         self.total_steps += 1
         self.velocity += command * self.step_dt
         self.position += self.velocity * self.step_dt
-        transition = {"position": self.position.clone(), "velocity": self.velocity.clone()}
+        transition = {"position": self.position.clone(), "velocity": self.velocity.clone(),
+                      "executed_action": command.clone(), "actuator": command.clone()}
         done = torch.tensor([self.total_steps % 2 == 0, False])
         if done[0]:
             self.position[0] = torch.tensor([0.0, 0.0, 2.0])
@@ -278,6 +290,7 @@ class AnalyticEnv:
             self.episode_id[0] += 1
             # Explicitly exercise mutation of an EventManager-owned parameter buffer.
             self.zhang_parameters["pitch_ctl_delay"][0] = 11.0 + self.total_steps / 100
+            self.perturbation.reset(torch.tensor([0]))
         self.depth.fill_(1 + self.total_steps / 100)
         return {}, torch.zeros(2), done, torch.zeros(2, dtype=torch.bool), {"transition": transition}
 
@@ -298,11 +311,38 @@ def test_two_bptt_updates_survive_resets_and_save_independent_inference(tmp_path
     assert json.loads((tmp_path / "training_result.json").read_text())["fresh"] is True
     env.reset()
     policy = load_zhang_policy(env, checkpoint)
-    torch.testing.assert_close(policy(), torch.zeros(2, 3))
+    torch.testing.assert_close(env.step(policy())[-1]["transition"]["executed_action"], torch.zeros(2, 3))
     assert torch.isfinite(policy()).all()
     env.episode_id[0] += 1
     after_reset = policy()
-    torch.testing.assert_close(after_reset[0], torch.zeros(3))
+    assert torch.isfinite(after_reset).all()
+
+
+def test_stage_handoff_preserves_weights_optimizer_and_counts_actual_transitions(tmp_path):
+    checkpoint = None
+    previous_weights = None
+    expected_steps = 0
+    for index, stage in enumerate(("pretrain_s1", "pretrain_s2", "finetune_s1")):
+        env = AnalyticEnv()
+        env.cfg.training_stage = stage
+        env.cfg.sim_to_real.enabled = stage.startswith("finetune")
+        cfg = ZhangTrainCfg(timesteps=4 + index, max_iterations=1, velocity_window_s=0.2)
+        trainer = ZhangTrainer(env, cfg, tmp_path / stage)
+        if checkpoint is not None:
+            trainer.load_stage_checkpoint(checkpoint)
+            for name, value in trainer.model.state_dict().items():
+                torch.testing.assert_close(value, previous_weights[name], rtol=0, atol=0)
+            assert all(int(value["step"]) == index for value in trainer.optimizer.state.values())
+            assert trainer.schedule_updates == (0 if stage == "finetune_s1" else index)
+        result = trainer.run()
+        expected_steps += cfg.timesteps * env.num_envs
+        assert result["environment_steps"] == expected_steps
+        assert result["completed_updates"] == index + 1
+        assert result["stage_updates"] == 1
+        assert result["fresh"] is (index == 0)
+        assert all(int(value["step"]) == index + 1 for value in trainer.optimizer.state.values())
+        checkpoint = tmp_path / stage / "checkpoint_final.pt"
+        previous_weights = {name: value.clone() for name, value in trainer.model.state_dict().items()}
 
 
 def test_bptt_curriculum_resets_temporal_history_without_recreating_optimizer(tmp_path):
@@ -347,7 +387,10 @@ def test_event_randomization_uses_geometry_margin_and_nominal_evaluation():
     class EventEnv:
         num_envs = 16
         device = "cpu"
-        cfg = SimpleNamespace(seed=17, evaluation=False)
+        cfg = SimpleNamespace(seed=17, evaluation=False, training_stage=None)
+        mass_scale = torch.ones(16, 1)
+        inertia_scale = torch.ones(16, 1)
+        perturbation = SimpleNamespace(thrust_scale=torch.ones(16, 1), control_gain_scale=torch.ones(16, 1))
 
         def apply_zhang_camera_randomization(self, env_ids):
             self.camera_updated = env_ids.clone()

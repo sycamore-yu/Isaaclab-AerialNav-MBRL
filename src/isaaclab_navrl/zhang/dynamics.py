@@ -50,7 +50,10 @@ def disturbance_acceleration(velocity, quaternion_xyzw, parameters):
 
 
 def point_mass_step(state, command, rotation, parameters, dt, grad_decay):
-    alpha = torch.exp(-parameters["pitch_ctl_delay"] * dt)
+    response = parameters["pitch_ctl_delay"] * parameters.get("control_gain_scale", 1.0)
+    # The point-mass adjoint approximates slower attitude response at higher inertia.
+    # PhysX uses the sampled inertia tensor directly; both use the same sampled scale.
+    alpha = torch.exp(-response / parameters.get("inertia_scale", 1.0) * dt)
     actuator = command * (1 - alpha) + state.actuator * alpha
     with torch.no_grad():
         gravity = command.new_tensor((0.0, 0.0, -9.80665))
@@ -61,7 +64,9 @@ def point_mass_step(state, command, rotation, parameters, dt, grad_decay):
         cosine = cosine / (previous_norm * next_thrust.norm(dim=-1, keepdim=True)).clamp_min(1e-8)
         angular_speed = torch.acos(cosine.clamp(-1, 1)) / dt
         airmode = previous_thrust / previous_norm * angular_speed * 0.5
-    acceleration = actuator + _disturbance(state.velocity, rotation, parameters) + airmode
+    thrust_scale = parameters.get("thrust_scale", 1.0) / parameters.get("mass_scale", 1.0)
+    acceleration = (actuator + (actuator - gravity) * (thrust_scale - 1.0)
+                    + _disturbance(state.velocity, rotation, parameters) + airmode)
     position = (gradient_decay(state.position, grad_decay ** dt) + state.velocity * dt
                 + 0.5 * state.acceleration * dt * dt)
     velocity = gradient_decay(state.velocity, grad_decay ** dt) + 0.5 * (state.acceleration + acceleration) * dt
@@ -75,13 +80,13 @@ def policy_transition(state, command, rotation, parameters, cfg):
 
 
 def align_transition(prediction, measured_position, measured_velocity, prior_velocity, done,
-                     reset_position, reset_velocity, policy_dt):
+                     reset_position, reset_velocity, policy_dt, measured_actuator=None):
     """Align the terminal transition first; reset graphs only for the next state."""
     aligned = PointMassState(
         align_state(prediction.position, measured_position),
         align_state(prediction.velocity, measured_velocity),
         align_state(prediction.acceleration, (measured_velocity - prior_velocity.detach()) / policy_dt),
-        prediction.actuator,
+        (prediction.actuator if measured_actuator is None else align_state(prediction.actuator, measured_actuator)),
     )
     mask = done[:, None]
     next_state = PointMassState(

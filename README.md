@@ -1,6 +1,6 @@
 # NavRL 与 Zhang · Isaac Lab 3.0
 
-本项目在正式 Isaac Lab 3.0 / PhysX 中提供两个独立单机导航任务。1024 架并行无人机共用静态地形和动态物体，不相互碰撞。
+本项目在正式 Isaac Lab 3.0.0 / PhysX 中提供两个独立单机导航任务。并行无人机共用静态地形和动态物体，不相互碰撞。
 
 | 方法 | Gym 任务 | 训练方式 |
 |---|---|---|
@@ -9,44 +9,29 @@
 
 ## 训练与验收
 
-两个任务默认使用 **60→80→100→120 动态障碍课程**。静态障碍数为 350。当前阶段的训练成功率超过 80% 后晋级。验收目标是 **100 动态障碍阶段的训练成功率约 80%**。保存 `checkpoint_best_100.pt`，随后继续训练 120 阶段。正式验收入口在 100 阶段达标且完成首次 120 阶段训练统计后结束；120 阶段不增加成功率门槛。
+正式训练依次完成预训练 S1、预训练 S2、微调 S1、微调 S2。各阶段训练首次到达率达到 80% 后晋级。最终在开启扰动的 400 静态、100 动态障碍场景完成验收。
 
-正式训练从随机初始化开始，**没有训练步数上限，不加载预训练权重，不续训，不运行独立评测环境**。统计来自自然结束的训练回合。沿用原 NavRL `EpisodeStats` 的汇总频率，累计至少 `num_envs` 个完成回合后汇总一次。成功指碰撞前首次到达目标 0.5 m 范围；到达不改变原任务终止条件。
+| 阶段 | 静态障碍 | 动态障碍 | 额外扰动 |
+|---|---:|---:|---|
+| 预训练 S1 | 300 | 60 | 关闭 |
+| 预训练 S2 | 400 | 120 | 关闭 |
+| 微调 S1 | 300 | 60 | 开启 |
+| 微调 S2 | 400 | 100 | 开启 |
 
-按顺序完成两个任务：
-
-```bash
-cd /home/tong/tongworkspace/free/isaaclab-navrl
-.venv/bin/python scripts/run_acceptance.py \
-  --method both --output logs/curriculum/fresh_seed0 --train_seed 0 \
-  --train_args --timesteps 150 --velocity_window_s 6.0 --max_grad_norm 5
-```
-
-入口先运行 NavRL。NavRL 正常通过后释放其仿真进程，再启动 Zhang。两者分别写入 `navrl/` 和 `zhang/`，各自从随机初始化开始。任一任务出错或未通过就退出时，入口停止并报告错误。单独运行其中一个任务：
+预训练从随机初始化开始。后续阶段加载本次实验的前序检查点，保留网络和优化器。每阶段重建地图并清空回合历史。默认使用 1024 个并行环境，无更新次数上限。输出目录必须不存在。
 
 ```bash
 cd /home/tong/tongworkspace/free/isaaclab-navrl
 .venv/bin/python scripts/run_acceptance.py \
-  --method navrl --output logs/curriculum/navrl_seed0 --train_seed 0
-```
-
-```bash
-.venv/bin/python scripts/run_acceptance.py \
-  --method zhang --output logs/curriculum/zhang_seed0 --train_seed 0 \
+  --method zhang --output logs/curriculum/sim2real_zhang_seed0 --train_seed 0 \
   --train_args --timesteps 150 --velocity_window_s 6.0 --max_grad_norm 5
 ```
 
-输出目录必须不存在。入口固定 1024 个并行环境和 350 个静态障碍，并设置本机启动需要的 `OPENBLAS_NUM_THREADS=1`。运行环境由 `.venv`、`pyproject.toml` 和 `uv.lock` 固定：Python 3.12、Isaac Lab 3.0.0、Isaac Sim 6.2、RSL-RL 5.5.1。
+将 `--method` 设为 `navrl` 可运行 NavRL。Zhang 超参数只传给 Zhang 入口。有限步调试使用各训练脚本的 `--max_iterations`，不计入正式验收。
 
-### 日志与策略
+运行环境由 `.venv`、`pyproject.toml` 和 `uv.lock` 固定：Python 3.12、Isaac Lab 3.0.0、Isaac Sim 6.2、RSL-RL 5.5.1。
 
-`training_result.json` 持续记录已完成更新数、当前难度、各阶段最佳训练结果和 `acceptance_passed`。`training_statistics.jsonl` 保存每次训练回合汇总，包括样本数、成功率、碰撞率、超时率、越界率、无效状态率和成功到达时间。相同回合还统计平均 return、平均回合长度及每策略步平均 reward。平均 return 按完成回合数加权，每步 reward 为这些回合的总 return 除以总策略步数。`curriculum.json` 保存最近一次课程统计。
-
-TensorBoard 标签为 `Train/60/*`、`Train/80/*`、`Train/100/*`、`Train/120/*` 和 `Curriculum/dynamic_obstacles`。NavRL 的 TensorBoard 位于运行目录，Zhang 位于运行目录的 `tensorboard/`。原训练回报和即时 `reach_goal` 记录继续保留。
-
-每个阶段有独立的 `checkpoint_best_<数量>.pt`。周期检查点使用 `checkpoint_latest.pt`，避免无限训练持续增加文件数。训练状态中的成功标记只有在 1024 环境、350 静态障碍和 100 动态障碍阶段满足目标时才置为真。
-
-## 保留的算法配置
+## 任务配置
 
 | 配置 | NavRL | Zhang |
 |---|---|---|
@@ -57,38 +42,24 @@ TensorBoard 标签为 `Train/60/*`、`Train/80/*`、`Train/100/*`、`Train/120/*
 | 观测 | 8 维状态、1×36×4 静态 LiDAR、5×10 动态物体真值 | 深度图池化为 1×12×16，加 10 维状态 |
 | 动作 | 每轴 [-2,2] m/s 目标速度 | 六维网络输出解码为三维世界加速度，无每轴速度限制 |
 
-两任务保留原 Hummingbird USD、Lee 控制律和 RotorGroup 电机响应。原生 Multirotor/Thruster 接收实际旋翼推力并施加合力矩。相机追踪动态物体；NavRL 的 LiDAR 仅查询静态地形。
+两任务保留 Hummingbird USD、Lee 控制律和 RotorGroup 电机响应。Zhang 相机采样 640×480 像素，完成逆深度变换、噪声和 12×16 池化。动态物体同时进入相机、碰撞和损失。
 
-Zhang 保留速度匹配、避障、碰撞、加速度、jerk 和速度预测辅助损失，不加入高度损失。速度窗口为 60 个策略步；`velocity_window_s=6.0` 按 10 Hz 策略频率换算。学习率默认 0.001，余弦周期为 400 次更新，对应初始 2000 次更新内 5 个周期。2000 次后每增加 500 次检查进度，训练和调度持续执行。全局梯度范数裁剪默认为 5。`grad_decay=0.4` 按物理步使用 `grad_decay ** dt`。
+Zhang 保留速度匹配、避障、碰撞、加速度、Jerk 和速度预测辅助损失。学习率预训练默认为 0.001，微调默认为 0.00005；余弦周期为 400 次更新。全局梯度范数裁剪为 5。网络使用激活检查点减少显存。
 
-Zhang 训练通过 PyTorch 激活检查点减少网络中间张量的存储。反向传播重算 CNN 与 GRU，不重复执行 PhysX，也不改变展开长度或损失。
+## 扰动与日志
 
-`velocity_window_valid_fraction` 记录同一回合内有效速度窗口的比例。它用于识别回合过短导致的速度训练信号不足，不参与损失。
+两任务共用 `SimToRealCfg`。位置、速度、姿态、LiDAR、深度噪声，观测和动作延迟，控制响应，质量、惯量、推力系数均可独立配置。观测扰动仅进入策略输入。延迟由官方 `DelayBuffer` 按策略步推进，部分回合重置清空对应历史。
 
-场景预先分配 120 个动态物体。每阶段按原尺寸类别选取正确数量，并使用该难度的原始布局采样。未激活物体移出传感器范围，不参与动态观测、碰撞和损失。晋级发生在优化更新边界，所有无人机开始新回合，清空跨回合历史，网络和优化器连续保留。
+训练日志记录首次到达率、碰撞率、超时率、成功到达时间、return 和每步 reward。Zhang 另记原损失、梯度范数和 `executed_action_max_error`。动作差分在 Zhang 中沿用已有 Jerk 损失。
 
-## 验证
-
-```bash
-OPENBLAS_NUM_THREADS=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
-  .venv/bin/python -m pytest -q tests/test_training_curriculum.py \
-  tests/test_continuous_runner.py tests/test_zhang_contract.py \
-  tests/test_policy_checkpoint_conversion.py tests/test_policy_contract.py
-```
-
-```bash
-OPENBLAS_NUM_THREADS=1 OMNI_KIT_ACCEPT_EULA=YES \
-  .venv/bin/python tests/curriculum_scene.py \
-  --output logs/checks/curriculum_scene.json
-```
-
-场景检查使用合成成功结果触发晋级，只验证共享物体、深度和梯度，不用于策略验收。`train_navrl.py` 和 `train_zhang.py` 的 `--max_iterations` 仅供有限步调试；正式入口不传该参数。
+真实成功率来自 `training_statistics.jsonl`；阶段状态来自 `training_result.json`。TensorBoard 服务使用已有地址 `http://100.92.244.71:6012/`，日志根目录为 `logs/curriculum/`。
 
 ## 决策与证据
 
 - [训练课程与验收](docs/TRAINING_CURRICULUM.md)
-- [NavRL 迁移决策](docs/NAVRL_ISAACLAB_3_MIGRATION.md)与 [ADR](docs/adr/0001-port-navrl-with-original-task-semantics.md)
-- [Zhang 迁移决策](docs/ZHANG_MIGRATION_DECISIONS_1_4.md)
+- [共享 Sim-to-Real 扰动](docs/SIM_TO_REAL_TRAINING.md)
+- [NavRL 迁移决策](docs/migration/NAVRL_ISAACLAB_3_MIGRATION.md)
+- [Zhang 迁移决策](docs/migration/ZHANG_MIGRATION_DECISIONS_1_4.md)
 - [实现与验证状态](docs/IMPLEMENTATION_STATUS.md)
 
-旧固定难度训练和独立评测记录保留在历史日志中，不作为本轮课程验收。原版检查点转换只用于源码对照，正式训练不读取这些权重。
+本轮基线提交为 `2456a5b`。历史 NavRL 在 350 静态、60 动态场景的最高训练首次到达率为 49.28%，未通过旧验收。正式结果以本轮真实训练记录为准。

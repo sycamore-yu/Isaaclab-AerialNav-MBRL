@@ -18,7 +18,7 @@ def record_curriculum(curriculum, update, log_dir, writer, save_checkpoint):
     if report is None:
         return None
     log_dir = Path(log_dir)
-    difficulty = report["dynamic_obstacles"]
+    difficulty = report.get("stage", report["dynamic_obstacles"])
     if report["new_best"]:
         checkpoint = log_dir / f"checkpoint_best_{difficulty}.pt"
         save_checkpoint(checkpoint)
@@ -30,8 +30,12 @@ def record_curriculum(curriculum, update, log_dir, writer, save_checkpoint):
         if key.endswith(("_rate", "_mean")) or key in ("episodes", "success_time_mean_s"):
             if value is not None:
                 writer.add_scalar(f"Train/{difficulty}/{key}", value, update)
-    writer.add_scalar("Curriculum/dynamic_obstacles", difficulty, update)
-    writer.add_scalar("Train/100/acceptance_passed", int(curriculum.acceptance_passed), update)
+    writer.add_scalar("Curriculum/dynamic_obstacles", report["dynamic_obstacles"], update)
+    writer.add_scalar(f"Train/{difficulty}/stage_passed", int(curriculum.stage_passed), update)
+    writer.add_scalar("Train/finetune_s2/acceptance_passed", int(curriculum.acceptance_passed), update)
+    if "static_obstacles" in report:
+        writer.add_scalar("Curriculum/static_obstacles", report["static_obstacles"], update)
+        writer.add_scalar("Curriculum/randomization", int(report["randomization"]), update)
     writer.flush()
     write_json(log_dir / "curriculum.json", curriculum.state_dict())
     print("TRAINING_EPISODES " + json.dumps(report, allow_nan=False), flush=True)

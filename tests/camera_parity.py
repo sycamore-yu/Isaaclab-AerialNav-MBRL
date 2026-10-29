@@ -69,8 +69,14 @@ def main():
             assert camera._batch_size == 16
             result["world_mesh"] = camera.world_mesh_info
             result["intrinsics"] = camera.data.intrinsic_matrices.torch.cpu().tolist()
+            initial_intrinsics = camera.data.intrinsic_matrices.torch.clone()
 
             def measure(name, *, selected=None, refresh=True):
+                for begin, end in ((0, 16), (16, 17)):
+                    cached = camera._local_rays(begin, end)
+                    original = camera._compute_local_rays(begin, end)
+                    for actual, expected in zip(cached, original, strict=True):
+                        torch.testing.assert_close(actual, expected, rtol=0, atol=0)
                 if refresh:
                     camera.update(0.1)
                     reference.update(0.1)
@@ -177,6 +183,10 @@ def main():
             camera.set_intrinsic_matrices(matrices, env_ids=reset_ids)
             reference.set_intrinsic_matrices(matrices, env_ids=reset_ids)
             measure("partial_intrinsics_update")
+            camera.set_intrinsic_matrices(initial_intrinsics)
+            reference.set_intrinsic_matrices(initial_intrinsics)
+            measure("restored_shared_intrinsics")
+            result["cached_local_rays_exact"] = True
             result["status"] = "completed"
             persist()
             print("CAMERA_PARITY " + json.dumps(result), flush=True)

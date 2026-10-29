@@ -6,6 +6,13 @@ import torch
 
 from .task_logic import obstacle_categories
 
+STAGE_CONFIGS = {
+    "pretrain_s1": {"static_obstacles": 300, "dynamic_obstacles": 60, "randomization": False},
+    "pretrain_s2": {"static_obstacles": 400, "dynamic_obstacles": 120, "randomization": False},
+    "finetune_s1": {"static_obstacles": 300, "dynamic_obstacles": 60, "randomization": True},
+    "finetune_s2": {"static_obstacles": 400, "dynamic_obstacles": 100, "randomization": True},
+}
+
 
 def active_obstacle_indices(count: int, capacity: int) -> list[int]:
     """Select the original cuboid/cylinder width distribution from a fixed pool."""
@@ -30,7 +37,11 @@ class TrainingCurriculum:
     threshold = 0.8
     labels = ("success", "collision", "bounds", "invalid", "timeout")
 
-    def __init__(self, num_envs: int, device: str):
+    def __init__(self, num_envs: int, device: str, stage: str | None = None):
+        if stage is not None and stage not in STAGE_CONFIGS:
+            raise ValueError(f"Unknown training stage: {stage}")
+        self.stage_name = stage
+        self.stage_passed = False
         self.min_episodes = num_envs
         self.stage_index = 0
         self.outcome = torch.zeros(num_envs, dtype=torch.long, device=device)
@@ -46,7 +57,11 @@ class TrainingCurriculum:
 
     @property
     def active_obstacles(self) -> int:
-        return self.stages[self.stage_index]
+        return STAGE_CONFIGS[self.stage_name]["dynamic_obstacles"] if self.stage_name else self.stages[self.stage_index]
+
+    @property
+    def stage_key(self):
+        return self.stage_name or self.active_obstacles
 
     @torch.no_grad()
     def observe(self, transition: dict) -> None:
@@ -94,13 +109,20 @@ class TrainingCurriculum:
             "episode_length_mean": float(self.length_sum) / episodes,
             "reward_per_step_mean": float(self.return_sum / self.length_sum),
         }
-        previous = self.best_by_stage.get(self.active_obstacles)
+        if self.stage_name:
+            report.update(stage=self.stage_name, **STAGE_CONFIGS[self.stage_name])
+        previous = self.best_by_stage.get(self.stage_key)
         report["new_best"] = previous is None or report["success_rate"] > previous["success_rate"]
         if report["new_best"]:
-            self.best_by_stage[self.active_obstacles] = report.copy()
-        self.acceptance_passed |= self.active_obstacles == 100 and report["success_rate"] >= self.threshold
+            self.best_by_stage[self.stage_key] = report.copy()
+        self.stage_passed |= report["success_rate"] >= self.threshold
+        self.acceptance_passed |= (
+            (self.stage_name == "finetune_s2" if self.stage_name else self.active_obstacles == 100)
+            and self.stage_passed
+        )
         self.ready_to_advance = (
-            self.stage_index < len(self.stages) - 1 and report["success_rate"] > self.threshold
+            self.stage_name is None and self.stage_index < len(self.stages) - 1
+            and report["success_rate"] > self.threshold
         )
         self.last_report = report
         self.counts.zero_()
@@ -113,6 +135,7 @@ class TrainingCurriculum:
         if not self.ready_to_advance:
             raise RuntimeError("The current training success rate has not passed the next-stage threshold")
         self.stage_index += 1
+        self.stage_passed = False
         self.ready_to_advance = False
         self.reset_episodes()
         self.counts.zero_()
@@ -124,7 +147,10 @@ class TrainingCurriculum:
 
     def state_dict(self) -> dict:
         return {
-            "stages": list(self.stages), "active_dynamic_obstacles": self.active_obstacles,
+            "stages": list(STAGE_CONFIGS) if self.stage_name else list(self.stages),
+            "active_dynamic_obstacles": self.active_obstacles,
+            "stage": self.stage_name, "stage_passed": self.stage_passed,
+            "stage_config": STAGE_CONFIGS[self.stage_name] if self.stage_name else None,
             "promotion_success_rate": self.threshold, "episodes_per_report_min": self.min_episodes,
             "acceptance_passed": self.acceptance_passed,
             "best_by_stage": self.best_by_stage, "latest_training_report": self.last_report,

@@ -1,63 +1,297 @@
-"""Start fresh curriculum training; acceptance comes from training episodes."""
+"""Train each acceptance stage in a fresh process with the same run's checkpoints."""
 
 from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import subprocess
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
+
+STAGES = ("pretrain_s1", "pretrain_s2", "finetune_s1", "finetune_s2")
+STAGE_CONFIG = {
+    "pretrain_s1": {"static_obstacles": 300, "dynamic_obstacles": 60, "randomization": False},
+    "pretrain_s2": {"static_obstacles": 400, "dynamic_obstacles": 120, "randomization": False},
+    "finetune_s1": {"static_obstacles": 300, "dynamic_obstacles": 60, "randomization": True},
+    "finetune_s2": {"static_obstacles": 400, "dynamic_obstacles": 100, "randomization": True},
+}
+TRAIN_ARG_TYPES = {
+    "timesteps": int,
+    "velocity_window_s": float,
+    "lr": float,
+    "max_grad_norm": float,
+    "grad_decay": float,
+    "coef_obj_avoidance": float,
+    "coef_collide": float,
+    "coef_d_acc": float,
+    "coef_d_jerk": float,
+    "cosine_period_updates": int,
+}
 
 
-def validate_train_args(method, arguments):
-    allowed = {
-        "--timesteps", "--velocity_window_s", "--lr", "--max_grad_norm", "--grad_decay",
-        "--coef_obj_avoidance", "--coef_collide", "--coef_d_acc", "--coef_d_jerk", "--cosine_period_updates",
-    } if method == "zhang" else set()
-    rejected = [token for token in arguments if token.startswith("--") and token.split("=", 1)[0] not in allowed]
-    if rejected:
-        raise ValueError(f"Unsupported method hyperparameters: {rejected}")
+def parse_train_args(tokens: list[str]) -> dict[str, int | float]:
+    """Accept only Zhang hyperparameters; process and curriculum flags stay fixed."""
+    values = {}
+    index = 1 if tokens and tokens[0] == "--" else 0
+    while index < len(tokens):
+        option, separator, raw_value = tokens[index].partition("=")
+        key = option.removeprefix("--")
+        if not option.startswith("--") or key not in TRAIN_ARG_TYPES:
+            raise ValueError(f"Unsupported --train_args option: {option}")
+        if key in values:
+            raise ValueError(f"Duplicate --train_args option: {option}")
+        if not separator:
+            index += 1
+            if index == len(tokens):
+                raise ValueError(f"Missing value for {option}")
+            raw_value = tokens[index]
+        try:
+            value = TRAIN_ARG_TYPES[key](raw_value)
+        except ValueError as exc:
+            raise ValueError(f"Invalid value for {option}: {raw_value}") from exc
+        if not math.isfinite(value):
+            raise ValueError(f"{option} must be finite")
+        if key.startswith("coef_") or key == "grad_decay":
+            if value < 0:
+                raise ValueError(f"{option} must be nonnegative")
+        elif value <= 0:
+            raise ValueError(f"{option} must be positive")
+        values[key] = value
+        index += 1
+    return values
 
 
-def training_command(method, output, seed, device, train_args):
-    validate_train_args(method, train_args)
-    script = Path(__file__).resolve().parent / f"train_{method}.py"
-    return [sys.executable, str(script), "--log_dir", str(output), "--num_envs", "1024",
-            "--seed", str(seed), "--terrain_seed", str(seed), "--static_obstacles", "350",
-            "--device", device, "--stop_after_acceptance", *train_args]
+def build_command(
+    *,
+    method: str,
+    stage: str,
+    log_dir: Path,
+    scripts_dir: Path,
+    num_envs: int,
+    seed: int,
+    device: str,
+    finetune_lr: float,
+    train_args: dict[str, int | float],
+    parent_checkpoint: Path | None,
+    executable: str = sys.executable,
+) -> list[str]:
+    command = [
+        executable,
+        str(scripts_dir / f"train_{method}.py"),
+        "--stage", stage,
+        "--log_dir", str(log_dir),
+        "--num_envs", str(num_envs),
+        "--seed", str(seed),
+        "--terrain_seed", str(seed),
+        "--device", device,
+        "--stop_after_acceptance",
+    ]
+    if parent_checkpoint is not None:
+        command += ["--checkpoint", str(parent_checkpoint)]
+    if method == "zhang":
+        for key, value in train_args.items():
+            if key != "lr" or not stage.startswith("finetune_"):
+                command += [f"--{key}", str(value)]
+    if stage.startswith("finetune_"):
+        command += ["--lr", str(finetune_lr)]
+    return command
 
 
-def main():
+def validate_stage_result(
+    result: dict[str, Any],
+    *,
+    method: str,
+    stage: str,
+    num_envs: int,
+    parent_checkpoint: Path | None,
+) -> list[str]:
+    """Validate one real training report against the fixed acceptance protocol."""
+    errors = []
+
+    def expect(condition: bool, message: str) -> None:
+        if not condition:
+            errors.append(message)
+
+    expected = STAGE_CONFIG[stage]
+    expect(result.get("method") == method, "method does not match the launched trainer")
+    expect(result.get("status") == "completed", "training status is not completed")
+    expect(result.get("stage") == stage, "training stage does not match")
+    expect(result.get("num_envs") == num_envs and num_envs >= 1024, "num_envs must match and be at least 1024")
+    expect(result.get("stage_passed") is True, "trainer has not passed the stage")
+    expect(result.get("max_updates") is None, "training has a maximum update limit")
+    expected_parent = str(parent_checkpoint) if parent_checkpoint is not None else None
+    expect(result.get("parent_checkpoint") == expected_parent, "parent checkpoint is not the previous stage of this run")
+    expect(result.get("fresh") is (parent_checkpoint is None), "fresh-run flag disagrees with the checkpoint lineage")
+
+    curriculum = result.get("curriculum")
+    if not isinstance(curriculum, dict):
+        return errors + ["curriculum result is missing"]
+    expect(curriculum.get("stage") == stage, "curriculum stage does not match")
+    expect(curriculum.get("stage_passed") is True, "curriculum has not passed the stage")
+    expect(curriculum.get("stage_config") == expected, "curriculum obstacle counts or randomization do not match")
+    expect(curriculum.get("active_dynamic_obstacles") == expected["dynamic_obstacles"], "active dynamic obstacle count does not match")
+    expect(curriculum.get("promotion_success_rate") == 0.8, "curriculum promotion threshold must be 0.8")
+    expect(curriculum.get("episodes_per_report_min") == num_envs, "episode report threshold does not match num_envs")
+
+    report = curriculum.get("latest_training_report")
+    if not isinstance(report, dict):
+        return errors + ["current-stage training report is missing"]
+    expect(report.get("stage") == stage, "training report belongs to another stage")
+    for key, value in expected.items():
+        expect(report.get(key) == value, f"training report {key} does not match")
+    episodes = report.get("episodes")
+    expect(isinstance(episodes, int) and episodes >= num_envs, "training report has too few completed episodes")
+    success_rate = report.get("success_rate")
+    expect(
+        isinstance(success_rate, (int, float)) and math.isfinite(success_rate) and 0.8 <= success_rate <= 1.0,
+        "current-stage first-arrival success rate is below 0.8 or invalid",
+    )
+    if stage == STAGES[-1]:
+        expect(result.get("acceptance_passed") is True, "final-stage trainer acceptance has not passed")
+        expect(curriculum.get("acceptance_passed") is True, "final-stage curriculum acceptance has not passed")
+    return errors
+
+
+def write_json(path: Path, value: dict[str, Any]) -> None:
+    temporary = path.with_suffix(".json.tmp")
+    temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    temporary.replace(path)
+
+
+def run_pipeline(args: argparse.Namespace, train_args: dict[str, int | float]) -> int:
+    output = Path(args.output).expanduser().resolve()
+    output.mkdir(parents=True, exist_ok=False)
+    methods = ("zhang", "navrl") if args.method == "both" else (args.method,)
+    summary: dict[str, Any] = {
+        "status": "running",
+        "acceptance_passed": False,
+        "method": args.method,
+        "num_envs": args.num_envs,
+        "train_seed": args.train_seed,
+        "finetune_lr": args.finetune_lr,
+        "train_args": train_args,
+        "stage_order": list(STAGES),
+        "started_at": datetime.now(UTC).isoformat(),
+        "methods": {},
+        "error": None,
+    }
+    summary_path = output / "training_result.json"
+    write_json(summary_path, summary)
+    environment = os.environ.copy()
+    environment.update(OPENBLAS_NUM_THREADS="1", OMNI_KIT_ACCEPT_EULA="YES", PYTHONUNBUFFERED="1")
+    scripts_dir = Path(__file__).resolve().parent
+    current_method: dict[str, Any] | None = None
+    current_stage: dict[str, Any] | None = None
+    try:
+        for method in methods:
+            current_method = {"status": "running", "acceptance_passed": False, "stages": []}
+            summary["methods"][method] = current_method
+            parent_checkpoint = None
+            for stage in STAGES:
+                current_stage = None
+                log_dir = output / method / stage
+                log_dir.mkdir(parents=True)
+                stdout_log = log_dir.parent / f"{stage}.stdout.log"
+                command = build_command(
+                    method=method, stage=stage, log_dir=log_dir, scripts_dir=scripts_dir,
+                    num_envs=args.num_envs, seed=args.train_seed, device=args.device,
+                    finetune_lr=args.finetune_lr, train_args=train_args, parent_checkpoint=parent_checkpoint,
+                )
+                current_stage = {
+                    "stage": stage,
+                    "stage_config": STAGE_CONFIG[stage],
+                    "status": "running",
+                    "log_dir": str(log_dir),
+                    "stdout_log": str(stdout_log),
+                    "parent_checkpoint": str(parent_checkpoint) if parent_checkpoint is not None else None,
+                    "command": command,
+                    "exit_code": None,
+                    "validation_errors": [],
+                    "result": None,
+                }
+                current_method["stages"].append(current_stage)
+                write_json(summary_path, summary)
+                print(f"Starting {method}/{stage}: {log_dir}", flush=True)
+                with stdout_log.open("w", encoding="utf-8") as stream:
+                    process = subprocess.run(
+                        command, cwd=scripts_dir.parent, env=environment,
+                        stdout=stream, stderr=subprocess.STDOUT, check=False,
+                    )
+                current_stage["exit_code"] = process.returncode
+                result_path = log_dir / "training_result.json"
+                if result_path.is_file():
+                    try:
+                        current_stage["result"] = json.loads(result_path.read_text(encoding="utf-8"))
+                    except json.JSONDecodeError as exc:
+                        raise ValueError(f"Invalid training result {result_path}: {exc}") from exc
+                errors = []
+                if process.returncode != 0:
+                    errors.append(f"trainer exited with code {process.returncode}; see {stdout_log}")
+                if not isinstance(current_stage["result"], dict):
+                    errors.append("trainer did not write a training_result.json object")
+                else:
+                    errors += validate_stage_result(
+                        current_stage["result"], method=method, stage=stage,
+                        num_envs=args.num_envs, parent_checkpoint=parent_checkpoint,
+                    )
+                checkpoint = log_dir / "checkpoint_stage.pt"
+                if not checkpoint.is_file():
+                    errors.append(f"stage checkpoint is missing: {checkpoint}")
+                current_stage["validation_errors"] = errors
+                if errors:
+                    raise RuntimeError(f"{method}/{stage}: " + "; ".join(errors))
+                current_stage["status"] = "completed"
+                current_stage["checkpoint"] = str(checkpoint)
+                parent_checkpoint = checkpoint
+                write_json(summary_path, summary)
+                print(f"Passed {method}/{stage}", flush=True)
+            current_method["status"] = "completed"
+            current_method["acceptance_passed"] = True
+        summary["status"] = "completed"
+        summary["acceptance_passed"] = True
+        exit_code = 0
+    except (OSError, ValueError, RuntimeError, KeyboardInterrupt) as exc:
+        summary["status"] = "failed"
+        summary["error"] = str(exc) or "Training interrupted"
+        if current_method is not None:
+            current_method["status"] = "failed"
+        if current_stage is not None:
+            current_stage["status"] = "failed"
+        print(summary["error"], file=sys.stderr, flush=True)
+        exit_code = 130 if isinstance(exc, KeyboardInterrupt) else 1
+    summary["finished_at"] = datetime.now(UTC).isoformat()
+    write_json(summary_path, summary)
+    return exit_code
+
+
+def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
-    parser.add_argument("--method", choices=("navrl", "zhang", "both"), required=True)
-    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--method", choices=("navrl", "zhang", "both"), default="zhang")
+    parser.add_argument("--output", required=True)
+    parser.add_argument("--num_envs", type=int, default=1024)
     parser.add_argument("--train_seed", type=int, default=0)
     parser.add_argument("--device", default="cuda:0")
+    parser.add_argument("--finetune_lr", type=float, default=5e-5)
     parser.add_argument("--train_args", nargs=argparse.REMAINDER, default=[])
     args = parser.parse_args()
-    if args.output.exists():
-        parser.error(f"Fresh training requires a new output directory: {args.output}")
-    methods = ("navrl", "zhang") if args.method == "both" else (args.method,)
-    commands = []
-    for method in methods:
-        output = args.output / method if args.method == "both" else args.output
-        train_args = args.train_args if method == "zhang" or args.method != "both" else []
-        try:
-            commands.append((training_command(method, output.resolve(), args.train_seed, args.device, train_args), output))
-        except ValueError as error:
-            parser.error(str(error))
-    environment = os.environ.copy()
-    environment.update(OMNI_KIT_ACCEPT_EULA="YES", OPENBLAS_NUM_THREADS="1", PYTHONUNBUFFERED="1")
-    for command, output in commands:
-        print("RUN " + " ".join(command), flush=True)
-        result = subprocess.run(command, env=environment, check=False)
-        if result.returncode:
-            raise SystemExit(result.returncode)
-        training_result = json.loads((output / "training_result.json").read_text())
-        if training_result["status"] != "completed" or not training_result["acceptance_passed"]:
-            raise RuntimeError(f"Training ended before acceptance: {output}")
+    if args.num_envs < 1024:
+        parser.error("formal acceptance requires --num_envs >= 1024")
+    if not math.isfinite(args.finetune_lr) or args.finetune_lr <= 0:
+        parser.error("--finetune_lr must be finite and positive")
+    try:
+        train_args = parse_train_args(args.train_args)
+    except ValueError as exc:
+        parser.error(str(exc))
+    if args.method == "navrl" and train_args:
+        parser.error("--train_args contains Zhang hyperparameters; use --method zhang or both")
+    if Path(args.output).expanduser().exists():
+        parser.error("--output must be a new directory; existing runs cannot be resumed")
+    return run_pipeline(args, train_args)
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

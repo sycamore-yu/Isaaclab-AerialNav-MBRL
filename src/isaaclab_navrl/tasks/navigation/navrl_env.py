@@ -10,6 +10,7 @@ from isaaclab.utils.math import quat_apply, quat_from_euler_xyz
 from isaaclab_navrl.control import LeeRotorController
 
 from .curriculum import TrainingCurriculum, active_obstacle_indices
+from .randomization import PolicyPerturbation
 from .task_logic import DynamicObstacleMotion, goal_frame, navigation_terms
 
 
@@ -17,12 +18,20 @@ class NavRLEnv(DirectRLEnv):
     """The original NavRL observation/reward task on Isaac Lab 3.0."""
 
     def __init__(self, cfg, render_mode=None, **kwargs):
+        if cfg.evaluation:
+            cfg.sim_to_real.enabled = False
         cfg.configure_scene()
         super().__init__(cfg, render_mode=render_mode, **kwargs)
         self.drone = self.scene["drone"]
         self.lidar = self.scene["lidar"]
         self.controller = LeeRotorController(self.num_envs, self.device, dt=self.physics_dt)
-        self.curriculum = TrainingCurriculum(self.num_envs, self.device) if cfg.training_curriculum else None
+        self.curriculum = TrainingCurriculum(self.num_envs, self.device, stage=cfg.training_stage) if cfg.training_curriculum else None
+        self.perturbation = PolicyPerturbation(
+            cfg.sim_to_real, self.num_envs, self.device, cfg.seed,
+            nominal_action_delay=1 if cfg.method == "zhang" else 0,
+        )
+        self.mass_scale = torch.ones(self.num_envs, 1, device=self.device)
+        self.inertia_scale = torch.ones_like(self.mass_scale)
         if self.curriculum is not None:
             cfg.num_dynamic_obstacles = self.curriculum.active_obstacles
         self.motion = DynamicObstacleMotion(
@@ -40,6 +49,9 @@ class NavRLEnv(DirectRLEnv):
         self.height_range = torch.zeros(self.num_envs, 2, device=self.device)
         self.previous_velocity = torch.zeros_like(self.target_pos)
         self.command = torch.zeros_like(self.target_pos)
+        self.executed_actions = torch.zeros_like(self.command)
+        self.previous_actions = torch.zeros_like(self.command)
+        self.action_difference = torch.zeros(self.num_envs, device=self.device)
         self.first_reach_step = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
         self.episode_return = torch.zeros(self.num_envs, device=self.device)
         self.nonfinite_events = torch.zeros((), dtype=torch.long, device=self.device)
@@ -108,6 +120,7 @@ class NavRLEnv(DirectRLEnv):
         )
         self.previous_velocity[env_ids] = 0
         self.command[env_ids] = 0
+        self.previous_actions[env_ids] = 0
         self.first_reach_step[env_ids] = 0
         self.episode_return[env_ids] = 0
         self.episode_id[env_ids] += 1
@@ -151,7 +164,11 @@ class NavRLEnv(DirectRLEnv):
         self._terms = None
         self.extras = {}
         self.actions = actions.detach().clone()
-        self.command = goal_frame(self.actions, self.target_dir, inverse=True)
+        self.action_difference = (self.actions - self.previous_actions).square().sum(-1)
+        self.previous_actions.copy_(self.actions)
+        self.executed_actions = self.perturbation.execute(self.actions)
+        self.executed_action_lags = self.perturbation.action_buffer.time_lags.clone()
+        self.command = goal_frame(self.executed_actions, self.target_dir, inverse=True)
 
     @torch.no_grad()
     def _apply_action(self):
@@ -202,6 +219,8 @@ class NavRLEnv(DirectRLEnv):
             "reached": terms["reached"].clone(), "collision": terms["collision"].clone(),
             "bounds": terms["bounds"].clone(), "invalid": terms["invalid"].clone(),
             "timeout": timed_out.clone(), "terminated": terminated.clone(),
+            "executed_action": self.executed_actions.clone(),
+            "action_delay_steps": self.executed_action_lags.clone(),
         }
         return terminated, timed_out
 
@@ -210,24 +229,48 @@ class NavRLEnv(DirectRLEnv):
 
     def _get_rewards(self):
         reward = self._terms["reward"]
+        cfg = self.cfg.sim_to_real
+        if self.cfg.method == "navrl" and cfg.enabled and cfg.action_difference:
+            reward = reward - cfg.action_difference_weight * self.action_difference
         self.episode_return += reward
         self.extras["transition"]["episode_return"] = self.episode_return.clone()
         self.previous_velocity.copy_(self.drone.data.root_lin_vel_w.torch)
         return reward
 
     def _get_observations(self):
-        terms = self._compute_terms()
-        return {"policy": torch.cat(
-            (terms["state"], terms["lidar"].flatten(1), terms["dynamic_obstacle"].flatten(1)), dim=-1
-        )}
+        def sample():
+            terms = self._compute_terms()
+            if self.cfg.method == "navrl" and self.perturbation.noisy:
+                state = self.root_state()
+                position, velocity, _ = self.perturbation.state(state[:, :3], state[:, 7:10], state[:, 3:7])
+                distance = self.perturbation.normal(4.0 - terms["lidar"], self.cfg.sim_to_real.lidar_std).clamp(0, 4)
+                terms = navigation_terms(position, velocity, self.target_pos, self.target_dir, distance,
+                                         self.motion, self.previous_velocity, self.height_range)
+            return torch.cat((terms["state"], terms["lidar"].flatten(1),
+                              terms["dynamic_obstacle"].flatten(1)), dim=-1)
+
+        if self.cfg.method == "zhang":
+            return {"policy": sample()}
+        return {"policy": self.perturbation.observe(self.common_step_counter, sample)}
 
     def get_zhang_observation(self):
         state = self.root_state()
         features = self.scene["depth_camera"].data.output["policy_depth"].torch
+        depth = features.permute(0, 3, 1, 2).clone()
+
+        def sample():
+            position, velocity, quaternion = self.perturbation.state(state[:, :3], state[:, 7:10], state[:, 3:7])
+            return torch.cat((position, velocity, quaternion, self.target_pos, depth.flatten(1)), dim=-1)
+
+        policy = self.perturbation.observe(self.common_step_counter, sample)
         return {
-            "depth_features": features.permute(0, 3, 1, 2).clone(), "position": state[:, :3],
+            "depth_features": depth, "position": state[:, :3],
             "quaternion": state[:, 3:7], "velocity": state[:, 7:10],
             "target": self.target_pos.clone(), "episode_id": self.episode_id.clone(),
+            "policy_position": policy[:, :3], "policy_velocity": policy[:, 3:6],
+            "policy_quaternion": policy[:, 6:10], "policy_target": policy[:, 10:13],
+            "policy_depth_features": policy[:, 13:].reshape(self.num_envs, 1, 12, 16),
+            "input_delay_steps": self.perturbation.observation_buffer.time_lags.clone(),
         }
 
 
@@ -282,7 +325,9 @@ class ZhangNavRLEnv(NavRLEnv):
         self._terms = None
         self.extras = {}
         self.actions = actions.detach().clone()
-        self.command = self.actions
+        self.executed_actions = self.perturbation.execute(self.actions)
+        self.executed_action_lags = self.perturbation.action_buffer.time_lags.clone()
+        self.command = self.executed_actions
         self._physical_substep = 0
         self._policy_start_time = self.episode_length_buf.float() * self.step_dt
         self._event_code.zero_()
@@ -330,6 +375,7 @@ class ZhangNavRLEnv(NavRLEnv):
         self._event_time[timed_out_first] = self.episode_length_buf[timed_out_first].float() * self.step_dt
         self.extras["transition"]["first_event_code"] = self._event_code.clone()
         self.extras["transition"]["first_event_time_s"] = self._event_time.clone()
+        self.extras["transition"]["actuator"] = self.filtered_command.clone()
         return terminated, timeout
 
     @torch.no_grad()
@@ -341,7 +387,8 @@ class ZhangNavRLEnv(NavRLEnv):
             self._record_substep(self._compute_first_events())
         self._physical_substep += 1
         state = self.root_state()
-        alpha = torch.exp(-self.zhang_parameters["pitch_ctl_delay"] * self.physics_dt)
+        alpha = torch.exp(-self.zhang_parameters["pitch_ctl_delay"]
+                          * self.zhang_parameters["control_gain_scale"] * self.physics_dt)
         self.filtered_command.mul_(alpha).add_(self.command * (1 - alpha))
         forward = quat_apply(state[:, 3:7], state.new_tensor((1.0, 0.0, 0.0)).expand(self.num_envs, -1))
         desired_forward = torch.nn.functional.normalize(5.0 * forward + self.target_pos - state[:, :3], dim=-1)

@@ -5,7 +5,7 @@ from __future__ import annotations
 import isaaclab.sim as sim_utils
 from isaaclab.assets import AssetBaseCfg, RigidObjectCfg, RigidObjectCollectionCfg
 from isaaclab.envs import DirectRLEnvCfg
-from isaaclab.managers import EventTermCfg
+from isaaclab.managers import EventTermCfg, SceneEntityCfg
 from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sensors import MultiMeshRayCasterCameraCfg, MultiMeshRayCasterCfg, RayCasterCfg, patterns
 from isaaclab.sim.schemas import UsdPhysicsCollisionCfg, UsdPhysicsRigidBodyCfg
@@ -14,10 +14,11 @@ from isaaclab.utils.string import ResolvableString
 from isaaclab_physx.physics import PhysxCfg
 from isaaclab_physx.sim.schemas import PhysxRigidBodyCfg
 
-from isaaclab_navrl.control import make_drone_cfg
+from isaaclab_navrl.control import ROTOR_CONFIG, make_drone_cfg
 from isaaclab_navrl.terrain import build_terrain_cfg
 
 from ...depth_camera_cfg import BatchedDepthCameraCfg
+from ...randomization import SimToRealCfg
 from ...task_logic import dynamic_layout
 
 
@@ -78,6 +79,26 @@ def make_dynamic_cfg(count: int, seed: int) -> RigidObjectCollectionCfg | None:
 
 
 @configclass
+class NavigationEventsCfg:
+    nominal_dynamics = EventTermCfg(
+        func="isaaclab_navrl.tasks.navigation.randomization:capture_nominal_dynamics", mode="startup",
+    )
+    mass = EventTermCfg(
+        func="isaaclab.envs.mdp.events:randomize_rigid_body_mass", mode="reset",
+        params={"asset_cfg": SceneEntityCfg("drone"), "mass_distribution_params": (0.9, 1.1),
+                "operation": "scale", "distribution": "uniform", "recompute_inertia": False, "min_mass": 1e-6},
+    )
+    inertia = EventTermCfg(
+        func="isaaclab.envs.mdp.events:randomize_rigid_body_inertia", mode="reset",
+        params={"asset_cfg": SceneEntityCfg("drone"), "inertia_distribution_params": (0.9, 1.1),
+                "operation": "scale", "distribution": "uniform", "diagonal_only": False},
+    )
+    policy_parameters = EventTermCfg(
+        func="isaaclab_navrl.tasks.navigation.randomization:reset_sim_to_real", mode="reset",
+    )
+
+
+@configclass
 class NavRLEnvCfg(DirectRLEnvCfg):
     decimation = 1
     episode_length_s = 35.2
@@ -88,6 +109,9 @@ class NavRLEnvCfg(DirectRLEnvCfg):
     num_static_obstacles: int = 350
     num_dynamic_obstacles: int = 60
     training_curriculum: bool = True
+    training_stage: str | None = None
+    sim_to_real: SimToRealCfg = SimToRealCfg()
+    events = NavigationEventsCfg()
     terrain_seed: int = 0
     dynamic_speed_range: tuple[float, float] = (0.5, 1.5)
     evaluation: bool = False
@@ -115,18 +139,32 @@ class NavRLEnvCfg(DirectRLEnvCfg):
 
     def configure_scene(self):
         """Apply task counts after command-line overrides and before launch."""
+        self.events = ZhangEventsCfg() if self.method == "zhang" else NavigationEventsCfg()
+        active = self.sim_to_real.enabled and not self.evaluation
+        if active and self.sim_to_real.mass:
+            self.events.mass.params["mass_distribution_params"] = self.sim_to_real.mass_scale_range
+        else:
+            self.events.mass = None
+        if active and self.sim_to_real.inertia:
+            self.events.inertia.params["inertia_distribution_params"] = self.sim_to_real.inertia_scale_range
+        else:
+            self.events.inertia = None
         self.scene.terrain = build_terrain_cfg(self.scene.num_envs, self.num_static_obstacles, self.terrain_seed)
         self.scene.dynamic_obstacles = make_dynamic_cfg(self.dynamic_capacity(), self.terrain_seed)
         self.scene.lidar.update_period = self.sim.dt * self.decimation
         for actuator in self.scene.drone.actuators.values():
             actuator.dt = self.sim.dt
+            thrust_scale_max = self.sim_to_real.thrust_scale_range[1] if active and self.sim_to_real.thrust else 1.0
+            # RotorGroup enforces each sampled motor limit. The native force
+            # adapter must not clip a +10% coefficient back to the nominal limit.
+            actuator.thrust_range = (0.0, ROTOR_CONFIG["force_constants"][0] * 838**2 * thrust_scale_max)
 
     def dynamic_capacity(self) -> int:
-        return 120 if self.training_curriculum else self.num_dynamic_obstacles
+        return 120 if self.training_curriculum and self.training_stage is None else self.num_dynamic_obstacles
 
 
 @configclass
-class ZhangEventsCfg:
+class ZhangEventsCfg(NavigationEventsCfg):
     parameters = EventTermCfg(
         func="isaaclab_navrl.zhang.events:randomize_zhang_parameters", mode="reset",
     )
@@ -168,7 +206,11 @@ class ZhangNavRLEnvCfg(NavRLEnvCfg):
             spawn=None,
             update_period=0.1,
             seed=self.seed + 101,
-            pixel_noise_std=0.0 if self.evaluation else 0.02,
+            pixel_noise_std=(
+                0.0 if self.evaluation else
+                (self.sim_to_real.depth_std if self.sim_to_real.enabled and self.sim_to_real.observation_noise else 0.0)
+                if self.training_stage is not None or self.sim_to_real.enabled else 0.02
+            ),
             mesh_prim_paths=meshes,
             offset=MultiMeshRayCasterCameraCfg.OffsetCfg(
                 pos=(0.09, 0.0, 0.095), rot=(0.0, 0.0, 0.0, 1.0), convention="world"

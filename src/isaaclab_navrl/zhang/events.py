@@ -18,7 +18,8 @@ def randomize_zhang_parameters(env, env_ids, body_radius=0.3):
         shapes = {"max_speed": 1, "margin": None, "thr_est_error": 1,
                   "pitch_ctl_delay": 1, "yaw_ctl_delay": 1, "drag_2": 2,
                   "z_drag_coef": 1, "wind": 3, "dg": 3,
-                  "camera_pitch": None, "camera_fov_scale": None}
+                  "camera_pitch": None, "camera_fov_scale": None,
+                  "mass_scale": 1, "inertia_scale": 1, "thrust_scale": 1, "control_gain_scale": 1}
         env.zhang_parameters = {
             name: torch.zeros((env.num_envs,) if size is None else (env.num_envs, size), device=env.device)
             for name, size in shapes.items()
@@ -38,7 +39,7 @@ def randomize_zhang_parameters(env, env_ids, body_radius=0.3):
     parameters = env.zhang_parameters
     parameters["max_speed"][env_ids] = (0.75 + 2.5 * uniform(1)) * 3
     parameters["z_drag_coef"][env_ids] = 1
-    if env.cfg.evaluation:
+    if env.cfg.evaluation or env.cfg.training_stage is not None:
         parameters["margin"][env_ids] = body_radius
         parameters["thr_est_error"][env_ids] = 1
         parameters["pitch_ctl_delay"][env_ids] = 12
@@ -59,13 +60,17 @@ def randomize_zhang_parameters(env, env_ids, body_radius=0.3):
         parameters["dg"][env_ids] = 0.2 * normal(3)
         parameters["camera_pitch"][env_ids] = normal() * (math.pi / 180)
         parameters["camera_fov_scale"][env_ids] = 0.95 + 0.1 * uniform()
+    parameters["mass_scale"][env_ids] = env.mass_scale[env_ids]
+    parameters["inertia_scale"][env_ids] = env.inertia_scale[env_ids]
+    parameters["thrust_scale"][env_ids] = env.perturbation.thrust_scale[env_ids]
+    parameters["control_gain_scale"][env_ids] = env.perturbation.control_gain_scale[env_ids]
     env.apply_zhang_camera_randomization(env_ids)
 
 
 @torch.no_grad()
 def update_zhang_disturbance(env, env_ids, interval_s=0.1):
     """Source OU force-bias update, scheduled by the Event Manager."""
-    if env.cfg.evaluation:
+    if env.cfg.evaluation or env.cfg.training_stage is not None:
         return
     if env_ids is None:
         env_ids = torch.arange(env.num_envs, device=env.device)

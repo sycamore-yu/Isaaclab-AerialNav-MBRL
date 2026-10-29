@@ -182,6 +182,9 @@ class BatchedDepthCamera(MultiMeshRayCasterCamera):
         self._ray_pixels = pixels.T
         self._ray_axis_sign = torch.tensor([1, -1, -1], device=self._device).unsqueeze(0).unsqueeze(2)
         self._ray_inverse_intrinsics = torch.inverse(self._data.intrinsic_matrices.torch)
+        self._shared_local_ray_cache = {}
+        self._shared_ray_intrinsics = None
+        self._refresh_shared_local_rays()
         self._create_offset_buffers(self._num_envs)
         self._frame_wp = wp.zeros(self._num_envs, dtype=wp.int64, device=self._device)
         self._frame = wp.to_torch(self._frame_wp)
@@ -201,13 +204,39 @@ class BatchedDepthCamera(MultiMeshRayCasterCamera):
     def set_intrinsic_matrices(self, matrices, focal_length=1.0, env_ids=None):
         indices = slice(None) if env_ids is None else env_ids
         matrices = matrices.to(device=self._device, dtype=self._data.intrinsic_matrices.torch.dtype)
+        if torch.equal(self._data.intrinsic_matrices.torch[indices], matrices):
+            # Episode resets can reapply the same calibration without changing rays.
+            self._focal_length = focal_length
+            return
         # Keep native singular-matrix error checking outside the frame hot path.
         inverse = torch.inverse(matrices)
         self._data.intrinsic_matrices.torch[indices] = matrices
         self._ray_inverse_intrinsics[indices] = inverse
         self._focal_length = focal_length
+        self._refresh_shared_local_rays()
+
+    def _refresh_shared_local_rays(self):
+        # Only calibration setters synchronize to decide whether rays are shared.
+        inverse = self._ray_inverse_intrinsics
+        self._use_shared_local_rays = torch.equal(inverse, inverse[:1].expand_as(inverse))
+        if not self._use_shared_local_rays:
+            self._shared_local_ray_cache.clear()
+            self._shared_ray_intrinsics = None
+        elif self._shared_ray_intrinsics is None or not torch.equal(inverse[:1], self._shared_ray_intrinsics):
+            self._shared_local_ray_cache.clear()
+            self._shared_ray_intrinsics = inverse[:1].clone()
 
     def _local_rays(self, begin, end):
+        if not self._use_shared_local_rays:
+            return self._compute_local_rays(begin, end)
+        count = end - begin
+        if count not in self._shared_local_ray_cache:
+            # Keep the original matmul batch shape, including a separate tail batch.
+            starts, directions = self._compute_local_rays(begin, end)
+            self._shared_local_ray_cache[count] = (starts.contiguous(), directions.contiguous())
+        return self._shared_local_ray_cache[count]
+
+    def _compute_local_rays(self, begin, end):
         pixels = torch.matmul(self._ray_inverse_intrinsics[begin:end], self._ray_pixels)
         pixels = pixels[:, [2, 0, 1], :] * self._ray_axis_sign
         directions = (pixels / torch.linalg.norm(pixels, dim=1, keepdim=True)).permute(0, 2, 1)

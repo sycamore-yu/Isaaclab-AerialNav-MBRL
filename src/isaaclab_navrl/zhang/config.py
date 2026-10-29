@@ -22,7 +22,6 @@ class ZhangTrainCfg:
     coef_collide: float = 7.5
     coef_d_acc: float = 0.01
     coef_d_jerk: float = 0.001
-    action_delay_steps: int = 1
     seed: int = 0
 
     @property
@@ -41,7 +40,5 @@ class ZhangTrainCfg:
             raise ValueError("cosine_period_updates must be positive")
         if not 0 < self.grad_decay <= 1 or self.max_grad_norm <= 0:
             raise ValueError("grad_decay must be in (0, 1] and max_grad_norm must be positive")
-        if self.action_delay_steps != 1:
-            raise ValueError("Preserve the source's one policy-step command delay")
         _ = self.velocity_window_steps
 
