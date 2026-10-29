@@ -41,6 +41,16 @@ def test_admission_requires_update_capacity_and_slot():
     assert not allow(1, False, 20000, 3584)
     assert not allow(2, True, 20000, 3584)
     assert not allow(0, True, 7167, 5120)
+    assert allow(5, True, 6144, 4096, slots=6)
+    assert not allow(6, True, 20000, 4096, slots=6)
+    assert not allow(5, True, 6143, 4096, slots=6)
+
+
+def test_external_training_source_is_used_in_child_command(tmp_path):
+    training = tmp_path / "frozen-training"
+    command = QUEUE["command_for"](training, tmp_path / "new-run", PLAN, PLAN["runs"][0], "cuda:0")
+    assert command[1] == str(training / "scripts/run_acceptance.py")
+    assert not any(str(ROOT) in token for token in command)
 
 
 def test_ready_tracks_latest_stage_and_rejects_partial_or_initial_result(tmp_path):

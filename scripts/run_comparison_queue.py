@@ -129,12 +129,18 @@ def main():
     parser.add_argument("--plan", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--commit", required=True, help="Full frozen commit SHA")
+    parser.add_argument("--source_root", type=Path, help="Frozen training worktree; defaults to dispatcher tree")
     parser.add_argument("--gpu", default="0", help="Physical nvidia-smi GPU selector")
     parser.add_argument("--device", default="cuda:0", help="Trainer CUDA device")
-    parser.add_argument("--slots", type=int, choices=(1, 2), default=2)
+    parser.add_argument("--slots", type=int, choices=range(1, 7), default=2)
     parser.add_argument("--reserve_mib", type=int, default=2048)
     args = parser.parse_args()
-    source = Path(__file__).resolve().parents[1]
+    dispatcher = Path(__file__).resolve().parents[1]
+    dispatcher_commit = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=dispatcher, text=True, timeout=10,
+    ).strip()
+    check_source(dispatcher, dispatcher_commit)
+    source = args.source_root.expanduser().resolve() if args.source_root else dispatcher
     check_source(source, args.commit)
     plan_bytes = args.plan.read_bytes()
     plan = json.loads(plan_bytes)
@@ -187,6 +193,8 @@ def main():
     state = {
         "status": "running", "created_at": now(), "queue_pid": os.getpid(),
         "source": str(source), "source_commit": args.commit, "source_clean_at_start": True,
+        "dispatcher_source": str(dispatcher), "dispatcher_commit": dispatcher_commit,
+        "dispatcher_clean_at_start": True,
         "plan_sha256": hashlib.sha256(plan_bytes).hexdigest(),
         "gpu": args.gpu, "device": args.device,
         "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
@@ -244,6 +252,7 @@ def main():
                     state["last_capacity"] = {"at": now(), "free_mib": free, "candidate": name}
                     if admissible(len(active), ready, free, job["estimated_mib"], args.reserve_mib, args.slots):
                         check_source(source, args.commit)
+                        check_source(dispatcher, dispatcher_commit)
                         if Path(job["output"]).exists():
                             raise RuntimeError(f"Existing run output: {job['output']}")
                         if not state["stop_dispatch_reason"] and all(
