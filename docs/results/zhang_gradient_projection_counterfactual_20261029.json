@@ -1,0 +1,1389 @@
+{
+  "analysis": "saved_gram_first_order_counterfactual",
+  "model_parameters_modified": false,
+  "optimizer_steps_executed": false,
+  "limitations": [
+    "Only reweights recorded gradients on their original rollout; no policy retraining.",
+    "Projected updates are hypothetical globally clipped SGD directions, not AdamW steps.",
+    "Actual AdamW displacement columns describe the unmodified recorded training update.",
+    "A height-preserving parameter direction is not a guaranteed safe flight trajectory.",
+    "Parameter-space projection cannot create absent lateral obstacle-avoidance gradients."
+  ],
+  "records": [
+    {
+      "run": "zhang_continuous_height8_retry1_seed0_20261029",
+      "stage": "pretrain_s0",
+      "update": 1,
+      "environment_steps": 153600,
+      "upper_boundary_active_fraction": 0.0,
+      "lower_boundary_active_fraction": 0.12594401836395264,
+      "mean_altitude_m": 1.4604206085205078,
+      "groups": {
+        "all": {
+          "group": "all",
+          "height_gradient_norm": 0.26052478287323605,
+          "collision_height_cosine": 0.9999728652077845,
+          "other_gradient_dot_height": 1.188146552867896,
+          "actual_adamw_height_loss_first_order_change": -0.0036764984071360873,
+          "actual_adamw_collision_loss_first_order_change": -0.0005396116684794691,
+          "original": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 8.0,
+            "unclipped_gradient_norm": 7.599962316948168,
+            "clip_scale": 0.6578979123293708,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": 1.7311318527970703,
+            "height_loss_change_per_unit_sgd_lr": -1.1389080319220681,
+            "collision_loss_change_per_unit_sgd_lr": -0.1670666884009696
+          },
+          "non_worsen_height": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 8.0,
+            "unclipped_gradient_norm": 7.599962316948168,
+            "clip_scale": 0.6578979123293708,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": 1.7311318527970703,
+            "height_loss_change_per_unit_sgd_lr": -1.1389080319220681,
+            "collision_loss_change_per_unit_sgd_lr": -0.1670666884009696
+          },
+          "preserve_height_descent": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 8.0,
+            "unclipped_gradient_norm": 7.599962316948168,
+            "clip_scale": 0.6578979123293708,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": 1.7311318527970703,
+            "height_loss_change_per_unit_sgd_lr": -1.1389080319220681,
+            "collision_loss_change_per_unit_sgd_lr": -0.1670666884009696
+          }
+        },
+        "trunk": {
+          "group": "trunk",
+          "height_gradient_norm": 0.0028454974426907263,
+          "collision_height_cosine": 0.9993912220200203,
+          "other_gradient_dot_height": 0.00014585795354568094,
+          "actual_adamw_height_loss_first_order_change": -0.00035019189055307456,
+          "actual_adamw_collision_loss_first_order_change": -5.208900063547797e-05,
+          "original": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 8.0,
+            "unclipped_gradient_norm": 0.08286839606091025,
+            "clip_scale": 1.0,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": 0.00021063279911655666,
+            "height_loss_change_per_unit_sgd_lr": -0.00021063279911655666,
+            "collision_loss_change_per_unit_sgd_lr": -3.099058693972022e-05
+          },
+          "non_worsen_height": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 8.0,
+            "unclipped_gradient_norm": 0.08286839606091025,
+            "clip_scale": 1.0,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": 0.00021063279911655666,
+            "height_loss_change_per_unit_sgd_lr": -0.00021063279911655666,
+            "collision_loss_change_per_unit_sgd_lr": -3.099058693972022e-05
+          },
+          "preserve_height_descent": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 8.0,
+            "unclipped_gradient_norm": 0.08286839606091025,
+            "clip_scale": 1.0,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": 0.00021063279911655666,
+            "height_loss_change_per_unit_sgd_lr": -0.00021063279911655666,
+            "collision_loss_change_per_unit_sgd_lr": -3.099058693972022e-05
+          }
+        },
+        "z_head": {
+          "group": "z_head",
+          "height_gradient_norm": 0.2605092153962395,
+          "collision_height_cosine": 0.9999729360125281,
+          "other_gradient_dot_height": 1.1876145138676066,
+          "actual_adamw_height_loss_first_order_change": -0.0033242225752765724,
+          "actual_adamw_collision_loss_first_order_change": -0.0004871962009207535,
+          "original": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 8.0,
+            "unclipped_gradient_norm": 6.643061370283151,
+            "clip_scale": 0.7526649188733843,
+            "angle_to_original_degrees": 8.537736462515939e-07,
+            "height_gradient_dot_update": 1.7305349243185213,
+            "height_loss_change_per_unit_sgd_lr": -1.302512928419758,
+            "collision_loss_change_per_unit_sgd_lr": -0.19106249529015662
+          },
+          "non_worsen_height": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 8.0,
+            "unclipped_gradient_norm": 6.643061370283151,
+            "clip_scale": 0.7526649188733843,
+            "angle_to_original_degrees": 8.537736462515939e-07,
+            "height_gradient_dot_update": 1.7305349243185213,
+            "height_loss_change_per_unit_sgd_lr": -1.302512928419758,
+            "collision_loss_change_per_unit_sgd_lr": -0.19106249529015662
+          },
+          "preserve_height_descent": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 8.0,
+            "unclipped_gradient_norm": 6.643061370283151,
+            "clip_scale": 0.7526649188733843,
+            "angle_to_original_degrees": 8.537736462515939e-07,
+            "height_gradient_dot_update": 1.7305349243185213,
+            "height_loss_change_per_unit_sgd_lr": -1.302512928419758,
+            "collision_loss_change_per_unit_sgd_lr": -0.19106249529015662
+          }
+        }
+      }
+    },
+    {
+      "run": "zhang_continuous_height8_retry1_seed0_20261029",
+      "stage": "pretrain_s0",
+      "update": 7,
+      "environment_steps": 1075200,
+      "upper_boundary_active_fraction": 0.0,
+      "lower_boundary_active_fraction": 1.0,
+      "mean_altitude_m": -12.711366653442383,
+      "groups": {
+        "all": {
+          "group": "all",
+          "height_gradient_norm": 5.637074767711815,
+          "collision_height_cosine": 0.9997104937909705,
+          "other_gradient_dot_height": 6851.264123766224,
+          "actual_adamw_height_loss_first_order_change": -0.04654246448230113,
+          "actual_adamw_collision_loss_first_order_change": -0.9319049984968978,
+          "original": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 8.0,
+            "unclipped_gradient_norm": 1261.3713431120352,
+            "clip_scale": 0.003963939741725969,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": 7105.477019260409,
+            "height_loss_change_per_unit_sgd_lr": -28.16568274056692,
+            "collision_loss_change_per_unit_sgd_lr": -564.2188249261002
+          },
+          "non_worsen_height": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 8.0,
+            "unclipped_gradient_norm": 1261.3713431120352,
+            "clip_scale": 0.003963939741725969,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": 7105.477019260409,
+            "height_loss_change_per_unit_sgd_lr": -28.16568274056692,
+            "collision_loss_change_per_unit_sgd_lr": -564.2188249261002
+          },
+          "preserve_height_descent": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 8.0,
+            "unclipped_gradient_norm": 1261.3713431120352,
+            "clip_scale": 0.003963939741725969,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": 7105.477019260409,
+            "height_loss_change_per_unit_sgd_lr": -28.16568274056692,
+            "collision_loss_change_per_unit_sgd_lr": -564.2188249261002
+          }
+        },
+        "trunk": {
+          "group": "trunk",
+          "height_gradient_norm": 0.46679436634293775,
+          "collision_height_cosine": 0.9993788059647214,
+          "other_gradient_dot_height": 46.7981898106288,
+          "actual_adamw_height_loss_first_order_change": -0.03591076051507085,
+          "actual_adamw_collision_loss_first_order_change": -0.7144508856662748,
+          "original": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 8.0,
+            "unclipped_gradient_norm": 104.13986354597634,
+            "clip_scale": 0.04801235359579873,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": 48.54136565422483,
+            "height_loss_change_per_unit_sgd_lr": -2.330585211813603,
+            "collision_loss_change_per_unit_sgd_lr": -46.651781123255454
+          },
+          "non_worsen_height": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 8.0,
+            "unclipped_gradient_norm": 104.13986354597634,
+            "clip_scale": 0.04801235359579873,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": 48.54136565422483,
+            "height_loss_change_per_unit_sgd_lr": -2.330585211813603,
+            "collision_loss_change_per_unit_sgd_lr": -46.651781123255454
+          },
+          "preserve_height_descent": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 8.0,
+            "unclipped_gradient_norm": 104.13986354597634,
+            "clip_scale": 0.04801235359579873,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": 48.54136565422483,
+            "height_loss_change_per_unit_sgd_lr": -2.330585211813603,
+            "collision_loss_change_per_unit_sgd_lr": -46.651781123255454
+          }
+        },
+        "z_head": {
+          "group": "z_head",
+          "height_gradient_norm": 5.617655469631222,
+          "collision_height_cosine": 0.9997127881724872,
+          "other_gradient_dot_height": 6804.255468725249,
+          "actual_adamw_height_loss_first_order_change": -0.01066473584538237,
+          "actual_adamw_collision_loss_first_order_change": -0.21812651390127283,
+          "original": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 8.0,
+            "unclipped_gradient_norm": 1257.022819392312,
+            "clip_scale": 0.003977652528567078,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": 7056.7198925290695,
+            "height_loss_change_per_unit_sgd_lr": -28.06917972390785,
+            "collision_loss_change_per_unit_sgd_lr": -562.2885334198947
+          },
+          "non_worsen_height": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 8.0,
+            "unclipped_gradient_norm": 1257.022819392312,
+            "clip_scale": 0.003977652528567078,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": 7056.7198925290695,
+            "height_loss_change_per_unit_sgd_lr": -28.06917972390785,
+            "collision_loss_change_per_unit_sgd_lr": -562.2885334198947
+          },
+          "preserve_height_descent": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 8.0,
+            "unclipped_gradient_norm": 1257.022819392312,
+            "clip_scale": 0.003977652528567078,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": 7056.7198925290695,
+            "height_loss_change_per_unit_sgd_lr": -28.06917972390785,
+            "collision_loss_change_per_unit_sgd_lr": -562.2885334198947
+          }
+        }
+      }
+    },
+    {
+      "run": "zhang_continuous_height8_retry1_seed0_20261029",
+      "stage": "pretrain_s0",
+      "update": 10,
+      "environment_steps": 1536000,
+      "upper_boundary_active_fraction": 0.0,
+      "lower_boundary_active_fraction": 0.4122265577316284,
+      "mean_altitude_m": -2.5194573402404785,
+      "groups": {
+        "all": {
+          "group": "all",
+          "height_gradient_norm": 1.291827203001121,
+          "collision_height_cosine": 0.9999952702923512,
+          "other_gradient_dot_height": 266.39380861295007,
+          "actual_adamw_height_loss_first_order_change": -0.020956390383878063,
+          "actual_adamw_collision_loss_first_order_change": -0.34575755216700144,
+          "original": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 8.0,
+            "unclipped_gradient_norm": 216.60851331028658,
+            "clip_scale": 0.023083118481841476,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": 279.74434879225964,
+            "height_loss_change_per_unit_sgd_lr": -6.457371947797316,
+            "collision_loss_change_per_unit_sgd_lr": -106.6943026381333
+          },
+          "non_worsen_height": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 8.0,
+            "unclipped_gradient_norm": 216.60851331028658,
+            "clip_scale": 0.023083118481841476,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": 279.74434879225964,
+            "height_loss_change_per_unit_sgd_lr": -6.457371947797316,
+            "collision_loss_change_per_unit_sgd_lr": -106.6943026381333
+          },
+          "preserve_height_descent": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 8.0,
+            "unclipped_gradient_norm": 216.60851331028658,
+            "clip_scale": 0.023083118481841476,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": 279.74434879225964,
+            "height_loss_change_per_unit_sgd_lr": -6.457371947797316,
+            "collision_loss_change_per_unit_sgd_lr": -106.6943026381333
+          }
+        },
+        "trunk": {
+          "group": "trunk",
+          "height_gradient_norm": 0.1350888266587915,
+          "collision_height_cosine": 0.9999813141953117,
+          "other_gradient_dot_height": 2.936481337463163,
+          "actual_adamw_height_loss_first_order_change": -0.012518301778941365,
+          "actual_adamw_collision_loss_first_order_change": -0.2063687054391267,
+          "original": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 8.0,
+            "unclipped_gradient_norm": 22.82687254521695,
+            "clip_scale": 0.21904007091009095,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": 3.082473266167555,
+            "height_loss_change_per_unit_sgd_lr": -0.6751851627998009,
+            "collision_loss_change_per_unit_sgd_lr": -11.139500761114004
+          },
+          "non_worsen_height": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 8.0,
+            "unclipped_gradient_norm": 22.82687254521695,
+            "clip_scale": 0.21904007091009095,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": 3.082473266167555,
+            "height_loss_change_per_unit_sgd_lr": -0.6751851627998009,
+            "collision_loss_change_per_unit_sgd_lr": -11.139500761114004
+          },
+          "preserve_height_descent": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 8.0,
+            "unclipped_gradient_norm": 22.82687254521695,
+            "clip_scale": 0.21904007091009095,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": 3.082473266167555,
+            "height_loss_change_per_unit_sgd_lr": -0.6751851627998009,
+            "collision_loss_change_per_unit_sgd_lr": -11.139500761114004
+          }
+        },
+        "z_head": {
+          "group": "z_head",
+          "height_gradient_norm": 1.2847437492085392,
+          "collision_height_cosine": 0.9999954364202902,
+          "other_gradient_dot_height": 263.458249153724,
+          "actual_adamw_height_loss_first_order_change": -0.008441549056821925,
+          "actual_adamw_collision_loss_first_order_change": -0.1394458012500961,
+          "original": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 8.0,
+            "unclipped_gradient_norm": 215.39807999240114,
+            "clip_scale": 0.02321283447356428,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": 276.6627811627673,
+            "height_loss_change_per_unit_sgd_lr": -6.422127344127255,
+            "collision_loss_change_per_unit_sgd_lr": -106.11370732091083
+          },
+          "non_worsen_height": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 8.0,
+            "unclipped_gradient_norm": 215.39807999240114,
+            "clip_scale": 0.02321283447356428,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": 276.6627811627673,
+            "height_loss_change_per_unit_sgd_lr": -6.422127344127255,
+            "collision_loss_change_per_unit_sgd_lr": -106.11370732091083
+          },
+          "preserve_height_descent": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 8.0,
+            "unclipped_gradient_norm": 215.39807999240114,
+            "clip_scale": 0.02321283447356428,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": 276.6627811627673,
+            "height_loss_change_per_unit_sgd_lr": -6.422127344127255,
+            "collision_loss_change_per_unit_sgd_lr": -106.11370732091083
+          }
+        }
+      }
+    },
+    {
+      "run": "zhang_followup_continuous_signed_seed0_20261029",
+      "stage": "pretrain_s0",
+      "update": 1,
+      "environment_steps": 153600,
+      "upper_boundary_active_fraction": 0.0,
+      "lower_boundary_active_fraction": 0.12594401836395264,
+      "mean_altitude_m": 1.4604206085205078,
+      "groups": {
+        "all": {
+          "group": "all",
+          "height_gradient_norm": 0.2605254507162328,
+          "collision_height_cosine": 0.9999728561981608,
+          "other_gradient_dot_height": 1.188151189215665,
+          "actual_adamw_height_loss_first_order_change": -0.0036415247944340157,
+          "actual_adamw_collision_loss_first_order_change": -0.0005344520595355542,
+          "original": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 1.0,
+            "unclipped_gradient_norm": 6.070373328354179,
+            "clip_scale": 0.8236724342756663,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": 1.2560246996865614,
+            "height_loss_change_per_unit_sgd_lr": -1.0345529219011926,
+            "collision_loss_change_per_unit_sgd_lr": -0.15176053528367342
+          },
+          "non_worsen_height": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 1.0,
+            "unclipped_gradient_norm": 6.070373328354179,
+            "clip_scale": 0.8236724342756663,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": 1.2560246996865614,
+            "height_loss_change_per_unit_sgd_lr": -1.0345529219011926,
+            "collision_loss_change_per_unit_sgd_lr": -0.15176053528367342
+          },
+          "preserve_height_descent": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 1.0,
+            "unclipped_gradient_norm": 6.070373328354179,
+            "clip_scale": 0.8236724342756663,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": 1.2560246996865614,
+            "height_loss_change_per_unit_sgd_lr": -1.0345529219011926,
+            "collision_loss_change_per_unit_sgd_lr": -0.15176053528367342
+          }
+        },
+        "trunk": {
+          "group": "trunk",
+          "height_gradient_norm": 0.0028455199248743016,
+          "collision_height_cosine": 0.9993927606486218,
+          "other_gradient_dot_height": 0.0001458595644809292,
+          "actual_adamw_height_loss_first_order_change": -0.00031521017621316625,
+          "actual_adamw_collision_loss_first_order_change": -4.6923092556127494e-05,
+          "original": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 1.0,
+            "unclipped_gradient_norm": 0.0656893171853407,
+            "clip_scale": 1.0,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": 0.00015395654812378585,
+            "height_loss_change_per_unit_sgd_lr": -0.00015395654812378585,
+            "collision_loss_change_per_unit_sgd_lr": -2.2655163191142673e-05
+          },
+          "non_worsen_height": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 1.0,
+            "unclipped_gradient_norm": 0.0656893171853407,
+            "clip_scale": 1.0,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": 0.00015395654812378585,
+            "height_loss_change_per_unit_sgd_lr": -0.00015395654812378585,
+            "collision_loss_change_per_unit_sgd_lr": -2.2655163191142673e-05
+          },
+          "preserve_height_descent": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 1.0,
+            "unclipped_gradient_norm": 0.0656893171853407,
+            "clip_scale": 1.0,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": 0.00015395654812378585,
+            "height_loss_change_per_unit_sgd_lr": -0.00015395654812378585,
+            "collision_loss_change_per_unit_sgd_lr": -2.2655163191142673e-05
+          }
+        },
+        "z_head": {
+          "group": "z_head",
+          "height_gradient_norm": 0.2605098830352899,
+          "collision_height_cosine": 0.9999729268135594,
+          "other_gradient_dot_height": 1.1876191761771495,
+          "actual_adamw_height_loss_first_order_change": -0.0033242307027694313,
+          "actual_adamw_collision_loss_first_order_change": -0.00048720258929921777,
+          "original": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 1.0,
+            "unclipped_gradient_norm": 4.819567344186724,
+            "clip_scale": 1.0,
+            "angle_to_original_degrees": 8.537736462515939e-07,
+            "height_gradient_dot_update": 1.2554845753362098,
+            "height_loss_change_per_unit_sgd_lr": -1.2554845753362098,
+            "collision_loss_change_per_unit_sgd_lr": -0.18416489618135973
+          },
+          "non_worsen_height": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 1.0,
+            "unclipped_gradient_norm": 4.819567344186724,
+            "clip_scale": 1.0,
+            "angle_to_original_degrees": 8.537736462515939e-07,
+            "height_gradient_dot_update": 1.2554845753362098,
+            "height_loss_change_per_unit_sgd_lr": -1.2554845753362098,
+            "collision_loss_change_per_unit_sgd_lr": -0.18416489618135973
+          },
+          "preserve_height_descent": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 1.0,
+            "unclipped_gradient_norm": 4.819567344186724,
+            "clip_scale": 1.0,
+            "angle_to_original_degrees": 8.537736462515939e-07,
+            "height_gradient_dot_update": 1.2554845753362098,
+            "height_loss_change_per_unit_sgd_lr": -1.2554845753362098,
+            "collision_loss_change_per_unit_sgd_lr": -0.18416489618135973
+          }
+        }
+      }
+    },
+    {
+      "run": "zhang_followup_continuous_signed_seed0_20261029",
+      "stage": "pretrain_s0",
+      "update": 7,
+      "environment_steps": 1075200,
+      "upper_boundary_active_fraction": 0.0,
+      "lower_boundary_active_fraction": 1.0,
+      "mean_altitude_m": -8.367300033569336,
+      "groups": {
+        "all": {
+          "group": "all",
+          "height_gradient_norm": 7.4145970129089065,
+          "collision_height_cosine": 0.9999997666892603,
+          "other_gradient_dot_height": 8861.39876062064,
+          "actual_adamw_height_loss_first_order_change": -0.0607264972047807,
+          "actual_adamw_collision_loss_first_order_change": -1.0179234840724916,
+          "original": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 1.0,
+            "unclipped_gradient_norm": 1202.6672896822981,
+            "clip_scale": 0.004157425780793785,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": 8916.375009484476,
+            "height_loss_change_per_unit_sgd_lr": -37.06916733565619,
+            "collision_loss_change_per_unit_sgd_lr": -621.3503316743402
+          },
+          "non_worsen_height": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 1.0,
+            "unclipped_gradient_norm": 1202.6672896822981,
+            "clip_scale": 0.004157425780793785,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": 8916.375009484476,
+            "height_loss_change_per_unit_sgd_lr": -37.06916733565619,
+            "collision_loss_change_per_unit_sgd_lr": -621.3503316743402
+          },
+          "preserve_height_descent": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 1.0,
+            "unclipped_gradient_norm": 1202.6672896822981,
+            "clip_scale": 0.004157425780793785,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": 8916.375009484476,
+            "height_loss_change_per_unit_sgd_lr": -37.06916733565619,
+            "collision_loss_change_per_unit_sgd_lr": -621.3503316743402
+          }
+        },
+        "trunk": {
+          "group": "trunk",
+          "height_gradient_norm": 0.5240851814054086,
+          "collision_height_cosine": 0.9999993493674281,
+          "other_gradient_dot_height": 44.246399447420806,
+          "actual_adamw_height_loss_first_order_change": -0.03344331169914747,
+          "actual_adamw_collision_loss_first_order_change": -0.5606318948721758,
+          "original": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 1.0,
+            "unclipped_gradient_norm": 84.96531457253279,
+            "clip_scale": 0.05884754227425453,
+            "angle_to_original_degrees": 8.537736462515939e-07,
+            "height_gradient_dot_update": 44.52106472478955,
+            "height_loss_change_per_unit_sgd_lr": -2.619955238486875,
+            "collision_loss_change_per_unit_sgd_lr": -43.92031682885501
+          },
+          "non_worsen_height": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 1.0,
+            "unclipped_gradient_norm": 84.96531457253279,
+            "clip_scale": 0.05884754227425453,
+            "angle_to_original_degrees": 8.537736462515939e-07,
+            "height_gradient_dot_update": 44.52106472478955,
+            "height_loss_change_per_unit_sgd_lr": -2.619955238486875,
+            "collision_loss_change_per_unit_sgd_lr": -43.92031682885501
+          },
+          "preserve_height_descent": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 1.0,
+            "unclipped_gradient_norm": 84.96531457253279,
+            "clip_scale": 0.05884754227425453,
+            "angle_to_original_degrees": 8.537736462515939e-07,
+            "height_gradient_dot_update": 44.52106472478955,
+            "height_loss_change_per_unit_sgd_lr": -2.619955238486875,
+            "collision_loss_change_per_unit_sgd_lr": -43.92031682885501
+          }
+        },
+        "z_head": {
+          "group": "z_head",
+          "height_gradient_norm": 7.39594495970211,
+          "collision_height_cosine": 0.9999997688228583,
+          "other_gradient_dot_height": 8816.75370963784,
+          "actual_adamw_height_loss_first_order_change": -0.0273353825714083,
+          "actual_adamw_collision_loss_first_order_change": -0.4581675179710113,
+          "original": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 1.0,
+            "unclipped_gradient_norm": 1199.5504510081878,
+            "clip_scale": 0.004168228182173926,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": 8871.453711484783,
+            "height_loss_change_per_unit_sgd_lr": -36.97824337706234,
+            "collision_loss_change_per_unit_sgd_lr": -619.825930537688
+          },
+          "non_worsen_height": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 1.0,
+            "unclipped_gradient_norm": 1199.5504510081878,
+            "clip_scale": 0.004168228182173926,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": 8871.453711484783,
+            "height_loss_change_per_unit_sgd_lr": -36.97824337706234,
+            "collision_loss_change_per_unit_sgd_lr": -619.825930537688
+          },
+          "preserve_height_descent": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 1.0,
+            "unclipped_gradient_norm": 1199.5504510081878,
+            "clip_scale": 0.004168228182173926,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": 8871.453711484783,
+            "height_loss_change_per_unit_sgd_lr": -36.97824337706234,
+            "collision_loss_change_per_unit_sgd_lr": -619.825930537688
+          }
+        }
+      }
+    },
+    {
+      "run": "zhang_followup_continuous_signed_seed0_20261029",
+      "stage": "pretrain_s0",
+      "update": 10,
+      "environment_steps": 1536000,
+      "upper_boundary_active_fraction": 0.3420117199420929,
+      "lower_boundary_active_fraction": 0.02884765714406967,
+      "mean_altitude_m": 4.471408843994141,
+      "groups": {
+        "all": {
+          "group": "all",
+          "height_gradient_norm": 1.584802547994128,
+          "collision_height_cosine": -0.9533659443439985,
+          "other_gradient_dot_height": -16.767308899153097,
+          "actual_adamw_height_loss_first_order_change": 0.0244289441746014,
+          "actual_adamw_collision_loss_first_order_change": -0.023389376920084914,
+          "original": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 1.0,
+            "unclipped_gradient_norm": 11.202858169436832,
+            "clip_scale": 0.44631463489613343,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": -14.255709783024416,
+            "height_loss_change_per_unit_sgd_lr": 6.3625319069957795,
+            "collision_loss_change_per_unit_sgd_lr": -6.497267741523607
+          },
+          "non_worsen_height": {
+            "additional_height_gradient_coefficient": 5.675949514187531,
+            "effective_height_coefficient": 6.675949514187531,
+            "unclipped_gradient_norm": 6.677525151368709,
+            "clip_scale": 0.7487802947765525,
+            "angle_to_original_degrees": 53.41208755512571,
+            "height_gradient_dot_update": -1.040188978642956e-15,
+            "height_loss_change_per_unit_sgd_lr": 7.788730100515936e-16,
+            "collision_loss_change_per_unit_sgd_lr": -1.1806938796037003
+          },
+          "preserve_height_descent": {
+            "additional_height_gradient_coefficient": 6.675949514187531,
+            "effective_height_coefficient": 7.675949514187531,
+            "unclipped_gradient_norm": 6.863012550133534,
+            "clip_scale": 0.7285429299353073,
+            "angle_to_original_degrees": 66.7632926062058,
+            "height_gradient_dot_update": 2.5115991161286795,
+            "height_loss_change_per_unit_sgd_lr": -1.8298077788873164,
+            "collision_loss_change_per_unit_sgd_lr": 0.5173785869028451
+          }
+        },
+        "trunk": {
+          "group": "trunk",
+          "height_gradient_norm": 0.20802794621155482,
+          "collision_height_cosine": -0.8550678849647192,
+          "other_gradient_dot_height": -0.16755971980823176,
+          "actual_adamw_height_loss_first_order_change": 0.012933728386119113,
+          "actual_adamw_collision_loss_first_order_change": -0.011176181894543676,
+          "original": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 1.0,
+            "unclipped_gradient_norm": 1.0357256787035363,
+            "clip_scale": 1.0,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": -0.12428409340323421,
+            "height_loss_change_per_unit_sgd_lr": 0.12428409340323421,
+            "collision_loss_change_per_unit_sgd_lr": -0.12396495239903285
+          },
+          "non_worsen_height": {
+            "additional_height_gradient_coefficient": 2.871918992924887,
+            "effective_height_coefficient": 3.871918992924887,
+            "unclipped_gradient_norm": 0.8460459994366157,
+            "clip_scale": 1.0,
+            "angle_to_original_degrees": 35.22800883437476,
+            "height_gradient_dot_update": 2.3773256344947195e-18,
+            "height_loss_change_per_unit_sgd_lr": -2.3773256344947195e-18,
+            "collision_loss_change_per_unit_sgd_lr": -0.04934061168315476
+          },
+          "preserve_height_descent": {
+            "additional_height_gradient_coefficient": 3.871918992924887,
+            "effective_height_coefficient": 4.871918992924887,
+            "unclipped_gradient_norm": 0.8712459237022,
+            "clip_scale": 1.0,
+            "angle_to_original_degrees": 49.04200269813925,
+            "height_gradient_dot_update": 0.04327562640499755,
+            "height_loss_change_per_unit_sgd_lr": -0.04327562640499755,
+            "collision_loss_change_per_unit_sgd_lr": -0.02335647323784387
+          }
+        },
+        "z_head": {
+          "group": "z_head",
+          "height_gradient_norm": 1.571075828914316,
+          "collision_height_cosine": -0.9560569430705982,
+          "other_gradient_dot_height": -16.619112925464886,
+          "actual_adamw_height_loss_first_order_change": 0.011523038054209516,
+          "actual_adamw_collision_loss_first_order_change": -0.012291572040391961,
+          "original": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 1.0,
+            "unclipped_gradient_norm": 9.690621482756763,
+            "clip_scale": 0.5159627267388517,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": -14.15083366526608,
+            "height_loss_change_per_unit_sgd_lr": 7.301302723558626,
+            "collision_loss_change_per_unit_sgd_lr": -7.4791698417533725
+          },
+          "non_worsen_height": {
+            "additional_height_gradient_coefficient": 5.733076436467045,
+            "effective_height_coefficient": 6.733076436467045,
+            "unclipped_gradient_norm": 3.574959255623107,
+            "clip_scale": 1.0,
+            "angle_to_original_degrees": 68.35164049184453,
+            "height_gradient_dot_update": -1.3090798901508144e-15,
+            "height_loss_change_per_unit_sgd_lr": 1.3090798901508144e-15,
+            "collision_loss_change_per_unit_sgd_lr": -1.534367818150135
+          },
+          "preserve_height_descent": {
+            "additional_height_gradient_coefficient": 6.733076436467046,
+            "effective_height_coefficient": 7.733076436467046,
+            "unclipped_gradient_norm": 3.904947239024378,
+            "clip_scale": 1.0,
+            "angle_to_original_degrees": 92.0755340123419,
+            "height_gradient_dot_update": 2.468279260198806,
+            "height_loss_change_per_unit_sgd_lr": -2.468279260198806,
+            "collision_loss_change_per_unit_sgd_lr": 0.7264069351003912
+          }
+        }
+      }
+    },
+    {
+      "run": "zhang_step_dcol_bptt_seed0_20261029",
+      "stage": "pretrain_s0",
+      "update": 1,
+      "environment_steps": 153600,
+      "upper_boundary_active_fraction": 0.0,
+      "lower_boundary_active_fraction": 0.12594401836395264,
+      "mean_altitude_m": 1.4604206085205078,
+      "groups": {
+        "all": {
+          "group": "all",
+          "height_gradient_norm": 0.26052545152865264,
+          "collision_height_cosine": 0.9999728539963255,
+          "other_gradient_dot_height": 1.187861294317528,
+          "actual_adamw_height_loss_first_order_change": -0.0036490695908104795,
+          "actual_adamw_collision_loss_first_order_change": -0.0005303262763176762,
+          "original": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 1.0,
+            "unclipped_gradient_norm": 5.9690965597915735,
+            "clip_scale": 0.8376475589342836,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": 1.2557348052117363,
+            "height_loss_change_per_unit_sgd_lr": -1.051863194254429,
+            "collision_loss_change_per_unit_sgd_lr": -0.1527960371619655
+          },
+          "non_worsen_height": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 1.0,
+            "unclipped_gradient_norm": 5.9690965597915735,
+            "clip_scale": 0.8376475589342836,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": 1.2557348052117363,
+            "height_loss_change_per_unit_sgd_lr": -1.051863194254429,
+            "collision_loss_change_per_unit_sgd_lr": -0.1527960371619655
+          },
+          "preserve_height_descent": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 1.0,
+            "unclipped_gradient_norm": 5.9690965597915735,
+            "clip_scale": 0.8376475589342836,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": 1.2557348052117363,
+            "height_loss_change_per_unit_sgd_lr": -1.051863194254429,
+            "collision_loss_change_per_unit_sgd_lr": -0.1527960371619655
+          }
+        },
+        "trunk": {
+          "group": "trunk",
+          "height_gradient_norm": 0.0028455198579372377,
+          "collision_height_cosine": 0.9993927175724161,
+          "other_gradient_dot_height": 0.0001456404287740169,
+          "actual_adamw_height_loss_first_order_change": -0.0003227551651837455,
+          "actual_adamw_collision_loss_first_order_change": -4.754812428070429e-05,
+          "original": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 1.0,
+            "unclipped_gradient_norm": 0.06466801310640367,
+            "clip_scale": 1.0,
+            "angle_to_original_degrees": 1.2074182697257333e-06,
+            "height_gradient_dot_update": 0.00015373741203593208,
+            "height_loss_change_per_unit_sgd_lr": -0.00015373741203593208,
+            "collision_loss_change_per_unit_sgd_lr": -2.24013219499808e-05
+          },
+          "non_worsen_height": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 1.0,
+            "unclipped_gradient_norm": 0.06466801310640367,
+            "clip_scale": 1.0,
+            "angle_to_original_degrees": 1.2074182697257333e-06,
+            "height_gradient_dot_update": 0.00015373741203593208,
+            "height_loss_change_per_unit_sgd_lr": -0.00015373741203593208,
+            "collision_loss_change_per_unit_sgd_lr": -2.24013219499808e-05
+          },
+          "preserve_height_descent": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 1.0,
+            "unclipped_gradient_norm": 0.06466801310640367,
+            "clip_scale": 1.0,
+            "angle_to_original_degrees": 1.2074182697257333e-06,
+            "height_gradient_dot_update": 0.00015373741203593208,
+            "height_loss_change_per_unit_sgd_lr": -0.00015373741203593208,
+            "collision_loss_change_per_unit_sgd_lr": -2.24013219499808e-05
+          }
+        },
+        "z_head": {
+          "group": "z_head",
+          "height_gradient_norm": 0.26050988384835927,
+          "collision_height_cosine": 0.9999729246165362,
+          "other_gradient_dot_height": 1.1873467834199782,
+          "actual_adamw_height_loss_first_order_change": -0.0033242305043612794,
+          "actual_adamw_collision_loss_first_order_change": -0.00048245495461736606,
+          "original": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 1.0,
+            "unclipped_gradient_norm": 4.818523677260783,
+            "clip_scale": 1.0,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": 1.255212183002664,
+            "height_loss_change_per_unit_sgd_lr": -1.255212183002664,
+            "collision_loss_change_per_unit_sgd_lr": -0.18233069393958642
+          },
+          "non_worsen_height": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 1.0,
+            "unclipped_gradient_norm": 4.818523677260783,
+            "clip_scale": 1.0,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": 1.255212183002664,
+            "height_loss_change_per_unit_sgd_lr": -1.255212183002664,
+            "collision_loss_change_per_unit_sgd_lr": -0.18233069393958642
+          },
+          "preserve_height_descent": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 1.0,
+            "unclipped_gradient_norm": 4.818523677260783,
+            "clip_scale": 1.0,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": 1.255212183002664,
+            "height_loss_change_per_unit_sgd_lr": -1.255212183002664,
+            "collision_loss_change_per_unit_sgd_lr": -0.18233069393958642
+          }
+        }
+      }
+    },
+    {
+      "run": "zhang_step_dcol_bptt_seed0_20261029",
+      "stage": "pretrain_s0",
+      "update": 7,
+      "environment_steps": 1075200,
+      "upper_boundary_active_fraction": 0.05574218928813934,
+      "lower_boundary_active_fraction": 0.029420573264360428,
+      "mean_altitude_m": 2.0238468647003174,
+      "groups": {
+        "all": {
+          "group": "all",
+          "height_gradient_norm": 0.16476061867424174,
+          "collision_height_cosine": -0.18413418454198052,
+          "other_gradient_dot_height": -0.33362434063594143,
+          "actual_adamw_height_loss_first_order_change": -0.0008731951103766043,
+          "actual_adamw_collision_loss_first_order_change": -0.008708138124860636,
+          "original": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 1.0,
+            "unclipped_gradient_norm": 7.53254000614049,
+            "clip_scale": 0.6637866286986058,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": -0.3064782791700225,
+            "height_loss_change_per_unit_sgd_lr": 0.2034361836996194,
+            "collision_loss_change_per_unit_sgd_lr": -2.8508165076373526
+          },
+          "non_worsen_height": {
+            "additional_height_gradient_coefficient": 11.289972195590778,
+            "effective_height_coefficient": 12.289972195590778,
+            "unclipped_gradient_norm": 7.299248433484431,
+            "clip_scale": 0.6850019369201304,
+            "angle_to_original_degrees": 14.296961098337063,
+            "height_gradient_dot_update": -2.991744323721632e-18,
+            "height_loss_change_per_unit_sgd_lr": 2.0493506565191236e-18,
+            "collision_loss_change_per_unit_sgd_lr": -2.7841931930908914
+          },
+          "preserve_height_descent": {
+            "additional_height_gradient_coefficient": 12.289972195590778,
+            "effective_height_coefficient": 13.289972195590778,
+            "unclipped_gradient_norm": 7.301107707409256,
+            "clip_scale": 0.6848274968055109,
+            "angle_to_original_degrees": 15.590037418576161,
+            "height_gradient_dot_update": 0.02714606146591889,
+            "height_loss_change_per_unit_sgd_lr": -0.01859036932183377,
+            "collision_loss_change_per_unit_sgd_lr": -2.769516192716757
+          }
+        },
+        "trunk": {
+          "group": "trunk",
+          "height_gradient_norm": 0.009819311867483435,
+          "collision_height_cosine": 0.2664644194552469,
+          "other_gradient_dot_height": 0.001680095236698903,
+          "actual_adamw_height_loss_first_order_change": -0.0007509503998366489,
+          "actual_adamw_collision_loss_first_order_change": -0.007831516413726161,
+          "original": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 1.0,
+            "unclipped_gradient_norm": 0.44413297613382385,
+            "clip_scale": 1.0,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": 0.0017765141222498041,
+            "height_loss_change_per_unit_sgd_lr": -0.0017765141222498041,
+            "collision_loss_change_per_unit_sgd_lr": -0.028619434012332384
+          },
+          "non_worsen_height": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 1.0,
+            "unclipped_gradient_norm": 0.44413297613382385,
+            "clip_scale": 1.0,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": 0.0017765141222498041,
+            "height_loss_change_per_unit_sgd_lr": -0.0017765141222498041,
+            "collision_loss_change_per_unit_sgd_lr": -0.028619434012332384
+          },
+          "preserve_height_descent": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 1.0,
+            "unclipped_gradient_norm": 0.44413297613382385,
+            "clip_scale": 1.0,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": 0.0017765141222498041,
+            "height_loss_change_per_unit_sgd_lr": -0.0017765141222498041,
+            "collision_loss_change_per_unit_sgd_lr": -0.028619434012332384
+          }
+        },
+        "z_head": {
+          "group": "z_head",
+          "height_gradient_norm": 0.16446698510764446,
+          "collision_height_cosine": -0.9344683372924626,
+          "other_gradient_dot_height": -0.3332433895156959,
+          "actual_adamw_height_loss_first_order_change": -0.00012096890387063426,
+          "actual_adamw_collision_loss_first_order_change": -1.3834253528412108e-05,
+          "original": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 1.0,
+            "unclipped_gradient_norm": 1.9551568996008117,
+            "clip_scale": 1.0,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": -0.30619400032529775,
+            "height_loss_change_per_unit_sgd_lr": 0.30619400032529775,
+            "collision_loss_change_per_unit_sgd_lr": -0.2509920712145105
+          },
+          "non_worsen_height": {
+            "additional_height_gradient_coefficient": 11.319811999081628,
+            "effective_height_coefficient": 12.319811999081628,
+            "unclipped_gradient_norm": 0.5971431847786177,
+            "clip_scale": 1.0,
+            "angle_to_original_degrees": 72.21659182316341,
+            "height_gradient_dot_update": 2.6610198950110078e-17,
+            "height_loss_change_per_unit_sgd_lr": -2.6610198950110078e-17,
+            "collision_loss_change_per_unit_sgd_lr": -0.020431222094538945
+          },
+          "preserve_height_descent": {
+            "additional_height_gradient_coefficient": 12.319811999081626,
+            "effective_height_coefficient": 13.319811999081626,
+            "unclipped_gradient_norm": 0.6193782142745643,
+            "clip_scale": 1.0,
+            "angle_to_original_degrees": 87.61537433817665,
+            "height_gradient_dot_update": 0.02704938919039812,
+            "height_loss_change_per_unit_sgd_lr": -0.02704938919039812,
+            "collision_loss_change_per_unit_sgd_lr": -6.331765065979944e-05
+          }
+        }
+      }
+    },
+    {
+      "run": "zhang_step_dcol_bptt_seed0_20261029",
+      "stage": "pretrain_s0",
+      "update": 10,
+      "environment_steps": 1536000,
+      "upper_boundary_active_fraction": 0.03519531339406967,
+      "lower_boundary_active_fraction": 0.0406380221247673,
+      "mean_altitude_m": 1.9209452867507935,
+      "groups": {
+        "all": {
+          "group": "all",
+          "height_gradient_norm": 0.07967855780946163,
+          "collision_height_cosine": -0.456977755872173,
+          "other_gradient_dot_height": -0.09395148093469884,
+          "actual_adamw_height_loss_first_order_change": 0.0005647873692194538,
+          "actual_adamw_collision_loss_first_order_change": -0.0036481228530505106,
+          "original": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 1.0,
+            "unclipped_gradient_norm": 3.156631705853785,
+            "clip_scale": 1.0,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": -0.08760280836010312,
+            "height_loss_change_per_unit_sgd_lr": 0.08760280836010312,
+            "collision_loss_change_per_unit_sgd_lr": -0.4280570953263993
+          },
+          "non_worsen_height": {
+            "additional_height_gradient_coefficient": 13.798602358333408,
+            "effective_height_coefficient": 14.798602358333408,
+            "unclipped_gradient_norm": 2.958974046585578,
+            "clip_scale": 1.0,
+            "angle_to_original_degrees": 20.38333030224673,
+            "height_gradient_dot_update": -2.992282239785922e-18,
+            "height_loss_change_per_unit_sgd_lr": 2.992282239785922e-18,
+            "collision_loss_change_per_unit_sgd_lr": -0.32389046396242976
+          },
+          "preserve_height_descent": {
+            "additional_height_gradient_coefficient": 14.798602358333408,
+            "effective_height_coefficient": 15.798602358333408,
+            "unclipped_gradient_norm": 2.960046634926826,
+            "clip_scale": 1.0,
+            "angle_to_original_degrees": 21.925804842914577,
+            "height_gradient_dot_update": 0.006348672574595716,
+            "height_loss_change_per_unit_sgd_lr": -0.006348672574595716,
+            "collision_loss_change_per_unit_sgd_lr": -0.3163413927841405
+          }
+        },
+        "trunk": {
+          "group": "trunk",
+          "height_gradient_norm": 0.00774547933385112,
+          "collision_height_cosine": 0.18057855881592097,
+          "other_gradient_dot_height": 0.00014875164937368154,
+          "actual_adamw_height_loss_first_order_change": 9.893070617724366e-05,
+          "actual_adamw_collision_loss_first_order_change": -0.0021708923391022795,
+          "original": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 1.0,
+            "unclipped_gradient_norm": 0.20919747339538738,
+            "clip_scale": 1.0,
+            "angle_to_original_degrees": 8.537736462515939e-07,
+            "height_gradient_dot_update": 0.00020874409948479632,
+            "height_loss_change_per_unit_sgd_lr": -0.00020874409948479632,
+            "collision_loss_change_per_unit_sgd_lr": -0.0013150070834338822
+          },
+          "non_worsen_height": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 1.0,
+            "unclipped_gradient_norm": 0.20919747339538738,
+            "clip_scale": 1.0,
+            "angle_to_original_degrees": 8.537736462515939e-07,
+            "height_gradient_dot_update": 0.00020874409948479632,
+            "height_loss_change_per_unit_sgd_lr": -0.00020874409948479632,
+            "collision_loss_change_per_unit_sgd_lr": -0.0013150070834338822
+          },
+          "preserve_height_descent": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 1.0,
+            "unclipped_gradient_norm": 0.20919747339538738,
+            "clip_scale": 1.0,
+            "angle_to_original_degrees": 8.537736462515939e-07,
+            "height_gradient_dot_update": 0.00020874409948479632,
+            "height_loss_change_per_unit_sgd_lr": -0.00020874409948479632,
+            "collision_loss_change_per_unit_sgd_lr": -0.0013150070834338822
+          }
+        },
+        "z_head": {
+          "group": "z_head",
+          "height_gradient_norm": 0.07930082360363752,
+          "collision_height_cosine": -0.8600149289282895,
+          "other_gradient_dot_height": -0.09366176875183285,
+          "actual_adamw_height_loss_first_order_change": 0.0004645948530194193,
+          "actual_adamw_collision_loss_first_order_change": -0.0007498965117355757,
+          "original": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 1.0,
+            "unclipped_gradient_norm": 1.321815597419688,
+            "clip_scale": 1.0,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": -0.08737314812761762,
+            "height_loss_change_per_unit_sgd_lr": 0.08737314812761762,
+            "collision_loss_change_per_unit_sgd_lr": -0.14405262273895506
+          },
+          "non_worsen_height": {
+            "additional_height_gradient_coefficient": 13.893849438329099,
+            "effective_height_coefficient": 14.893849438329099,
+            "unclipped_gradient_norm": 0.7302377068763439,
+            "clip_scale": 1.0,
+            "angle_to_original_degrees": 56.464708530223774,
+            "height_gradient_dot_update": -9.982714974585363e-19,
+            "height_loss_change_per_unit_sgd_lr": 9.982714974585363e-19,
+            "collision_loss_change_per_unit_sgd_lr": -0.039149021724190956
+          },
+          "preserve_height_descent": {
+            "additional_height_gradient_coefficient": 14.893849438329099,
+            "effective_height_coefficient": 15.893849438329099,
+            "unclipped_gradient_norm": 0.7345309586179718,
+            "clip_scale": 1.0,
+            "angle_to_original_degrees": 62.66250793260739,
+            "height_gradient_dot_update": 0.006288620624215233,
+            "height_loss_change_per_unit_sgd_lr": -0.006288620624215233,
+            "collision_loss_change_per_unit_sgd_lr": -0.031598659135305726
+          }
+        }
+      }
+    },
+    {
+      "run": "zhang_step_h5_lr0p0005_s0_20261029",
+      "stage": "pretrain_s1",
+      "update": 1,
+      "environment_steps": 153600,
+      "upper_boundary_active_fraction": 0.0,
+      "lower_boundary_active_fraction": 0.12595053017139435,
+      "mean_altitude_m": 1.4604249000549316,
+      "groups": {
+        "all": {
+          "group": "all",
+          "height_gradient_norm": 0.4565003625595188,
+          "collision_height_cosine": 0.9999693251295564,
+          "other_gradient_dot_height": 2.0827448682500114,
+          "actual_adamw_height_loss_first_order_change": -0.003222866220639619,
+          "actual_adamw_collision_loss_first_order_change": -0.0002699825851264004,
+          "original": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 5.0,
+            "unclipped_gradient_norm": 7.697532547625593,
+            "clip_scale": 0.6495587150175288,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": 3.124707773334872,
+            "height_loss_change_per_unit_sgd_lr": -2.0296811660526832,
+            "collision_loss_change_per_unit_sgd_lr": -0.16991929760461422
+          },
+          "non_worsen_height": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 5.0,
+            "unclipped_gradient_norm": 7.697532547625593,
+            "clip_scale": 0.6495587150175288,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": 3.124707773334872,
+            "height_loss_change_per_unit_sgd_lr": -2.0296811660526832,
+            "collision_loss_change_per_unit_sgd_lr": -0.16991929760461422
+          },
+          "preserve_height_descent": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 5.0,
+            "unclipped_gradient_norm": 7.697532547625593,
+            "clip_scale": 0.6495587150175288,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": 3.124707773334872,
+            "height_loss_change_per_unit_sgd_lr": -2.0296811660526832,
+            "collision_loss_change_per_unit_sgd_lr": -0.16991929760461422
+          }
+        },
+        "trunk": {
+          "group": "trunk",
+          "height_gradient_norm": 0.004983382619546623,
+          "collision_height_cosine": 0.9993160704908937,
+          "other_gradient_dot_height": 0.0002551962315278155,
+          "actual_adamw_height_loss_first_order_change": -0.0003085092069350832,
+          "actual_adamw_collision_loss_first_order_change": -2.622147659288358e-05,
+          "original": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 5.0,
+            "unclipped_gradient_norm": 0.08401436370918679,
+            "clip_scale": 1.0,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": 0.0003793667431918123,
+            "height_loss_change_per_unit_sgd_lr": -0.0003793667431918123,
+            "collision_loss_change_per_unit_sgd_lr": -3.186270400027035e-05
+          },
+          "non_worsen_height": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 5.0,
+            "unclipped_gradient_norm": 0.08401436370918679,
+            "clip_scale": 1.0,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": 0.0003793667431918123,
+            "height_loss_change_per_unit_sgd_lr": -0.0003793667431918123,
+            "collision_loss_change_per_unit_sgd_lr": -3.186270400027035e-05
+          },
+          "preserve_height_descent": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 5.0,
+            "unclipped_gradient_norm": 0.08401436370918679,
+            "clip_scale": 1.0,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": 0.0003793667431918123,
+            "height_loss_change_per_unit_sgd_lr": -0.0003793667431918123,
+            "collision_loss_change_per_unit_sgd_lr": -3.186270400027035e-05
+          }
+        },
+        "z_head": {
+          "group": "z_head",
+          "height_gradient_norm": 0.45647311364783966,
+          "collision_height_cosine": 0.9999694046825773,
+          "other_gradient_dot_height": 2.0818478313873507,
+          "actual_adamw_height_loss_first_order_change": -0.0029125422976797,
+          "actual_adamw_collision_loss_first_order_change": -0.00024359814328757902,
+          "original": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 5.0,
+            "unclipped_gradient_norm": 6.843246673838779,
+            "clip_scale": 0.7306472362697939,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": 3.123686348804118,
+            "height_loss_change_per_unit_sgd_lr": -2.2823127977274122,
+            "collision_loss_change_per_unit_sgd_lr": -0.1910655074953861
+          },
+          "non_worsen_height": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 5.0,
+            "unclipped_gradient_norm": 6.843246673838779,
+            "clip_scale": 0.7306472362697939,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": 3.123686348804118,
+            "height_loss_change_per_unit_sgd_lr": -2.2823127977274122,
+            "collision_loss_change_per_unit_sgd_lr": -0.1910655074953861
+          },
+          "preserve_height_descent": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 5.0,
+            "unclipped_gradient_norm": 6.843246673838779,
+            "clip_scale": 0.7306472362697939,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": 3.123686348804118,
+            "height_loss_change_per_unit_sgd_lr": -2.2823127977274122,
+            "collision_loss_change_per_unit_sgd_lr": -0.1910655074953861
+          }
+        }
+      }
+    },
+    {
+      "run": "zhang_step_h5_lr0p0005_s0_20261029",
+      "stage": "pretrain_s1",
+      "update": 12,
+      "environment_steps": 1843200,
+      "upper_boundary_active_fraction": 0.08895833790302277,
+      "lower_boundary_active_fraction": 0.018111979588866234,
+      "mean_altitude_m": 2.223499059677124,
+      "groups": {
+        "all": {
+          "group": "all",
+          "height_gradient_norm": 0.2507545888830908,
+          "collision_height_cosine": -0.20864887219569866,
+          "other_gradient_dot_height": -0.07429396828063067,
+          "actual_adamw_height_loss_first_order_change": 0.0005562304269710743,
+          "actual_adamw_collision_loss_first_order_change": -0.0010099930241653876,
+          "original": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 5.0,
+            "unclipped_gradient_norm": 1.9048570041228996,
+            "clip_scale": 1.0,
+            "angle_to_original_degrees": 8.537736462515939e-07,
+            "height_gradient_dot_update": 0.24009535094900886,
+            "height_loss_change_per_unit_sgd_lr": -0.24009535094900886,
+            "collision_loss_change_per_unit_sgd_lr": -0.029172849391321847
+          },
+          "non_worsen_height": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 5.0,
+            "unclipped_gradient_norm": 1.9048570041228996,
+            "clip_scale": 1.0,
+            "angle_to_original_degrees": 8.537736462515939e-07,
+            "height_gradient_dot_update": 0.24009535094900886,
+            "height_loss_change_per_unit_sgd_lr": -0.24009535094900886,
+            "collision_loss_change_per_unit_sgd_lr": -0.029172849391321847
+          },
+          "preserve_height_descent": {
+            "additional_height_gradient_coefficient": 1.1815599916478732,
+            "effective_height_coefficient": 6.181559991647873,
+            "unclipped_gradient_norm": 2.069694931244995,
+            "clip_scale": 1.0,
+            "angle_to_original_degrees": 7.108753358500503,
+            "height_gradient_dot_update": 0.31438931922963953,
+            "height_loss_change_per_unit_sgd_lr": -0.31438931922963953,
+            "collision_loss_change_per_unit_sgd_lr": -0.02066514263625463
+          }
+        },
+        "trunk": {
+          "group": "trunk",
+          "height_gradient_norm": 0.012867375326634992,
+          "collision_height_cosine": 0.31871261287175057,
+          "other_gradient_dot_height": -0.00042786330575225674,
+          "actual_adamw_height_loss_first_order_change": 2.4451195712062052e-05,
+          "actual_adamw_collision_loss_first_order_change": -0.000748874085529775,
+          "original": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 5.0,
+            "unclipped_gradient_norm": 0.09838485766831254,
+            "clip_scale": 1.0,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": 0.0003999834332302182,
+            "height_loss_change_per_unit_sgd_lr": -0.0003999834332302182,
+            "collision_loss_change_per_unit_sgd_lr": 5.990140511326751e-06
+          },
+          "non_worsen_height": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 5.0,
+            "unclipped_gradient_norm": 0.09838485766831254,
+            "clip_scale": 1.0,
+            "angle_to_original_degrees": 0.0,
+            "height_gradient_dot_update": 0.0003999834332302182,
+            "height_loss_change_per_unit_sgd_lr": -0.0003999834332302182,
+            "collision_loss_change_per_unit_sgd_lr": 5.990140511326751e-06
+          },
+          "preserve_height_descent": {
+            "additional_height_gradient_coefficient": 2.5841939431817607,
+            "effective_height_coefficient": 7.584193943181761,
+            "unclipped_gradient_norm": 0.11336900596151481,
+            "clip_scale": 1.0,
+            "angle_to_original_degrees": 16.157643696004886,
+            "height_gradient_dot_update": 0.000827846738982475,
+            "height_loss_change_per_unit_sgd_lr": -0.000827846738982475,
+            "collision_loss_change_per_unit_sgd_lr": -0.00016568135169666367
+          }
+        },
+        "z_head": {
+          "group": "z_head",
+          "height_gradient_norm": 0.2504239243312719,
+          "collision_height_cosine": -0.9695021635659358,
+          "other_gradient_dot_height": -0.07357685846794268,
+          "actual_adamw_height_loss_first_order_change": 0.00053091272309155,
+          "actual_adamw_collision_loss_first_order_change": -5.696766051845671e-05,
+          "original": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 5.0,
+            "unclipped_gradient_norm": 1.0081904977918819,
+            "clip_scale": 1.0,
+            "angle_to_original_degrees": 1.2074182697257333e-06,
+            "height_gradient_dot_update": 0.23998385091943028,
+            "height_loss_change_per_unit_sgd_lr": -0.23998385091943028,
+            "collision_loss_change_per_unit_sgd_lr": 0.026553596793789446
+          },
+          "non_worsen_height": {
+            "additional_height_gradient_coefficient": 0.0,
+            "effective_height_coefficient": 5.0,
+            "unclipped_gradient_norm": 1.0081904977918819,
+            "clip_scale": 1.0,
+            "angle_to_original_degrees": 1.2074182697257333e-06,
+            "height_gradient_dot_update": 0.23998385091943028,
+            "height_loss_change_per_unit_sgd_lr": -0.23998385091943028,
+            "collision_loss_change_per_unit_sgd_lr": 0.026553596793789446
+          },
+          "preserve_height_descent": {
+            "additional_height_gradient_coefficient": 1.1732474169307643,
+            "effective_height_coefficient": 6.1732474169307645,
+            "unclipped_gradient_norm": 1.290694698747103,
+            "clip_scale": 1.0,
+            "angle_to_original_degrees": 4.055041234969573,
+            "height_gradient_dot_update": 0.31356070938737296,
+            "height_loss_change_per_unit_sgd_lr": -0.31356070938737296,
+            "collision_loss_change_per_unit_sgd_lr": 0.03502401804003416
+          }
+        }
+      }
+    }
+  ]
+}
