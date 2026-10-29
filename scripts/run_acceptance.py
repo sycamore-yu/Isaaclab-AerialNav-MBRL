@@ -45,9 +45,14 @@ def parse_gradient_diagnostic_updates(raw: str) -> tuple[int, ...]:
 TrainArgValue = str | int | float | bool | tuple[int, ...]
 TRAIN_ARG_CHOICES = {
     "timing": ("baseline", "unified_20hz"),
-    "variant": ("step", "continuous", "dcol", "truncated_window"),
+    "variant": ("step", "continuous", "dcol"),
     "algorithm": ("bptt", "shac", "ahac"),
     "lr_schedule": ("cosine", "plateau", "constant"),
+    "critic_value_transform": ("linear", "softplus"),
+    "velocity_loss_mode": ("variant_default", "per_step", "truncated_window", "full_window"),
+    "height_loss_mode": ("target_exp", "target_huber", "boundary_huber"),
+    "optimizer": ("adamw", "adam"),
+    "gradient_projection": ("none", "height_priority"),
 }
 TRAIN_ARG_TYPES = {
     "timing": str,
@@ -58,10 +63,17 @@ TRAIN_ARG_TYPES = {
     "normalization_variance_floor": float,
     "recovery_enabled": parse_binary_flag,
     "timesteps": int,
-    "plateau_patience": int,
     "velocity_window_s": float,
+    "velocity_loss_mode": str,
     "camera_batch_size": int,
     "lr": float,
+    "optimizer": str,
+    "weight_decay": float,
+    "plateau_patience": int,
+    "height_loss_mode": str,
+    "height_target_min": float,
+    "height_target_max": float,
+    "gradient_projection": str,
     "max_grad_norm": float,
     "grad_decay": float,
     "coef_obj_avoidance": float,
@@ -75,6 +87,7 @@ TRAIN_ARG_TYPES = {
     "critic_lr": float,
     "critic_iterations": int,
     "critic_max_iterations": int,
+    "critic_value_transform": str,
     "discount": float,
     "td_lambda": float,
     "ahac_min_horizon": int,
@@ -124,22 +137,28 @@ def parse_train_args(tokens: list[str]) -> dict[str, TrainArgValue]:
         elif key == "grad_decay":
             if not 0 < value <= 1:
                 raise ValueError("grad_decay must be in (0, 1]")
-        elif key.startswith("coef_") or key in ("boundary_margin", "ahac_risk_clearance", "plateau_patience"):
+        elif key.startswith("coef_") or key in ("boundary_margin", "ahac_risk_clearance", "weight_decay", "plateau_patience"):
             if value < 0:
                 raise ValueError(f"{option} must be nonnegative")
         elif value <= 0:
             raise ValueError(f"{option} must be positive")
         values[key] = value
         index += 1
+    if values.get("algorithm", "bptt") == "bptt" and values.get("critic_value_transform", "linear") != "linear":
+        raise ValueError("--critic_value_transform softplus requires --algorithm shac or ahac")
     if values.get("algorithm", "bptt") != "bptt":
         if values.get("variant", "step") != "dcol":
             raise ValueError("SHAC/AHAC comparisons require --variant dcol")
         if values.get("gradient_diagnostic_updates", ()):
             raise ValueError("Seven-term gradient diagnostics require --algorithm bptt")
+        if values.get("gradient_projection", "none") != "none":
+            raise ValueError("Height-priority projection requires --algorithm bptt")
     if values.get("timesteps", 150) < 2:
         raise ValueError("timesteps must be at least 2")
-    if not 2 <= values.get("ahac_min_horizon", 16) <= values.get("ahac_initial_horizon", 32) <= values.get("ahac_max_horizon", 150):
+    if not 2 <= values.get("ahac_min_horizon", 16) <= values.get("ahac_initial_horizon", 32) <= values.get("ahac_max_horizon", 300):
         raise ValueError("AHAC requires 2 <= min <= initial <= max horizon")
+    if not 0.2 < values.get("height_target_min", 0.5) < values.get("height_target_max", 2.5) < 4.0:
+        raise ValueError("height target range must be increasing and inside (0.2, 4.0) metres")
     return values
 
 
@@ -196,6 +215,8 @@ def validate_stage_result(
     variant: str = "step",
     algorithm: str = "bptt",
     report_episodes: int | None = None,
+    velocity_loss_mode: str = "variant_default",
+    screening: bool = False,
 ) -> list[str]:
     """Validate one real training report against the fixed acceptance protocol."""
     errors = []
@@ -209,11 +230,21 @@ def validate_stage_result(
     if method == "zhang":
         expect(result.get("variant") == variant, "Zhang variant does not match the launched experiment")
         expect(result.get("algorithm") == algorithm, "Zhang algorithm does not match the launched experiment")
+        resolved_mode = velocity_loss_mode
+        if velocity_loss_mode == "variant_default":
+            resolved_mode = "per_step" if variant == "step" else "truncated_window"
+        elif velocity_loss_mode == "full_window":
+            resolved_mode = "window"
+        expect(result.get("velocity_loss_mode") == velocity_loss_mode,
+               "Zhang velocity_loss_mode does not match the launched experiment")
+        expect(result.get("resolved_velocity_loss_mode") == resolved_mode,
+               "Zhang resolved_velocity_loss_mode does not match the launched experiment")
     expect(result.get("status") == "completed", "training status is not completed")
     expect(result.get("stage") == stage, "training stage does not match")
     report_episodes = num_envs if report_episodes is None else report_episodes
-    expect(result.get("num_envs") == num_envs and num_envs > 0, "num_envs must match and be positive")
-    expect(report_episodes >= 1024, "formal reports require at least 1024 episodes")
+    expect(result.get("num_envs") == num_envs and num_envs >= (1 if screening else 1024),
+           "num_envs must match; formal acceptance requires at least 1024")
+    expect(report_episodes >= (1 if screening else 1024), "formal reports require at least 1024 episodes")
     expect(result.get("stage_passed") is True, "trainer has not passed the stage")
     expect(result.get("max_updates") is None, "training has a maximum update limit")
     expected_parent = str(parent_checkpoint) if parent_checkpoint is not None else None
@@ -246,7 +277,8 @@ def validate_stage_result(
         "current-stage first-arrival success rate is below 0.8 or invalid",
     )
     if stage == STAGES[-1]:
-        expect(result.get("acceptance_passed") is True, "final-stage trainer acceptance has not passed")
+        expect(result.get("acceptance_passed") is (num_envs >= 1024),
+               "final-stage trainer acceptance does not match the validated environment scale")
         expect(curriculum.get("acceptance_passed") is True, "final-stage curriculum acceptance has not passed")
     return errors
 
@@ -258,12 +290,16 @@ def write_json(path: Path, value: dict[str, Any]) -> None:
 
 
 def run_pipeline(args: argparse.Namespace, train_args: dict[str, TrainArgValue]) -> int:
+    screening = getattr(args, "screening", False)
     output = Path(args.output).expanduser().resolve()
     output.mkdir(parents=True, exist_ok=False)
     methods = ("zhang", "navrl") if args.method == "both" else (args.method,)
     summary: dict[str, Any] = {
         "status": "running",
         "acceptance_passed": False,
+        "purpose": "training_comparison" if screening else "formal_acceptance",
+        "screening": screening,
+        "stage_thresholds_passed": False,
         "method": args.method,
         "num_envs": args.num_envs,
         "report_episodes": getattr(args, "report_episodes", None) or args.num_envs,
@@ -326,6 +362,27 @@ def run_pipeline(args: argparse.Namespace, train_args: dict[str, TrainArgValue])
                         current_stage["result"] = json.loads(result_path.read_text(encoding="utf-8"))
                     except json.JSONDecodeError as exc:
                         raise ValueError(f"Invalid training result {result_path}: {exc}") from exc
+                result = current_stage["result"]
+                if process.returncode == 0 and isinstance(result, dict) and result.get("status") == "stopped":
+                    # A requested stop saves a complete-update checkpoint but
+                    # does not certify or advance the current curriculum stage.
+                    checkpoint = log_dir / "checkpoint_stopped.pt"
+                    reported_checkpoint = result.get("checkpoint")
+                    if result.get("error") is not None:
+                        raise RuntimeError(f"Stopped trainer reported an error: {result['error']}")
+                    if (not isinstance(reported_checkpoint, str)
+                            or Path(reported_checkpoint).resolve() != checkpoint.resolve()
+                            or not checkpoint.is_file()):
+                        raise RuntimeError(f"Stopped trainer checkpoint is missing or mismatched: {checkpoint}")
+                    current_stage.update(status="stopped", stage_passed=False, acceptance_passed=False,
+                                         checkpoint=str(checkpoint), error=None)
+                    current_method.update(status="stopped", acceptance_passed=False,
+                                          checkpoint=str(checkpoint), error=None)
+                    summary.update(status="stopped", acceptance_passed=False, checkpoint=str(checkpoint),
+                                   error=None, finished_at=datetime.now(UTC).isoformat())
+                    write_json(summary_path, summary)
+                    print(f"Stopped {method}/{stage}: {checkpoint}", flush=True)
+                    return 0
                 errors = []
                 if process.returncode != 0:
                     errors.append(f"trainer exited with code {process.returncode}; see {stdout_log}")
@@ -338,6 +395,8 @@ def run_pipeline(args: argparse.Namespace, train_args: dict[str, TrainArgValue])
                         variant=train_args.get("variant", "step"),
                         algorithm=train_args.get("algorithm", "bptt"),
                         report_episodes=getattr(args, "report_episodes", None),
+                        velocity_loss_mode=train_args.get("velocity_loss_mode", "variant_default"),
+                        screening=screening,
                     )
                 checkpoint = log_dir / "checkpoint_stage.pt"
                 if not checkpoint.is_file():
@@ -351,9 +410,11 @@ def run_pipeline(args: argparse.Namespace, train_args: dict[str, TrainArgValue])
                 write_json(summary_path, summary)
                 print(f"Passed {method}/{stage}", flush=True)
             current_method["status"] = "completed"
-            current_method["acceptance_passed"] = True
+            current_method["stage_thresholds_passed"] = True
+            current_method["acceptance_passed"] = not screening
         summary["status"] = "completed"
-        summary["acceptance_passed"] = True
+        summary["stage_thresholds_passed"] = True
+        summary["acceptance_passed"] = not screening
         exit_code = 0
     except (OSError, ValueError, RuntimeError, KeyboardInterrupt) as exc:
         summary["status"] = "failed"
@@ -375,13 +436,19 @@ def main() -> int:
     parser.add_argument("--output", required=True)
     parser.add_argument("--num_envs", type=int, default=1024)
     parser.add_argument("--report_episodes", type=int, default=None)
+    parser.add_argument("--screening", action="store_true",
+                        help="Allow reduced-env fresh comparisons; never label them as formal acceptance")
     parser.add_argument("--train_seed", type=int, default=0)
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--finetune_lr", type=float, default=5e-5)
     parser.add_argument("--train_args", nargs=argparse.REMAINDER, default=[])
     args = parser.parse_args()
-    if args.num_envs < 1 or (args.report_episodes if args.report_episodes is not None else args.num_envs) < 1024:
-        parser.error("formal acceptance requires positive num_envs and at least 1024 report episodes")
+    if args.num_envs < 1:
+        parser.error("--num_envs must be positive")
+    if args.num_envs < 1024 and not args.screening:
+        parser.error("formal acceptance requires --num_envs >= 1024")
+    if args.report_episodes is not None and args.report_episodes < (1 if args.screening else 1024):
+        parser.error("report_episodes must be positive; formal reports require at least 1024")
     if not math.isfinite(args.finetune_lr) or args.finetune_lr <= 0:
         parser.error("--finetune_lr must be finite and positive")
     try:

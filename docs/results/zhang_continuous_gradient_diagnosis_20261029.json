@@ -1,0 +1,517 @@
+{
+  "schema_version": 1,
+  "analysis_date": "2026-10-29",
+  "evidence_kind": "actual_training_diagnostics_with_raw_gradient_counterfactuals",
+  "source": {
+    "commit": "980b43fcc630f009cc82936dd59df367c7a71167",
+    "run_name": "zhang_followup_continuous_signed_seed0_20261029",
+    "remote_log_path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_followup_continuous_signed_seed0_20261029/zhang/pretrain_s0/gradient_diagnostics.jsonl",
+    "export_snapshot_path": "/workspace/scratch/e24b6ceb530e/mechanism_followups_20261029/diagnostic_data/continuous_fresh_gradient_through_u10.jsonl",
+    "export_snapshot_sha256": "2c5bb89e6d2699a423544a6f6e96810bed41b8e3300daba2dd741b274b2753de",
+    "export_record_count": 3,
+    "export_updates": [
+      1,
+      7,
+      10
+    ],
+    "hash_scope": "exported_three_record_snapshot_not_the_final_appending_remote_log"
+  },
+  "baseline": {
+    "variant": "continuous",
+    "algorithm": "bptt",
+    "seed": 0,
+    "stage": "pretrain_s0",
+    "num_envs": 1024,
+    "static_obstacles": 300,
+    "dynamic_obstacles": 0,
+    "extra_perturbations": false,
+    "rollout_policy_steps": 150,
+    "physics_dt_s": 0.01,
+    "policy_dt_s": 0.1,
+    "velocity_window_s": 2.0,
+    "grad_decay": 0.4,
+    "initial_lr": 0.001,
+    "lr_schedule": "cosine",
+    "cosine_period_updates": 400,
+    "min_lr_ratio": 0.01,
+    "observation_normalization": false,
+    "max_grad_norm": 5.0,
+    "optimizer_groups_at_u1": [
+      {
+        "lr": 0.001,
+        "betas": [
+          0.9,
+          0.999
+        ],
+        "eps": 1e-08,
+        "weight_decay": 0.01
+      }
+    ],
+    "height_bounds_m": [
+      0.2,
+      4.0
+    ],
+    "boundary_margin_m": 0.5,
+    "boundary_scale_m": 0.5,
+    "height_penalty_activation_bounds_m": [
+      0.7,
+      3.5
+    ],
+    "loss_coefficients": {
+      "velocity": 1.0,
+      "velocity_prediction": 2.0,
+      "obstacle_avoidance": 3.0,
+      "collision": 7.5,
+      "acceleration": 0.01,
+      "jerk": 0.001,
+      "height_boundary": 1.0
+    }
+  },
+  "definitions": {
+    "environment_steps": "actual_policy_transitions_summed_over_envs_not_physics_substeps",
+    "height_dot_total": "dot(raw_height_gradient, total_weighted_gradient); positive means negative raw total gradient is locally height-descending",
+    "height_dot_actual_delta": "dot(raw_height_gradient, actual_post_step_minus_pre_step_parameters); negative predicts local height loss decrease",
+    "total_dot_actual_delta": "dot(total_weighted_gradient, actual_post_step_minus_pre_step_parameters); negative predicts local total loss decrease",
+    "height_dot_weighted_terms": "coefficient_i * dot(raw_height_gradient, raw_term_i_gradient)",
+    "height_critical_coefficient": "max(0, -sum_other_weighted_height_dots / height_self_gram); raw Euclidean direction threshold only",
+    "counterfactual_scope": "same_rollout_raw_component_gradients_only_not_an_AdamW_step_or_a_new_PhysX_rollout",
+    "relative_update_norm": "norm(actual_delta)/norm(parameters_before); not parameter-norm growth or output growth",
+    "z_head": "fc weight rows az and vz; 384 parameters",
+    "fraction_units": "0_to_1",
+    "gradient_and_loss_units": "objective_and_parameter_coordinates_not_meters_or_success_rates"
+  },
+  "updates": [
+    {
+      "update": 1,
+      "environment_steps": 153600,
+      "rollout_policy_steps": 150,
+      "mean_altitude_m": 1.4604206085205078,
+      "mean_vertical_speed_mps": -0.008137984201312065,
+      "mean_executed_vertical_acceleration_mps2": -0.0010944901732727885,
+      "lower_height_active_fraction": 0.12594401836395264,
+      "upper_height_active_fraction": 0.0,
+      "raw_losses": {
+        "velocity": 5.360052108764648,
+        "velocity_prediction": 0.0003243327955715358,
+        "obstacle_avoidance": 0.10485878586769104,
+        "collision": 0.0002633185940794647,
+        "acceleration": 1.4710083632962778e-05,
+        "jerk": 3.3260882901231525e-06,
+        "height_boundary": 0.005583611782640219
+      },
+      "actual_learning_rate": 0.001,
+      "pre_clip_grad_norm": 6.07037353515625,
+      "clip_scale": 0.8236724062152618,
+      "executed_action_max_error": 0.0,
+      "surrogate_velocity_error_mps": 0.0003573528374545276,
+      "surrogate_vertical_velocity_bias_mps": 0.0003472735988907516,
+      "gradient_sum_relative_l2_error": 2.5408906125511743e-07,
+      "groups": {
+        "all": {
+          "parameter_count": 514496,
+          "weighted_gradient_norms": {
+            "velocity": 3.7399952043335962,
+            "velocity_prediction": 0.09336473047716333,
+            "obstacle_avoidance": 4.2447789112899175,
+            "collision": 0.28663437535332165,
+            "acceleration": 0.0002836258372918018,
+            "jerk": 6.289927765284629e-06,
+            "height_boundary": 0.2605254507162328
+          },
+          "signed_total_projection_shares": {
+            "velocity": 0.37545298392348614,
+            "velocity_prediction": -0.0023982104688822937,
+            "obstacle_avoidance": 0.5553725049955626,
+            "collision": 0.03750030321240978,
+            "acceleration": -1.2710279740836314e-05,
+            "jerk": -1.9155566430628295e-07,
+            "height_boundary": 0.03408532017282887
+          },
+          "height_dot_weighted_terms": {
+            "velocity": 0.002357318774130096,
+            "velocity_prediction": 0.005293162738333965,
+            "obstacle_avoidance": 1.1058059228039698,
+            "collision": 0.07467352285136315,
+            "acceleration": 2.067229135094623e-05,
+            "jerk": 5.8975651717383e-07,
+            "height_boundary": 0.06787351047089624
+          },
+          "height_self_gram": 0.06787351047089624,
+          "height_dot_total": 1.2560246996865614,
+          "height_dot_actual_delta": -0.0036415247944340157,
+          "total_dot_actual_delta": -0.11757913146333099,
+          "height_critical_coefficient": 0.0,
+          "height_collision_cosine": 0.9999728561981608,
+          "height_avoidance_cosine": 0.9999393996830656,
+          "parameter_norm_before": 23.38095661333315,
+          "actual_update_norm": 0.6449404513286635,
+          "relative_update_norm": 0.02758400616341257,
+          "height_coefficient_counterfactuals": {
+            "5": {
+              "height_dot_total": 1.5275187415701463
+            },
+            "8": {
+              "height_dot_total": 1.731139272982835
+            },
+            "10": {
+              "height_dot_total": 1.8668862939246276
+            }
+          }
+        },
+        "z_head": {
+          "parameter_count": 384,
+          "weighted_gradient_norms": {
+            "velocity": 0.013214345105076925,
+            "velocity_prediction": 0.02877408655662134,
+            "obstacle_avoidance": 4.244525593337246,
+            "collision": 0.28661713249203147,
+            "acceleration": 7.944636196899464e-05,
+            "jerk": 2.328872077279422e-06,
+            "height_boundary": 0.2605098830352899
+          },
+          "signed_total_projection_shares": {
+            "velocity": 0.0015592007422315075,
+            "velocity_prediction": 0.004236220533656365,
+            "obstacle_avoidance": 0.8806739724967189,
+            "collision": 0.059463711092984525,
+            "acceleration": 1.6477752226406288e-05,
+            "jerk": 4.700306724376593e-07,
+            "height_boundary": 0.05404994735150989
+          },
+          "height_dot_weighted_terms": {
+            "velocity": 0.0019635295243983393,
+            "velocity_prediction": 0.005295870700084086,
+            "obstacle_avoidance": 1.1056739252016083,
+            "collision": 0.07466457419874407,
+            "acceleration": 2.068650475635236e-05,
+            "jerk": 5.900475584770067e-07,
+            "height_boundary": 0.06786539915906042
+          },
+          "height_self_gram": 0.06786539915906042,
+          "height_dot_total": 1.2554845753362103,
+          "height_dot_actual_delta": -0.0033242307027694313,
+          "total_dot_actual_delta": -0.06148880690210773,
+          "height_critical_coefficient": 0.0,
+          "height_collision_cosine": 0.9999729268135594,
+          "height_avoidance_cosine": 0.999939460807646,
+          "parameter_norm_before": 0.008271865031746728,
+          "actual_update_norm": 0.01959583964300012,
+          "relative_update_norm": 2.368974779906698,
+          "height_coefficient_counterfactuals": {
+            "5": {
+              "height_dot_total": 1.526946171972452
+            },
+            "8": {
+              "height_dot_total": 1.7305423694496334
+            },
+            "10": {
+              "height_dot_total": 1.866273167767754
+            }
+          }
+        }
+      }
+    },
+    {
+      "update": 7,
+      "environment_steps": 1075200,
+      "rollout_policy_steps": 150,
+      "mean_altitude_m": -8.367300033569336,
+      "mean_vertical_speed_mps": -0.6955574750900269,
+      "mean_executed_vertical_acceleration_mps2": -0.013234175741672516,
+      "lower_height_active_fraction": 1.0,
+      "upper_height_active_fraction": 0.0,
+      "raw_losses": {
+        "velocity": 7.050483703613281,
+        "velocity_prediction": 3.9076051712036133,
+        "obstacle_avoidance": 111.1374282836914,
+        "collision": 277.1791076660156,
+        "acceleration": 0.012081766501069069,
+        "jerk": 0.0004906726535409689,
+        "height_boundary": 17.634614944458008
+      },
+      "actual_learning_rate": 0.0009994504881061753,
+      "pre_clip_grad_norm": 1202.667724609375,
+      "clip_scale": 0.004157424277321959,
+      "executed_action_max_error": 0.0,
+      "surrogate_velocity_error_mps": 0.0005210856324993074,
+      "surrogate_vertical_velocity_bias_mps": 0.0004744920297525823,
+      "gradient_sum_relative_l2_error": 4.7126267691097755e-07,
+      "groups": {
+        "all": {
+          "parameter_count": 514496,
+          "weighted_gradient_norms": {
+            "velocity": 3.2698412993241917,
+            "velocity_prediction": 11.703502916983712,
+            "obstacle_avoidance": 260.128712075172,
+            "collision": 932.1233257185022,
+            "acceleration": 0.008156960330679959,
+            "jerk": 3.53158636304581e-05,
+            "height_boundary": 7.4145970129089065
+          },
+          "signed_total_projection_shares": {
+            "velocity": 0.0010739035983175918,
+            "velocity_prediction": 0.001631936721223458,
+            "obstacle_avoidance": 0.21616352025574098,
+            "collision": 0.7749653676310456,
+            "acceleration": 7.891790828492631e-07,
+            "jerk": -9.873814730743408e-09,
+            "height_boundary": 0.0061644924884040045
+          },
+          "height_dot_weighted_terms": {
+            "velocity": 9.396000905016871,
+            "velocity_prediction": 13.598432288267581,
+            "obstacle_avoidance": 1927.0805044339556,
+            "collision": 6911.317214050214,
+            "acceleration": 0.006696000336384575,
+            "jerk": -8.705715164257795e-05,
+            "height_boundary": 54.976248863837675
+          },
+          "height_self_gram": 54.976248863837675,
+          "height_dot_total": 8916.375009484478,
+          "height_dot_actual_delta": -0.0607264972047807,
+          "total_dot_actual_delta": -9.886920084253111,
+          "height_critical_coefficient": 0.0,
+          "height_collision_cosine": 0.9999997666892603,
+          "height_avoidance_cosine": 0.9991346377388244,
+          "parameter_norm_before": 23.460305983037262,
+          "actual_update_norm": 0.32918876711740136,
+          "relative_update_norm": 0.014031733744454057,
+          "height_coefficient_counterfactuals": {
+            "5": {
+              "height_dot_total": 9136.280004939828
+            },
+            "8": {
+              "height_dot_total": 9301.208751531341
+            },
+            "10": {
+              "height_dot_total": 9411.161249259017
+            }
+          }
+        },
+        "z_head": {
+          "parameter_count": 384,
+          "weighted_gradient_norms": {
+            "velocity": 1.2635509962513034,
+            "velocity_prediction": 2.560819547792706,
+            "obstacle_avoidance": 259.466085405058,
+            "collision": 929.7779534123069,
+            "acceleration": 0.0008832073422283397,
+            "jerk": 1.3318980788351253e-05,
+            "height_boundary": 7.39594495970211
+          },
+          "signed_total_projection_shares": {
+            "velocity": 0.0010509492930913635,
+            "velocity_prediction": 0.0015226111783849783,
+            "obstacle_avoidance": 0.2161875930619995,
+            "collision": 0.7750727748050829,
+            "acceleration": 7.31232282392672e-07,
+            "jerk": -9.827982920115227e-09,
+            "height_boundary": 0.006165350257141736
+          },
+          "height_dot_weighted_terms": {
+            "velocity": 9.325058410196386,
+            "velocity_prediction": 13.484943035174803,
+            "obstacle_avoidance": 1917.3523252531686,
+            "collision": 6876.584978472268,
+            "acceleration": 0.006491709543601728,
+            "jerk": -8.724251217145014e-05,
+            "height_boundary": 54.70000184694304
+          },
+          "height_self_gram": 54.70000184694304,
+          "height_dot_total": 8871.453711484783,
+          "height_dot_actual_delta": -0.0273353825714083,
+          "total_dot_actual_delta": -4.453294141222558,
+          "height_critical_coefficient": 0.0,
+          "height_collision_cosine": 0.9999997688228583,
+          "height_avoidance_cosine": 0.9991430099113132,
+          "parameter_norm_before": 0.0420916347115402,
+          "actual_update_norm": 0.007415716887459435,
+          "relative_update_norm": 0.1761803013420688,
+          "height_coefficient_counterfactuals": {
+            "5": {
+              "height_dot_total": 9090.253718872555
+            },
+            "8": {
+              "height_dot_total": 9254.353724413384
+            },
+            "10": {
+              "height_dot_total": 9363.75372810727
+            }
+          }
+        }
+      }
+    },
+    {
+      "update": 10,
+      "environment_steps": 1536000,
+      "rollout_policy_steps": 150,
+      "mean_altitude_m": 4.471408843994141,
+      "mean_vertical_speed_mps": 0.39541682600975037,
+      "mean_executed_vertical_acceleration_mps2": 0.04749220609664917,
+      "lower_height_active_fraction": 0.02884765714406967,
+      "upper_height_active_fraction": 0.3420117199420929,
+      "raw_losses": {
+        "velocity": 6.77176570892334,
+        "velocity_prediction": 2.1562509536743164,
+        "obstacle_avoidance": 0.13041427731513977,
+        "collision": 0.740038275718689,
+        "acceleration": 0.01283438503742218,
+        "jerk": 0.008203900419175625,
+        "height_boundary": 3.8663828372955322
+      },
+      "actual_learning_rate": 0.0009987638842260539,
+      "pre_clip_grad_norm": 11.202859878540039,
+      "clip_scale": 0.4463145668065818,
+      "executed_action_max_error": 0.0,
+      "surrogate_velocity_error_mps": 0.000634383293800056,
+      "surrogate_vertical_velocity_bias_mps": 0.00047297042328864336,
+      "gradient_sum_relative_l2_error": 2.3456908304867424e-07,
+      "groups": {
+        "all": {
+          "parameter_count": 514496,
+          "weighted_gradient_norms": {
+            "velocity": 1.7748326658196398,
+            "velocity_prediction": 5.160350066414261,
+            "obstacle_avoidance": 0.8803013570537237,
+            "collision": 11.35242064038584,
+            "acceleration": 0.0057092382588583455,
+            "jerk": 0.00035615118911511514,
+            "height_boundary": 1.584802547994128
+          },
+          "signed_total_projection_shares": {
+            "velocity": 0.018337932998063744,
+            "velocity_prediction": 0.16087939208760457,
+            "obstacle_avoidance": 0.06465084964428842,
+            "collision": 0.8699478592723378,
+            "acceleration": -0.00020956703111027234,
+            "jerk": -1.8802489417534437e-05,
+            "height_boundary": -0.11358766448176655
+          },
+          "height_dot_weighted_terms": {
+            "velocity": 0.32840242394559493,
+            "velocity_prediction": 1.29832712556259,
+            "obstacle_avoidance": -1.246247818803275,
+            "collision": -17.15233576541678,
+            "acceleration": 0.004206664153128492,
+            "jerk": 0.0003384714056430825,
+            "height_boundary": 2.5115991161286804
+          },
+          "height_self_gram": 2.5115991161286804,
+          "height_dot_total": -14.255709783024411,
+          "height_dot_actual_delta": 0.0244289441746014,
+          "total_dot_actual_delta": -0.20057480049535287,
+          "height_critical_coefficient": 6.67594951418753,
+          "height_collision_cosine": -0.9533659443439985,
+          "height_avoidance_cosine": -0.8933011212022232,
+          "parameter_norm_before": 23.51301506300838,
+          "actual_update_norm": 0.34712464911419244,
+          "relative_update_norm": 0.014763085388411243,
+          "height_coefficient_counterfactuals": {
+            "5": {
+              "height_dot_total": -4.20931331850969
+            },
+            "8": {
+              "height_dot_total": 3.3254840298763533
+            },
+            "10": {
+              "height_dot_total": 8.34868226213371
+            }
+          }
+        },
+        "z_head": {
+          "parameter_count": 384,
+          "weighted_gradient_norms": {
+            "velocity": 0.22241598987425706,
+            "velocity_prediction": 1.1642061151155136,
+            "obstacle_avoidance": 0.8725785811003224,
+            "collision": 11.288536751397075,
+            "acceleration": 0.0030225084377936856,
+            "jerk": 0.00024481326572464224,
+            "height_boundary": 1.571075828914316
+          },
+          "signed_total_projection_shares": {
+            "velocity": -0.020326544541799975,
+            "velocity_prediction": -0.07261605631554507,
+            "obstacle_avoidance": 0.08624001283029474,
+            "collision": 1.157692098518593,
+            "acceleration": -0.00027907696250723587,
+            "jerk": -2.2399949549053793e-05,
+            "height_boundary": -0.15068803357948615
+          },
+          "height_dot_weighted_terms": {
+            "velocity": 0.3240884721881987,
+            "velocity_prediction": 1.2410932736890155,
+            "obstacle_avoidance": -1.2329341124528135,
+            "collision": -16.955810649378932,
+            "acceleration": 0.004113105054684795,
+            "jerk": 0.0003369854349588983,
+            "height_boundary": 2.468279260198805
+          },
+          "height_self_gram": 2.468279260198805,
+          "height_dot_total": -14.150833665266074,
+          "height_dot_actual_delta": 0.011523038054209516,
+          "total_dot_actual_delta": -0.080276287214342,
+          "height_critical_coefficient": 6.733076436467043,
+          "height_collision_cosine": -0.9560569430705982,
+          "height_avoidance_cosine": -0.8993695371619925,
+          "parameter_norm_before": 0.055938527504831144,
+          "actual_update_norm": 0.010370742093785799,
+          "relative_update_norm": 0.185395335851308,
+          "height_coefficient_counterfactuals": {
+            "5": {
+              "height_dot_total": -4.2777166244708535
+            },
+            "8": {
+              "height_dot_total": 3.127121156125561
+            },
+            "10": {
+              "height_dot_total": 8.063679676523172
+            }
+          }
+        }
+      }
+    }
+  ],
+  "proposed_experiment": {
+    "name": "continuous_height_coefficient_8_single_factor",
+    "status": "not_started",
+    "acceptance_status": "not_evaluated",
+    "launch_receipt": null,
+    "base_source_commit": "980b43fcc630f009cc82936dd59df367c7a71167",
+    "initialization": "fresh_random_seed_0_no_checkpoint_or_optimizer_resume",
+    "single_train_config_override": {
+      "coef_height_boundary": 8.0
+    },
+    "unchanged_parameters": "all_other_baseline_algorithm_environment_curriculum_camera_and_optimizer_settings",
+    "diagnostic_updates": [
+      1,
+      7,
+      10
+    ],
+    "baseline_environment_step_budgets": [
+      153600,
+      1075200,
+      1536000
+    ],
+    "primary_hypothesis": "height weighting reduces raw objective conflict and makes actual height dot delta more negative in comparable mixed-boundary states",
+    "falsification": "raw height dot total positive but actual height dot delta remains positive, or both improve without trajectory improvement",
+    "training_evaluation": "compare raw component losses, both boundary activation fractions, vertical velocity, and episode-weighted natural success/failure reports at actual common environment steps",
+    "final_acceptance": "unchanged full-curriculum existing 80_percent criteria; this analysis is not acceptance",
+    "deferred_independent_lr_candidate": {
+      "lr": 0.00025,
+      "coef_height_boundary": 1.0,
+      "status": "not_started_by_this_analysis"
+    }
+  },
+  "limitations": [
+    "one_seed_three_selected_updates_all_pretrain_s0",
+    "correlated_environment_and_time_samples_not_independent_episodes",
+    "upper_and_lower_height_gradients_not_separately_recorded",
+    "collision_gradients_not_split_by_ground_or_other_mesh_geometry",
+    "rollout_collected_before_update_actual_parameter_delta_measured_after_update",
+    "raw_gradient_counterfactual_threshold_is_not_actual_AdamW_displacement_threshold",
+    "changing_height_coefficient_changes_total_loss_scale_so_total_loss_is_not_directly_comparable",
+    "no_independent_fixed_policy_evaluation_or_height8_training_result",
+    "extra_diagnostic_overhead_and_shared_GPU_preclude_exclusive_wallclock_claims"
+  ]
+}

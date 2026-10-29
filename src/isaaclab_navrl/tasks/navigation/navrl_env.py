@@ -11,7 +11,7 @@ from isaaclab_navrl.control import LeeRotorController
 from isaaclab_navrl.zhang.termination import latch_first_event, reset_first_event, termination_mask
 
 from .curriculum import TrainingCurriculum, active_obstacle_indices
-from .geometry import TerrainDistance, obstacle_signed_distance
+from .geometry import TerrainDistance, nearest_obstacle_signed_distance
 from .randomization import PolicyPerturbation
 from .task_logic import DynamicObstacleMotion, goal_frame, navigation_terms
 
@@ -79,12 +79,13 @@ class NavRLEnv(DirectRLEnv):
             dim=-1,
         )
 
-    def _sample_border(self, count):
+    def _sample_border(self, count, height_range=(0.5, 2.5)):
         masks = self.target_pos.new_tensor(((1, 0, 1), (1, 0, 1), (0, 1, 1), (0, 1, 1)))
         shifts = self.target_pos.new_tensor(((0, 24, 0), (0, -24, 0), (24, 0, 0), (-24, 0, 0)))
         sides = self._side_rng.randint(0, 4, count)
         sample = torch.rand(count, 3, generator=self._reset_rng, device=self.device) * 48 - 24
-        sample[:, 2] = 0.5 + 2 * torch.rand(count, generator=self._reset_rng, device=self.device)
+        low, high = height_range
+        sample[:, 2] = low + (high - low) * torch.rand(count, generator=self._reset_rng, device=self.device)
         return sample * masks[sides] + shifts[sides]
 
     def _reset_idx(self, env_ids):
@@ -108,7 +109,9 @@ class NavRLEnv(DirectRLEnv):
             target[:, 0] = torch.linspace(-16, 16, self.num_envs, device=self.device)[env_ids]
             target[:, 1] = -24.0
         else:
-            target = self._sample_border(count)
+            target = self._sample_border(
+                count, self.cfg.height_target_range if self.cfg.method == "zhang" else (0.5, 2.5)
+            )
             position = self._sample_border(count)
         self.target_pos[env_ids] = target
         direction = target - position
@@ -195,8 +198,9 @@ class NavRLEnv(DirectRLEnv):
         self.dynamic_collection.write_body_pose_to_sim_index(body_poses=self._dynamic_pose)
         self.dynamic_collection.write_data_to_sim()
 
-    def obstacle_signed_distance(self, query):
-        return obstacle_signed_distance(
+
+    def nearest_obstacle_signed_distance(self, query):
+        return nearest_obstacle_signed_distance(
             query, self.terrain_distance.signed_distance(query), self.motion.position, self.motion.size
         )
 
@@ -205,7 +209,7 @@ class NavRLEnv(DirectRLEnv):
 
         state = self.root_state()
         radius = 0.3  # Shared task sphere; training safety margins are separate.
-        return first_events(state, self.target_pos, self.obstacle_signed_distance(state[:, :3]) - radius)
+        return first_events(state, self.target_pos, self.nearest_obstacle_signed_distance(state[:, :3]) - radius)
 
     def _compute_terms(self):
         state = self.root_state()
@@ -234,6 +238,7 @@ class NavRLEnv(DirectRLEnv):
             "position": state[:, :3].clone(), "quaternion": state[:, 3:7].clone(),
             "velocity": state[:, 7:10].clone(), "angular_velocity": state[:, 10:13].clone(),
             "target": self.target_pos.clone(), "episode_id": self.episode_id.clone(),
+            "height_target": self.target_pos[:, 2].clone(),
             "step": self.episode_length_buf.clone(),
             "time_s": self.episode_length_buf.float() * self.step_dt,
             "reached": terms["reached"].clone(), "collision": terms["collision"].clone(),
@@ -293,6 +298,7 @@ class NavRLEnv(DirectRLEnv):
             "depth_features": depth, "position": state[:, :3],
             "quaternion": state[:, 3:7], "velocity": state[:, 7:10],
             "target": self.target_pos.clone(), "episode_id": self.episode_id.clone(),
+            "height_target": self.target_pos[:, 2].clone(),
             "policy_position": policy[:, :3], "policy_velocity": policy[:, 3:6],
             "policy_quaternion": policy[:, 6:10], "policy_target": policy[:, 10:13],
             "policy_depth_features": policy[:, 13:].reshape(self.num_envs, 1, 12, 16),

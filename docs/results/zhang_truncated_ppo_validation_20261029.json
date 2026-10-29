@@ -1,0 +1,213 @@
+{
+  "verified_at": "2026-10-29T11:38:22.242322+00:00",
+  "base_commit": "24a1ef368ba4a3662b3e14175705146a50fffb88",
+  "source": "/home/tong/tongworkspace/free/.worktrees/isaaclab-navrl/truncated-and-ppo-20261029",
+  "formal_acceptance": false,
+  "unit": {
+    "test_functions_passed": 140,
+    "subtests_passed": 288,
+    "junit_failures": 0,
+    "junit_errors": 0,
+    "log": "/home/tong/tongworkspace/free/.worktrees/isaaclab-navrl/truncated-and-ppo-20261029/logs/truncated_ppo_checks/unit.log",
+    "initial_ruff": "five B023 loop-closure warnings in the new protocol test, fixed by explicit capture; no production-code change",
+    "final_ruff": "all checks passed",
+    "targeted_protocol_retest": "18 passed, 181 subtests passed"
+  },
+  "physx_smokes": {
+    "started_utc": "2026-10-29T11:31:15.329085+00:00",
+    "source": "/home/tong/tongworkspace/free/.worktrees/isaaclab-navrl/truncated-and-ppo-20261029",
+    "git_head": "24a1ef368ba4a3662b3e14175705146a50fffb88",
+    "source_dirty": true,
+    "formal_acceptance": false,
+    "cases": [
+      {
+        "name": "ppo_s1_handoff",
+        "command": [
+          "/home/tong/tongworkspace/free/isaaclab-navrl/.venv/bin/python",
+          "/home/tong/tongworkspace/free/.worktrees/isaaclab-navrl/truncated-and-ppo-20261029/scripts/train_navrl.py",
+          "--log_dir",
+          "/home/tong/tongworkspace/free/isaaclab-navrl/logs/smoke/truncated_ppo_controls_20261029/ppo_s1_handoff",
+          "--num_envs",
+          "64",
+          "--seed",
+          "0",
+          "--device",
+          "cuda:0",
+          "--stage",
+          "pretrain_s1",
+          "--max_iterations",
+          "1",
+          "--checkpoint",
+          "/home/tong/tongworkspace/free/isaaclab-navrl/logs/smoke/navrl_ppo_s0_64_20261029/checkpoint_final.pt"
+        ],
+        "pid": 808263,
+        "output": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/smoke/truncated_ppo_controls_20261029/ppo_s1_handoff",
+        "stdout": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/smoke/truncated_ppo_controls_20261029/ppo_s1_handoff.stdout.log",
+        "started_utc": "2026-10-29T11:31:15.335319+00:00",
+        "exit_code": 0,
+        "status": "completed",
+        "updates": 3,
+        "steps": 6144,
+        "checkpoint": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/smoke/truncated_ppo_controls_20261029/ppo_s1_handoff/checkpoint_final.pt",
+        "nonfinite_events": 0,
+        "error": null,
+        "stage_lr": 0.0005,
+        "ok": true,
+        "finished_utc": "2026-10-29T11:32:01.148039+00:00",
+        "checkpoint_sha256": "6f0cf3360109f986e5c6462213de2828d83efbaf374b8cbb82ae520bbf8b533e"
+      },
+      {
+        "name": "ppo_s0_graceful_stop",
+        "command": [
+          "/home/tong/tongworkspace/free/isaaclab-navrl/.venv/bin/python",
+          "/home/tong/tongworkspace/free/.worktrees/isaaclab-navrl/truncated-and-ppo-20261029/scripts/train_navrl.py",
+          "--log_dir",
+          "/home/tong/tongworkspace/free/isaaclab-navrl/logs/smoke/truncated_ppo_controls_20261029/ppo_s0_graceful_stop",
+          "--num_envs",
+          "64",
+          "--seed",
+          "0",
+          "--device",
+          "cuda:0",
+          "--stage",
+          "pretrain_s0"
+        ],
+        "pid": 809068,
+        "output": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/smoke/truncated_ppo_controls_20261029/ppo_s0_graceful_stop",
+        "stdout": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/smoke/truncated_ppo_controls_20261029/ppo_s0_graceful_stop.stdout.log",
+        "started_utc": "2026-10-29T11:32:01.150268+00:00",
+        "signal_sent_utc": "2026-10-29T11:32:30.176978+00:00",
+        "exit_code": 0,
+        "status": "stopped",
+        "updates": 2,
+        "steps": 4096,
+        "checkpoint": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/smoke/truncated_ppo_controls_20261029/ppo_s0_graceful_stop/checkpoint_stopped.pt",
+        "nonfinite_events": 0,
+        "error": null,
+        "checkpoint_counter_match": true,
+        "ok": true,
+        "finished_utc": "2026-10-29T11:32:36.168733+00:00",
+        "checkpoint_sha256": "164fd3f875fd5e39ed32733647cb0b1d2a717337d2c4554d91676fb5f128b02a"
+      },
+      {
+        "name": "dcol_truncated",
+        "command": [
+          "/home/tong/tongworkspace/free/isaaclab-navrl/.venv/bin/python",
+          "/home/tong/tongworkspace/free/.worktrees/isaaclab-navrl/truncated-and-ppo-20261029/scripts/train_zhang.py",
+          "--log_dir",
+          "/home/tong/tongworkspace/free/isaaclab-navrl/logs/smoke/truncated_ppo_controls_20261029/dcol_truncated",
+          "--num_envs",
+          "64",
+          "--seed",
+          "0",
+          "--device",
+          "cuda:0",
+          "--stage",
+          "pretrain_s0",
+          "--max_iterations",
+          "2",
+          "--variant",
+          "dcol",
+          "--algorithm",
+          "bptt",
+          "--timesteps",
+          "150",
+          "--velocity_loss_mode",
+          "truncated_window",
+          "--camera_batch_size",
+          "64"
+        ],
+        "pid": 809669,
+        "output": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/smoke/truncated_ppo_controls_20261029/dcol_truncated",
+        "stdout": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/smoke/truncated_ppo_controls_20261029/dcol_truncated.stdout.log",
+        "started_utc": "2026-10-29T11:32:36.170318+00:00",
+        "exit_code": 0,
+        "status": "completed",
+        "updates": 2,
+        "steps": 19200,
+        "checkpoint": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/smoke/truncated_ppo_controls_20261029/dcol_truncated/checkpoint_final.pt",
+        "nonfinite_events": 0,
+        "nonfinite_grad_events": 0,
+        "error": null,
+        "velocity_sample_fraction": [
+          0.8666666746139526,
+          0.8929166793823242
+        ],
+        "short_terminal_samples": [
+          0.0,
+          0.0
+        ],
+        "full_window_samples": [
+          8320.0,
+          8572.0
+        ],
+        "executed_action_max_error": [
+          0.0,
+          0.0
+        ],
+        "ok": true,
+        "checkpoint_sha256": "45abaf93f0816756ee5d122ea738dc0b42174fe102aec0a32fc4cea38a6cee47"
+      }
+    ],
+    "ok": true,
+    "verified_at": "2026-10-29T11:38:22.242322+00:00",
+    "postprocessing_note": "The first wrapper exited with KeyError('loss') after successful training because updates.jsonl has flat keys. A subsequent check confirmed no eligible <=20-step terminals in this natural H150 smoke. Unchanged trainer results/checkpoints were re-read with the correct schema; training was not repeated. A separate, explicitly modified-timeout fixture below exercises real short-terminal/reset handling.",
+    "short_timeout_fixture": {
+      "formal_acceptance": false,
+      "fixture": "Only this smoke environment overrides episode_length_s=0.5 (5 policy steps); production configuration unchanged.",
+      "command": [
+        "/home/tong/tongworkspace/free/isaaclab-navrl/.venv/bin/python",
+        "/home/tong/tongworkspace/free/isaaclab-navrl/logs/smoke/truncated_ppo_controls_20261029/short_timeout_fixture.py",
+        "/home/tong/tongworkspace/free/.worktrees/isaaclab-navrl/truncated-and-ppo-20261029/scripts/train_zhang.py",
+        "--log_dir",
+        "/home/tong/tongworkspace/free/isaaclab-navrl/logs/smoke/truncated_ppo_controls_20261029/dcol_truncated_short_timeout",
+        "--num_envs",
+        "64",
+        "--seed",
+        "0",
+        "--device",
+        "cuda:0",
+        "--stage",
+        "pretrain_s0",
+        "--max_iterations",
+        "2",
+        "--variant",
+        "dcol",
+        "--algorithm",
+        "bptt",
+        "--timesteps",
+        "32",
+        "--velocity_loss_mode",
+        "truncated_window",
+        "--camera_batch_size",
+        "64"
+      ],
+      "fixture_path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/smoke/truncated_ppo_controls_20261029/short_timeout_fixture.py",
+      "pid": 812578,
+      "exit_code": 0,
+      "status": "completed",
+      "updates": 2,
+      "steps": 4096,
+      "checkpoint": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/smoke/truncated_ppo_controls_20261029/dcol_truncated_short_timeout/checkpoint_final.pt",
+      "short_terminal_samples": [
+        384.0,
+        384.0
+      ],
+      "full_window_samples": [
+        0.0,
+        0.0
+      ],
+      "grad_norm": [
+        0.29475244879722595,
+        0.25074124336242676
+      ],
+      "executed_action_max_error": [
+        0.0,
+        0.0
+      ],
+      "error": null,
+      "ok": true,
+      "checkpoint_sha256": "9c875ff2f80df65257219f4328f2478eb7e90590d4a1ca7b3a6fe14dd9b53342"
+    }
+  }
+}

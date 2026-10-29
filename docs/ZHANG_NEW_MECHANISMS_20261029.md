@@ -4,15 +4,35 @@
 
 ## 状态与基线
 
-本轮只训练 Zhang。新机制前代码 f6d5fd4 已标记
+初轮新机制实验仅训练 Zhang。新机制前代码 f6d5fd4 已标记
 `baseline/zhang-pre-new-mechanisms-20261029`；旧七组实验已停止并完整归档实际保存的数据，
 见 [冻结记录](results/zhang_pre_new_mechanisms_archive_20261029.md)。
 归档和相机经验已在 1597ffe 提交。新正式实验在实现提交后从随机初始化开始，
-不使用旧实验或有限步检查的模型。PPO 不启动。
+不使用旧实验或有限步检查的模型。PPO 当时未启动；最新用户已要求另开 fresh PPO 方法对照，
+具体配置差异见 [truncated/PPO 对照](ZHANG_TRUNCATED_PPO_CONTROLS_20261029.md)。后续 775dc6 的 PPO launcher 于 11:40 UTC 启动；用户再次要求替换当前实验后，六个训练子进程已在完整更新处停止并归档，见[冻结记录](results/zhang_pre_restart_frozen_runs_20261029.md)。新一轮启动以独立回执为准。
 
-`truncated_window` 已从活动训练配置移除。旧50更新记录中，其最好首次到达率为8.40%，
-step为8.93%；它没有达到预期改善，用户决定取消后续实验。
-这些早期单种子结果不证明两种方法的最终性能等价。
+旧 `variant=truncated_window` 已从活动几何配置移除。旧50更新记录中，其最好首次到达率为8.40%，
+step为8.93%；它没有达到预期改善，用户当时决定取消后续实验。
+这些早期单种子结果及旧几何条件继续保留，不证明两种方法的最终性能等价。
+最新重启的是 DCOL 几何下独立的 `velocity_loss_mode=truncated_window`，
+不恢复旧 variant，也不把旧结果作为新配置的正式结果。
+
+## 最新重启接口（历史实验配置不回写）
+
+下一轮从随机初始化使用新源码；下列默认不改变本文后半部已经发生的实验设置或数字：
+
+| 接口 | 当前默认与可选项 |
+| --- | --- |
+| 速度监督 | `variant_default`：step 为 `per_step`，continuous/dcol 为 `truncated_window`；显式 `full_window` 恢复原完整窗口并解析为 `window` |
+| 高度项 | `height_loss_mode=target_exp`；可选 `target_huber`、`boundary_huber`，三选一 |
+| 目标高度 | 当前回合导航目标的 z，默认采样区间 0.5–2.5 m；`height_target_min/max` 必须严格位于任务高度边界内 |
+| actor 优化器 | `optimizer=adamw`、`weight_decay=.01`；可显式选 `adam` 和非负权重衰减 |
+| 梯度投影 | `gradient_projection=none`；`height_priority` 仅用于 BPTT，不能由原始梯度方向保证 Adam 的实际位移方向 |
+| Plateau | 默认 `plateau_patience=2`，允许 0 等非负整数；未改 cosine 默认调度 |
+| AHAC 共同 H | 初始 32，最小 16，最大 300；上限是允许值，不代表当前 H 或已达到此长度 |
+| 稳定恢复 | 三份稳定报告，5% 起每 5 个百分点留档至 80%；完整规则见 [分档恢复协议](migration/RECOVERY_LADDER_20261029.md) |
+
+小规模比较须显式使用 `run_acceptance.py --screening --num_envs N`。即使五阶段均达到原 80% 门槛，父结果也只能是 `purpose=training_comparison`、`stage_thresholds_passed=true`、`acceptance_passed=false`。正式验收仍要求至少 1024 环境且不使用 screening；两者均不能加载旧实验权重或用有限步检查代替自然报告。
 
 ## 课程与环境
 
@@ -42,17 +62,27 @@ continuous 禁用无人机 PhysX 接触响应。碰撞和高度越界均只记�
 timeout时才把这个失败回合计入自然训练报告。
 
 dcol 保持原逻辑碰撞/越界重置，先保留终止转移的损失和图，再清空下一回合历史。
-动态凸体使用真实DCOL共同缩放；静态仍使用实际mesh unsigned clearance。
-因此 continuous 与 dcol 也有几何项差异，不能将它们的全部差异只归因于是否重置。
+动态凸体使用真实DCOL共同缩放。新重启接口将静态分支改为 `signed_heightfield_occupancy_exit_proxy`：以最高竖直投影定义保守占据，内部使用到原网格合法出口的负距和冻结出口梯度，外部保持原网格无符号距离。实际高度场含自交面和零厚薄片，因此不将它称为精确SDF；近似范围、非连续边界及真实场景检查见[静态几何审计](migration/SIGNED_STATIC_GEOMETRY_AUDIT_20261029.md)。旧实验使用 unsigned clearance，其结果保持原样；接口变更不证明训练改善。continuous 与 dcol 的动态几何和重置仍有差别，不能将全部差异只归因于是否重置。
 
-### 非饱和高度项
+### 三种高度项
 
-令
-`violation = relu(0.2 + margin - z) + relu(z - 4.0 + margin)`，
-使用 `SmoothL1(violation / scale, 0)`。
-默认 margin=scale=0.5m、系数1，内部[0.7,3.5]m精确为零；
-近边界平滑二次增长，远越界线性增长，梯度持续指向内部。
-这是标准SmoothL1，近边界曲率为旧指数项的一半，没有暗中把系数乘二。
+当前默认 `target_exp` 精确使用 `1 - exp(-abs(z - target_z))`，指数尺度为 1 m。目标取本回合导航目标的 z，并与当前转移配对；发生 reset 时，新目标只属于下一回合。该损失远离目标时会饱和、恢复梯度会衰减；没有额外叠加线性或边界项。
+
+`target_huber` 对同一米制高度误差使用 beta=1 m 的 SmoothL1。显式 `boundary_huber` 保留旧边界公式：`violation = relu(0.2 + margin - z) + relu(z - 4.0 + margin)`，再使用 `SmoothL1(violation / scale, 0)`；margin=scale=0.5 m 时内部 [0.7,3.5] m 为零。历史 height8 诊断针对这个旧边界模式，不能将其临界系数直接移到新目标高度损失。
+
+日志与系数仍沿用 `height_boundary` / `coef_height_boundary` 名称，实际语义必须结合记录的 `height_loss_mode` 判断。
+
+### 后续单因素诊断
+
+短回合导致窗口速度监督覆盖不足时，可使用独立的 `--velocity_loss_mode per_step`，
+在不变更DCOL几何的情况下给每个策略步提供速度误差。新默认映射与旧完整窗口对照由上表区分；
+SHAC固定H32，BPTT固定H150，不能在比较时遗漏这个区别。
+[窗口监督经验](migration/DCOL_STEP_VELOCITY_EXPERIENCE.md)保留原SHAC停止检查点与对照协议。
+最新新增的 `--velocity_loss_mode truncated_window` 保留完整窗口，按真实回合长度补充合格终止短窗；
+三种速度监督行为与PPO方法对照的公平因素、共同分母和终止语义见
+[truncated/PPO 对照](ZHANG_TRUNCATED_PPO_CONTROLS_20261029.md)。
+旧连续方案曾单独检验边界高度系数8；新默认系数仍为1。旧局部梯度依据及结论边界见
+[U1/U7/U10分析](results/zhang_continuous_gradient_diagnosis_20261029.md)。
 
 ## 运行统计归一化
 
@@ -81,7 +111,7 @@ Plateau直接使用
 | --- | --- |
 | 监控 | 新的自然训练报告 success_rate，mode=max |
 | factor | 0.5 |
-| patience | 5份无显著改善报告；第6份触发 |
+| patience | 默认2；建立基准后第3份无显著改善报告触发，可配置0 |
 | threshold / threshold_mode | 0.005 / abs，成功率使用0–1 |
 | cooldown | 2份报告 |
 | min_lr | 1e-6 |
@@ -106,21 +136,12 @@ critic另记录每次actor更新期间全部critic拟合产生的总参数位移
 
 `--recovery_enabled 0|1`，默认1。恢复只使用当前阶段目录中的稳定检查点：
 
-1. 最近连续3份报告的成功率均至少20%，最大与最小相差不超过5个百分点时，建立稳定参考。
-   参考分数取这3份的最小值，避免把单次尖峰当成稳定性能。
-   后续参考至少改善0.5个百分点才覆盖。
-2. 成功率比参考低 `max(5个百分点, 参考×20%)`，连续3份报告成立后先把lr乘0.5。
-3. 再观察3份报告；只有每份仍退化才恢复。否则继续训练。
-4. 恢复当前阶段稳定模型、AdamW、归一化及critic学习状态；AHAC还恢复H和dual。
-   环境、GRU、动作与观测延迟历史、速度窗口全部重置。
-5. 保留当前更低学习率及其持续上限，余弦重启不能把它重新抬高。
-   全局更新数、采样数、耗时、训练报告、晋级事实、全局和critic私有RNG均不回滚；
-   critic/AHAC的累计工作计数也不回滚。恢复后冷却3份报告。
+1. 最近连续三份自然报告跨度不超过5个百分点时，保存所有已达到且未保存的 5%、10%、…、80% 档。实际参考取窗口最小值，旧档不覆盖；一次跨档可保存同一个新状态。
+2. 严格满足 `current < ref - min(.05, max(.02, .30*ref))` 连续三份报告后先把 lr 乘0.5；`ref` 取同阶段最高稳定档的实际参考。
+3. 再观察三份新报告，全部仍退化才恢复最高档；否则继续训练。恢复后清空报告窗口与退化历史，保留各档文件并冷却三份报告。
+4. 恢复当前阶段模型、优化器、归一化及适用的 critic/H/dual 学习状态，重置环境、GRU、延迟和速度历史；全局计数、报告、晋级事实、当前较低学习率、全局及私有 RNG 不回滚。
 
-稳定分数来自训练过程中自然结束的回合，不是固定策略独立评测。
-已有少量成功但尚未满足稳定条件时，不自动锁定低水平hover策略。
-所有动作记录在optimization_events.jsonl，TensorBoard记录下一学习率与恢复次数。
-这一机制不改变80%晋级规则，不允许从别的实验或阶段取模型。
+首次自然报告达到80%仍按原规则晋级；尚未获得三份稳定报告时，只能保存阶段检查点，不能标为 stable80。完整API、版本2状态与边界测试见 [分档恢复协议](migration/RECOVERY_LADDER_20261029.md)。恢复机制不允许从别的实验或阶段取模型，也不能代替独立评测证明策略稳定。
 
 SIGINT/SIGTERM只请求停止。训练器完成当前完整actor/critic更新后，原子保存
 checkpoint_stopped.pt，写status=stopped再退出。它不会导出半次optimizer更新，
@@ -134,7 +155,7 @@ checkpoint_stopped.pt，写status=stopped再退出。它不会导出半次optimi
 SHAC固定H32，单critic、TDλ和EMA target；普通展开末端保留state及GRU的bootstrap梯度。
 AHAC组明确命名为 **AHAC-derived DCOL synchronous adaptation**：
 双独立critic、投影dual、几何风险约束、critic收敛拟合，以及全批共享H。
-默认H从32开始、范围16–150；风险高时下一轮缩短，风险低时扩展。
+当前训练入口默认H从32开始、范围16–300；风险高时下一轮缩短，风险低时扩展。
 它不是作者源码逐行复现，也不把几何风险称为接触刚性。
 
 失败reset使用实际reset state的detached value，避免零终值免除未来正成本。
@@ -148,9 +169,9 @@ H*N/valid_count缩放，以使cost.mean()等于原scalar total。
 这使critic成本随有效窗口比例变化，不能用不同H的critic loss大小直接判断优劣。
 日志使用实际environment_steps，禁止用固定H150乘更新数推算AHAC采样。
 
-## 新正式对照矩阵
+## 首轮新机制对照矩阵（历史配置）
 
-各组seed0、1024环境，从随机初始化执行完整五阶段课程，余下损失系数和控制器相同：
+以下是已运行的旧配置；AHAC 150 上限等记录不随新默认300回写。各组seed0、1024环境，从随机初始化执行完整五阶段课程，余下损失系数和控制器相同：
 
 | 名称 | variant / algorithm | H | RMS | LR调度 |
 | --- | --- | --- | --- | --- |
@@ -190,3 +211,10 @@ H*N/valid_count缩放，以使cost.mean()等于原scalar total。
 场景证据为continuous_scene_v2.json和dcol_scene_v2.json；初版只有退出码而无JSON的运行
 不算通过。Isaac Sim关闭可能提前结束脚本，必须在关闭前保存成功/失败断言结果。
 详细可复核索引见 [验证记录](results/zhang_new_mechanisms_validation_20261029.json)。
+
+## 后续诊断修正
+
+上述六组的冻结代码为50766ec。连续无接触/无越界重置使地面以下状态变为可达，
+随后确认原无符号地面距离会产生反向恢复梯度；该组已在完整更新后保存停止。
+AHAC线性成本critic的负外推也已保存为独立诊断，增加可选非负输出fresh对照。
+修正不热更新原活动实验，详见[隔离修正、归档及新对照](ZHANG_DIAGNOSTIC_FOLLOWUPS_20261029.md)。

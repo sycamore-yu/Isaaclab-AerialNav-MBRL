@@ -1,12 +1,18 @@
 # 实现与验证状态
 
-当前几何与实验矩阵见 [有符号几何修复与八组对照](ZHANG_SIGNED_GEOMETRY_20261029.md)。下文旧训练结果保留原口径，不与修复后的碰撞率直接混算。
+当前状态以 [main 整合与九组对照](MAIN_COMPARISON_20261029.md) 为准。此前分支与运行记录保留为历史，不代表仍在运行。
 
-2026-10-29：两任务已接入共享扰动和五阶段训练；正式训练只推进 Zhang。正式验收要求本轮随机初始化的策略依次通过全部阶段，最终在 400 静态、100 动态障碍、开启扰动的环境中达到至少 80% 训练首次到达率。是否达标以真实运行目录的 `training_result.json` 和 `training_statistics.jsonl` 为准。
+2026-10-29：两任务已接入共享扰动和五阶段训练。775dc6的PPO launcher在11:40 UTC启动后，用户最新要求替换当前实验并全部fresh重跑；六个训练子进程已在完整更新后停止，检查点和归档哈希见[冻结记录](results/zhang_pre_restart_frozen_runs_20261029.md)。新源码已在隔离工作树完成366项回归及522个子测试、37文件Ruff和实际300/400静态几何验证，详见[验证索引](results/zhang_restart_validation_20261029.md)。训练启动另以真实回执记录，不把功能验证或历史报告当作新轮次验收。正式验收仍须随机初始化、至少1024环境、完整五阶段，并在400静态/100动态/扰动开启时取得至少80%的自然首次到达率。小规模`--screening`即使五阶段门槛通过也只能标记比较完成。
 
-## 新机制验证（最新）
+最新fresh筛选队列于2026-10-29 13:57:52 UTC启动：主目录`logs/curriculum/zhang_restart_controls_wave2_20261029/`，N256、seed0、12组计划、最多6组并发，训练源码固定`6a5eb1d`，dispatcher固定`42e47bc`。逐组初始化，当前阶段首个完整update和实时显存通过后才派发下一组；未启动者保持queued。前一个两组队列因停止信号结束，检查点和统计保留，见[中断记录](results/zhang_restart_interrupted_run_20261029.md)；wave2没有加载它们的权重。实际启动及验收状态只以新队列回执和原始训练报告为准。
 
-新机制前基线 f6d5fd4 已冻结；七组旧实验已停止并归档，见 [归档记录](results/zhang_pre_new_mechanisms_archive_20261029.md)。当前代码增加 S0、连续越界不重置、非饱和高度损失、可选运行统计归一化、Plateau、参数监控、稳定模型恢复，以及 SHAC / AHAC-derived DCOL 适配；truncated_window 不再启动。
+本轮首批六组完整更新验证、早期统计、参数变化与投影诊断见[wave2实际启动记录](results/zhang_restart_wave2_launch_20261029.md)及同名JSON。14:05:58 UTC快照为六组running、六组queued，均未通过S0；后续查看实时日志。
+
+## 首轮新机制验证（历史证据）
+
+新机制前基线 f6d5fd4 已冻结；七组旧实验已停止并归档，见 [归档记录](results/zhang_pre_new_mechanisms_archive_20261029.md)。该历史轮次增加 S0、连续越界不重置、非饱和边界高度损失、可选运行统计归一化、Plateau、参数监控、稳定模型恢复，以及 SHAC / AHAC-derived DCOL 适配。旧 `variant=truncated_window` 仍被移除；最新恢复的对照使用 `variant=dcol` 加独立的 `velocity_loss_mode=truncated_window`，约束见 [truncated/PPO 对照](ZHANG_TRUNCATED_PPO_CONTROLS_20261029.md)。
+
+RMS 与 Plateau 已各在 U81／12441600 个环境转移后完整停止并保存检查点，冻结归档已完成。11:13 的 U76 等预算证据与后续停止回执分开记录于 [机制比较](results/zhang_mechanism_comparison_1113_20261029.md)；这些停止不表示训练通过或算法最终无效。
 
 第一轮真实 CPU 回归：131 项测试与102个子测试通过，日志为 logs/new_mechanisms_checks/unit.log 和 unit.xml。四组真实64环境检查各完成2次更新：dcol+RMS+Plateau、continuous 均 H150；SHAC 为 H32；AHAC 实际 H32→36、下一轮计划40。全部执行动作误差0、非有限梯度0。目录为 logs/new_mechanisms_checks/smokes_v1。检查只证明实现运行，不计入正式验收。
 
@@ -18,7 +24,7 @@
 
 ## 当前实现
 
-环境为正式 Isaac Lab 3.0.0、Isaac Sim 6.2 和 PhysX。NavRL 使用官方 RSL-RL 5.5.1 PPO；Zhang 使用独立 BPTT 或明确配置的 actor–critic 适配，保留原六项损失并加入边界 SmoothL1。两任务保留 Hummingbird 资产、Lee 控制器和 RotorGroup。
+环境为正式 Isaac Lab 3.0.0、Isaac Sim 6.2 和 PhysX。NavRL 使用官方 RSL-RL 5.5.1 PPO；Zhang使用独立BPTT或明确配置的actor–critic适配，保留六项任务成本并选择一种高度项；最新默认target_exp，可选target_huber或旧boundary_huber，见[接口说明](ZHANG_NEW_MECHANISMS_20261029.md)。两任务保留 Hummingbird 资产、Lee 控制器和 RotorGroup。
 
 | 阶段 | 静态障碍 | 动态障碍 | 额外扰动 |
 |---|---:|---:|---|
@@ -32,7 +38,7 @@
 
 共享配置覆盖观测噪声、输入延迟、动作延迟、控制响应、动作差分与质量/惯量/推力随机化。物理延迟由官方 `DelayBuffer` 管理，质量和惯量由官方 Event Manager 随机化。Zhang 不重复增加动作队列或 Jerk 损失；每次更新校验可微路径和 PhysX 实际执行动作相等。
 
-Zhang 保留 100 Hz 物理步、10 Hz 策略步，默认展开 150 策略步，默认 step 逐步速度损失；continuous/dcol 默认速度窗口20策略步。按用户追加要求，原始深度默认改为 160×120，内参等比例缩放以保持视场，随后逆深度变换、噪声和 12×16 池化。预训练学习率默认 0.001；微调默认 0.00005；余弦周期 400 更新，梯度范数裁剪 5。
+Zhang 保留 100 Hz 物理步、10 Hz 策略步，默认展开 150 策略步，默认step逐步速度损失；continuous/dcol默认20策略步窗口加合格终止短窗，显式full_window保留旧完整窗口。按用户追加要求，原始深度默认改为 160×120，内参等比例缩放以保持视场，随后逆深度变换、噪声和 12×16 池化。预训练学习率默认 0.001；微调默认 0.00005；余弦周期 400 更新，梯度范数裁剪 5。
 
 ## 早期验证（共享扰动阶段）
 

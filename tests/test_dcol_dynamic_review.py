@@ -17,7 +17,7 @@ def cpu_threads():
 def test_hybrid_does_not_mix_old_dynamic_distance_into_the_static_branch():
     # The sphere overlaps a real dynamic box.  Its old metric clearance is
     # -0.15 m, whereas the actual DCOL metre-scaled proxy is -0.034615... m.
-    # Static geometry is independently supplied as a distant ground point.
+    # Static geometry is independently supplied as its signed exterior distance.
     # Using the old combined nearest-obstacle result as static geometry would
     # select -0.15 instead and silently suppress the DCOL branch.
     query = torch.tensor([[[1.15, 0.0, 2.0]]], dtype=torch.float64, requires_grad=True)

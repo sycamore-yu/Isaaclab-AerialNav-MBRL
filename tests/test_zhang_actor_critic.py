@@ -11,6 +11,7 @@ from isaaclab_navrl.zhang.actor_critic import (
     AdaptiveHorizonController,
     AHACSettings,
     CostActorCritic,
+    CostValueNetwork,
     short_horizon_cost_objective,
     td_lambda_cost_targets,
 )
@@ -60,6 +61,9 @@ def test_actor_bootstrap_keeps_live_endpoint_gradient_and_discount():
     result = short_horizon_cost_objective(costs, values, cuts, discount=0.5)
     # (a^2 + .5*(2a)^2 + .25*(3a)^2) / 2 = 2.625 a^2.
     torch.testing.assert_close(result["objective"], torch.tensor(10.5))
+    torch.testing.assert_close(result["bootstrap_reset"], torch.tensor(0.0))
+    torch.testing.assert_close(result["bootstrap_live_endpoint"], torch.tensor(4.5))
+    assert not result["bootstrap_reset"].requires_grad and not result["bootstrap_live_endpoint"].requires_grad
     result["objective"].backward()
     torch.testing.assert_close(action.grad, torch.tensor(10.5))
 
@@ -74,10 +78,25 @@ def test_actor_reset_bootstraps_detached_state_and_restarts_discount():
     result = short_horizon_cost_objective(costs, following, cuts, discount=0.5)
     # Two one-step segments: (4 + .5*7 + 9 + .5*9) / 2.
     torch.testing.assert_close(result["objective"], torch.tensor(10.5))
+    torch.testing.assert_close(result["bootstrap_reset"], torch.tensor(1.75))
+    torch.testing.assert_close(result["bootstrap_live_endpoint"], torch.tensor(2.25))
+    torch.testing.assert_close(result["bootstrap_reset"] + result["bootstrap_live_endpoint"], result["bootstrap"])
+    assert not result["bootstrap_reset"].requires_grad and not result["bootstrap_live_endpoint"].requires_grad
     result["objective"].backward()
     torch.testing.assert_close(first.grad, torch.tensor(2.0))
     torch.testing.assert_close(second.grad, torch.tensor(4.5))
     assert reset_state.grad is None
+
+
+def test_bootstrap_diagnostics_classify_resets_at_the_final_step():
+    costs = torch.ones(2, 2, requires_grad=True)
+    values = torch.tensor([[2.0, 3.0], [4.0, 5.0]])
+    cuts = torch.tensor([[False, True], [True, True]])
+    result = short_horizon_cost_objective(costs, values, cuts, discount=0.5)
+    torch.testing.assert_close(result["bootstrap_live_endpoint"], torch.tensor(0.0))
+    torch.testing.assert_close(result["bootstrap_reset"], result["bootstrap"])
+    result["objective"].backward()
+    torch.testing.assert_close(costs.grad, torch.tensor([[0.25, 0.25], [0.125, 0.25]]))
 
 
 def test_frozen_value_preserves_position_and_memory_gradients_without_parameter_grads():
@@ -156,8 +175,10 @@ def test_shac_target_ema_and_ahac_hard_snapshot():
             torch.testing.assert_close(parameter, torch.full_like(parameter, expected))
 
 
-def test_checkpoint_restores_optimizer_value_snapshot_and_private_shuffle_rng():
-    settings = ActorCriticSettings(hidden_sizes=(8,), critic_iterations=2, critic_batch_size=3, seed=11)
+@pytest.mark.parametrize("value_transform", ("linear", "softplus"))
+def test_checkpoint_restores_optimizer_value_snapshot_and_private_shuffle_rng(value_transform):
+    settings = ActorCriticSettings(hidden_sizes=(8,), critic_iterations=2, critic_batch_size=3, seed=11,
+                                  value_transform=value_transform)
     support = CostActorCritic(2, settings)
     observation = torch.linspace(-1, 1, 16).reshape(2, 4, 2)
     costs = observation.square().sum(dim=-1)
@@ -174,10 +195,124 @@ def test_checkpoint_restores_optimizer_value_snapshot_and_private_shuffle_rng():
     torch.testing.assert_close(support.bootstrap_value(observation), restored.bootstrap_value(observation), atol=0, rtol=0)
 
 
-def test_critic_construction_preserves_global_rng():
+@pytest.mark.parametrize("value_transform", ("linear", "softplus"))
+def test_critic_construction_preserves_global_rng(value_transform):
     rng = torch.get_rng_state().clone()
-    CostActorCritic(2, ActorCriticSettings(hidden_sizes=(4,), seed=17))
+    CostActorCritic(2, ActorCriticSettings(hidden_sizes=(4,), seed=17, value_transform=value_transform))
     torch.testing.assert_close(torch.get_rng_state(), rng, atol=0, rtol=0)
+
+
+def test_default_value_output_keeps_signed_raw_values_and_original_gradients():
+    assert ActorCriticSettings().value_transform == "linear"
+    critic = CostValueNetwork(2, (4,))
+    critic.network = nn.Linear(2, 1)
+    with torch.no_grad():
+        critic.network.weight.copy_(torch.tensor([[2.0, -3.0]]))
+        critic.network.bias.fill_(-4.0)
+    observation = torch.tensor([[0.0, 1.0], [3.0, 0.0]], requires_grad=True)
+    value = critic(observation)
+    torch.testing.assert_close(value, torch.tensor([-7.0, 2.0]), atol=0, rtol=0)
+    value.sum().backward()
+    torch.testing.assert_close(observation.grad, torch.tensor([[2.0, -3.0], [2.0, -3.0]]), atol=0, rtol=0)
+
+
+def test_softplus_has_identical_initial_weights_and_independent_cost_twins():
+    linear = CostActorCritic(2, ActorCriticSettings(algorithm="ahac", hidden_sizes=(4,), seed=23))
+    positive = CostActorCritic(2, ActorCriticSettings(
+        algorithm="ahac", hidden_sizes=(4,), seed=23, value_transform="softplus",
+    ))
+    for old, new in zip(linear.critics.parameters(), positive.critics.parameters(), strict=True):
+        torch.testing.assert_close(old, new, atol=0, rtol=0)
+    twins = [list(critic.parameters()) for critic in positive.critics]
+    assert all(left.data_ptr() != right.data_ptr() for left, right in zip(*twins, strict=True))
+    assert linear.optimizer.state_dict()["param_groups"] == positive.optimizer.state_dict()["param_groups"]
+    observation = torch.linspace(-2, 2, 12).reshape(6, 2)
+    expected = torch.nn.functional.softplus(linear.actor_value(observation), beta=1, threshold=20)
+    torch.testing.assert_close(positive.actor_value(observation), expected, atol=0, rtol=0)
+    assert (positive.bootstrap_value(observation) >= 0).all()
+
+
+@pytest.mark.parametrize("algorithm", ("shac", "ahac"))
+@pytest.mark.parametrize("td_lambda", (0.0, 0.95, 1.0))
+def test_nonnegative_value_and_cost_produce_nonnegative_td_targets(algorithm, td_lambda):
+    support = CostActorCritic(2, ActorCriticSettings(
+        algorithm=algorithm, hidden_sizes=(4,), value_transform="softplus",
+    ))
+    for index, critic in enumerate(support.frozen_critics):
+        for parameter in critic.parameters():
+            parameter.zero_()
+        critic.network[-1].bias.fill_(-3.0 - index)
+    next_observation = torch.zeros(3, 2, 2)
+    next_values = support.bootstrap_value(next_observation)
+    costs = torch.tensor([[0.1, 1.0], [2.0, 3.0], [4.0, 5.0]], requires_grad=True)
+    cuts = torch.tensor([[False, True], [True, False], [False, False]])
+    targets = td_lambda_cost_targets(costs, next_values, cuts, discount=0.99, td_lambda=td_lambda)
+    assert targets.shape == costs.shape
+    assert (next_values >= 0).all() and (targets >= costs).all()
+    assert not targets.requires_grad and not next_values.requires_grad
+
+
+def test_softplus_frozen_value_keeps_position_and_memory_input_gradients():
+    support = CostActorCritic(2, ActorCriticSettings(hidden_sizes=(4,), value_transform="softplus"))
+    critic = support.frozen_critics[0]
+    critic.network = nn.Linear(2, 1)
+    with torch.no_grad():
+        critic.network.weight.copy_(torch.tensor([[2.0, 3.0]]))
+        critic.network.bias.fill_(-2.0)
+    critic.requires_grad_(False)
+    position = torch.tensor([[0.4]], requires_grad=True)
+    memory = torch.tensor([[0.1]], requires_grad=True)
+    support.actor_value(torch.cat((position, memory), dim=-1)).sum().backward()
+    slope = torch.sigmoid(torch.tensor(-0.9))
+    torch.testing.assert_close(position.grad, (2 * slope).reshape(1, 1))
+    torch.testing.assert_close(memory.grad, (3 * slope).reshape(1, 1))
+    assert all(parameter.grad is None for parameter in support.frozen_critics.parameters())
+    assert all(parameter.grad is None for parameter in support.critics.parameters())
+
+
+def test_softplus_extreme_values_are_finite_and_large_positive_values_are_linear():
+    critic = CostValueNetwork(1, (4,), value_transform="softplus")
+    critic.network = nn.Identity()
+    observation = torch.tensor([[-1000.0], [-20.0], [-1.0], [0.0], [30.0], [1000.0]],
+                               dtype=torch.float64, requires_grad=True)
+    values = critic(observation)
+    assert torch.isfinite(values).all() and (values >= 0).all()
+    torch.testing.assert_close(values[-2:], observation[-2:, 0], atol=0, rtol=0)
+    values.sum().backward()
+    expected = torch.where(observation.detach() > 20, torch.ones_like(observation),
+                           torch.sigmoid(observation.detach()))
+    torch.testing.assert_close(observation.grad, expected)
+    assert observation.grad[1].item() < 1e-8  # Documents lower-tail saturation; it is not hidden by a clamp.
+
+
+def test_legacy_linear_checkpoints_load_only_into_linear_value_networks():
+    settings = ActorCriticSettings(hidden_sizes=(4,), seed=29)
+    original = CostActorCritic(2, settings)
+    legacy = copy.deepcopy(original.state_dict())
+    legacy["settings"].pop("value_transform")
+    restored = CostActorCritic(2, settings)
+    restored.load_state_dict(legacy)
+    observation = torch.ones(3, 2)
+    torch.testing.assert_close(original.actor_value(observation), restored.actor_value(observation), atol=0, rtol=0)
+    positive = CostActorCritic(2, ActorCriticSettings(hidden_sizes=(4,), seed=29, value_transform="softplus"))
+    with pytest.raises(ValueError, match="value_transform"):
+        positive.load_state_dict(legacy)
+    with pytest.raises(ValueError, match="value_transform"):
+        restored.load_state_dict(positive.state_dict())
+    assert positive.state_dict()["settings"]["value_transform"] == "softplus"
+
+
+def test_fit_next_value_diagnostics_describe_supplied_snapshot_without_actor_gradients():
+    support = CostActorCritic(2, ActorCriticSettings(hidden_sizes=(4,), critic_iterations=1))
+    observations = torch.zeros(2, 2, 2, requires_grad=True)
+    costs = torch.ones(2, 2, requires_grad=True)
+    following = torch.tensor([[-3.0, -1.0], [2.0, 6.0]], requires_grad=True)
+    cuts = torch.ones(2, 2, dtype=torch.bool)
+    metrics = support.fit(observations, costs, following, cuts)
+    assert metrics["critic_next_value_min"] == -3.0
+    assert metrics["critic_next_value_mean"] == 1.0
+    assert metrics["critic_next_value_negative_fraction"] == 0.5
+    assert observations.grad is None and costs.grad is None and following.grad is None
 
 
 def test_dcol_risk_uses_nearest_gap_and_preserves_penalty_gradient():
@@ -287,6 +422,9 @@ def test_invalid_trajectory_shapes_and_value_settings_fail_clearly():
     with pytest.raises(ValueError, match="boolean"):
         short_horizon_cost_objective(costs, costs, torch.zeros_like(costs))
     for changes in ({"algorithm": "bptt"}, {"discount": 1.0}, {"td_lambda": -0.1},
-                    {"target_tau": 0}, {"critic_batch_size": 0}, {"hidden_sizes": ()}):
+                    {"target_tau": 0}, {"critic_batch_size": 0}, {"hidden_sizes": ()},
+                    {"value_transform": "relu"}):
         with pytest.raises(ValueError):
             ActorCriticSettings(**changes).validate()
+    with pytest.raises(ValueError, match="value_transform"):
+        CostValueNetwork(2, (4,), value_transform="relu")

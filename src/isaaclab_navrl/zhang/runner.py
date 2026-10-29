@@ -23,6 +23,7 @@ from .losses import zhang_transition_costs
 from .model import ZhangPolicy, decode_action, policy_state
 from .normalization import PolicyObservationNormalizer
 from .optimization import OptimizerStepMonitor, RecoveryConfig, RecoveryController, make_plateau_scheduler
+from .projection import ActionUpdateProbe, height_priority_gradient
 
 
 def cosine_learning_rate(update, cfg):
@@ -35,6 +36,7 @@ def cosine_learning_rate(update, cfg):
 def rollout_diagnostics(history):
     """Describe measured trajectories without changing losses or acceptance counts."""
     position = torch.stack(history["position"])
+    height_target = torch.stack(history["height_target"])
     velocity = torch.stack(history["velocity"])
     command = torch.stack(history["executed_command"])
     delta = torch.stack(history["model_velocity_delta"])
@@ -43,6 +45,8 @@ def rollout_diagnostics(history):
     high = bounds & (position[..., 2] > 4.0)
     return {
         "mean_altitude_m": float(position[..., 2].mean()),
+        "mean_target_altitude_m": float(height_target.mean()),
+        "mean_abs_target_altitude_error_m": float((position[..., 2] - height_target).abs().mean()),
         "mean_horizontal_speed_mps": float(velocity[..., :2].norm(dim=-1).mean()),
         "mean_vertical_speed_mps": float(velocity[..., 2].mean()),
         "mean_abs_vertical_speed_mps": float(velocity[..., 2].abs().mean()),
@@ -63,10 +67,13 @@ class ZhangTrainer:
             raise ValueError("The environment and differentiable model use different time steps")
         if env.cfg.variant != cfg.variant:
             raise ValueError("The environment and trainer must use the same Zhang variant")
+        if tuple(env.cfg.height_target_range) != tuple(cfg.height_target_range):
+            raise ValueError("The environment and trainer must use the same episode target height range")
         self.env, self.cfg = env, cfg
         self.log_dir = Path(log_dir).resolve()
         self.model = ZhangPolicy().to(env.device)
-        self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=cfg.lr)
+        optimizer_type = torch.optim.AdamW if cfg.optimizer == "adamw" else torch.optim.Adam
+        self.optimizer = optimizer_type(self.model.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)
         self.normalizer = PolicyObservationNormalizer(
             cfg.observation_normalization, cfg.normalization_variance_floor, device=env.device
         )
@@ -145,6 +152,7 @@ class ZhangTrainer:
             critic_lr=self.cfg.critic_lr, critic_iterations=self.cfg.critic_iterations,
             critic_max_iterations=self.cfg.critic_max_iterations, seed=self.cfg.seed + 2718,
             critic_min_iterations=min(6, self.cfg.critic_max_iterations),
+            value_transform=self.cfg.critic_value_transform,
         )
         self.actor_critic = CostActorCritic(example.shape[-1], settings, device=self.env.device)
         self.critic_monitor = OptimizerStepMonitor(self.actor_critic.critics)
@@ -153,7 +161,7 @@ class ZhangTrainer:
             self._pending_critic_state = None
 
     def _dcol_gap(self, query, radius, obstacle_positions=None):
-        """Dynamic-body DCOL with signed actual-mesh static clearance."""
+        """Dynamic-body DCOL with the signed heightfield occupancy exit proxy."""
         from .dcol import hybrid_collision_gap
 
         radius = radius.reshape(-1, *([1] * (query.ndim - 2))).expand(query.shape[:-1])
@@ -228,6 +236,7 @@ class ZhangTrainer:
                             "dynamic_obstacles": self.env.cfg.num_dynamic_obstacles,
                             "physics_dt": self.env.physics_dt, "policy_dt": self.env.step_dt,
                             "depth_camera_batch_size": getattr(self.env.cfg, "depth_camera_batch_size", None),
+                            "height_target_range": self.env.cfg.height_target_range,
                             "training_stage": self.env.cfg.training_stage, "variant": self.cfg.variant,
                             "sim_to_real": asdict(self.env.cfg.sim_to_real)},
             "torch_rng_state": torch.get_rng_state(),
@@ -284,9 +293,15 @@ class ZhangTrainer:
         decision = self.recovery.observe({**report, "stage": report.get("stage", self.recovery.stage)})
         restored = False
         if decision.action == "save_stable":
-            checkpoint = self.log_dir / f"checkpoint_stable_{self.recovery.stage}.pt"
-            self._checkpoint(checkpoint)
-            self.recovery.acknowledge("save_stable", str(checkpoint))
+            checkpoints = {
+                level: str(self.log_dir / f"checkpoint_stable_{self.recovery.stage}_{round(level * 100):02d}.pt")
+                for level in decision.levels
+            }
+            for checkpoint in checkpoints.values():
+                if Path(checkpoint).exists():
+                    raise FileExistsError(f"Stable level checkpoints are immutable: {checkpoint}")
+                self._checkpoint(checkpoint)
+            self.recovery.acknowledge("save_stable", checkpoints=checkpoints)
         elif decision.action == "reduce_lr":
             # A Plateau reduction on this very report satisfies the first
             # recovery action. Do not lower the same LR twice on one report.
@@ -303,11 +318,17 @@ class ZhangTrainer:
         event = {**asdict(decision), "lr_before": previous_lr,
                  "lr_after": self.optimizer.param_groups[0]["lr"], "scheduler_reduced": scheduler_reduced,
                  "state": self.recovery.state, "restore_count": self.recovery.restore_count,
+                 "stable_checkpoints": self.recovery.stable_checkpoints,
                  "environment_steps": self.environment_steps}
         with (self.log_dir / "optimization_events.jsonl").open("a") as stream:
             stream.write(json.dumps(event, allow_nan=False) + "\n")
         writer.add_scalar("Optim/next_learning_rate", event["lr_after"], self.completed_updates)
         writer.add_scalar("Recovery/restore_count", self.recovery.restore_count, self.completed_updates)
+        if self.recovery.reference_success is not None:
+            writer.add_scalar("Recovery/reference_success", self.recovery.reference_success, self.completed_updates)
+            writer.add_scalar("Recovery/degradation_threshold", self.recovery.degradation_threshold,
+                              self.completed_updates)
+            writer.add_scalar("Recovery/stable_level", max(self.recovery.stable_checkpoints), self.completed_updates)
         if decision.action != "none" or scheduler_reduced:
             print("OPTIM_CONTROL " + json.dumps(event), flush=True)
         return restored
@@ -315,6 +336,14 @@ class ZhangTrainer:
     def _result(self, status, checkpoint=None, error=None):
         result = {
             "method": "zhang", "variant": self.cfg.variant, "algorithm": self.cfg.algorithm, "status": status,
+            "velocity_loss_mode": self.cfg.velocity_loss_mode,
+            "resolved_velocity_loss_mode": self.cfg.resolved_velocity_loss_mode,
+            "height_loss_mode": self.cfg.height_loss_mode,
+            "height_target_range": list(self.cfg.height_target_range),
+            "static_obstacle_distance": "signed_heightfield_occupancy_exit_proxy",
+            "static_projection": "float64_selected_face_refinement_float32_storage",
+            "optimizer": self.cfg.optimizer, "weight_decay": self.cfg.weight_decay,
+            "gradient_projection": self.cfg.gradient_projection,
             "fresh": self.parent_checkpoint is None,
             "stage": self.env.cfg.training_stage, "stage_updates": self.stage_updates,
             "parent_checkpoint": self.parent_checkpoint,
@@ -334,7 +363,7 @@ class ZhangTrainer:
             "curriculum": self.env.curriculum.state_dict() if self.env.curriculum is not None else None,
             "acceptance_passed": bool(
                 self.env.curriculum is not None and self.env.curriculum.acceptance_passed
-                and self.env.curriculum.min_episodes >= 1024 and self.env.cfg.num_static_obstacles == 400
+                and self.env.num_envs >= 1024 and self.env.curriculum.min_episodes >= 1024 and self.env.cfg.num_static_obstacles == 400
                 and self.env.cfg.num_dynamic_obstacles == 100 and self.env.cfg.sim_to_real.enabled
             ),
             "stage_passed": bool(self.env.curriculum is not None and self.env.curriculum.stage_passed),
@@ -354,14 +383,30 @@ class ZhangTrainer:
             ))
         lookahead = torch.linspace(0, self.cfg.policy_dt, 10, device=self.env.device)[None, :, None]
         writer = SummaryWriter(str(self.log_dir / "tensorboard"))
+        if self.cfg.variant == "continuous":
+            write_json(self.log_dir / "continuous_geometry.json", {
+                "ground_plane_z_m": 0.01,
+                "ground_clearance": "query_height_minus_ground_plane_minus_radius",
+                "static_geometry": "signed_heightfield_occupancy_exit_proxy",
+                "static_projection": "float64_selected_face_refinement_float32_storage",
+                "applies_to": ["obstacle_avoidance", "collision"],
+                "query_timing": "pre_policy_step_position_plus_velocity_lookahead",
+                "static_penetration": "negative_distance_to_verified_original_mesh_exit",
+                "static_distance_is_exact_sdf": False,
+                "static_occupancy": "conservative_highest_vertical_mesh_projection",
+                "collision_or_bounds_reset": False,
+            })
         if self.cfg.variant == "dcol":
             write_json(self.log_dir / "dcol_geometry.json", {
                 "scope": "hybrid_dynamic_dcol",
                 "dynamic_geometry": "sphere_vs_axis_aligned_box_or_finite_z_cylinder",
                 "dynamic_selection": "minimum_common_scale_over_all_dynamic_obstacles",
                 "dynamic_metric": "radius_times_alpha_minus_one_metre_scaled_proxy_not_signed_distance",
-                "static_geometry": "actual_world_mesh_signed_surface_clearance",
-                "static_deep_penetration_gradient_solved": True,
+                "static_geometry": "signed_heightfield_occupancy_exit_proxy",
+                "static_projection": "float64_selected_face_refinement_float32_storage",
+                "static_penetration": "negative_distance_to_verified_original_mesh_exit",
+                "static_distance_is_exact_sdf": False,
+                "static_occupancy": "conservative_highest_vertical_mesh_projection",
                 "ground_gap": "query_height_minus_0.01_minus_radius",
                 "terminal_sample": "first_collision_substep_position_and_obstacles_or_policy_terminal_position",
                 "collision_gradient": "aligned_surrogate_at_the_same_physics_substep_before_reset",
@@ -376,6 +421,9 @@ class ZhangTrainer:
             updates = count() if self.cfg.max_iterations is None else range(self.cfg.max_iterations)
             for update in updates:
                 update_started = time.perf_counter()
+                diagnostic_update = initial_updates + update + 1 in self.cfg.gradient_diagnostic_updates
+                fixed_action_probe = None
+                fixed_action_probe_metadata = None
                 state = state.detach()
                 hidden = hidden.detach()
                 action_history.detach()
@@ -416,15 +464,35 @@ class ZhangTrainer:
                         depth, features, normalization_snapshot
                     )
                     self.normalizer.observe(depth, features.detach())
+                    # Source look-ahead queries belong to the pre-step state.
+                    query = state.position[:, None] + state.velocity[:, None] * lookahead
+                    obstacle_distance = self.env.nearest_obstacle_signed_distance(query)
+                    if diagnostic_update and rollout_step == rollout_steps - 1:
+                        # Snapshot before the recurrent call; the same observations
+                        # isolate the command change caused by one optimizer step.
+                        clearance = (obstacle_distance.detach() - parameters["margin"][:, None]).amin(dim=1)
+                        probe_ids = clearance.topk(min(16, self.env.num_envs), largest=False).indices
+                        fixed_action_probe = {
+                            name: value[probe_ids].detach().clone() for name, value in {
+                                "depth": normalized_depth, "features": normalized_features,
+                                "hidden": hidden, "heading": heading,
+                                "thrust_error": parameters["thr_est_error"],
+                            }.items()
+                        }
+                        fixed_action_probe_metadata = {
+                            "selection": "smallest_minimum_pre_step_lookahead_clearance",
+                            "environment_ids": probe_ids.tolist(),
+                            "clearance_m": clearance[probe_ids].tolist(),
+                        }
                     output, hidden = self.model.forward_checkpointed(normalized_depth, normalized_features, hidden)
                     command, velocity_prediction = decode_action(output, heading, parameters["thr_est_error"])
                     # Source main_cuda records p + v * sub_div before env.run, including terminating steps.
-                    query = state.position[:, None] + state.velocity[:, None] * lookahead
-                    history["obstacle_distance"].append(self.env.obstacle_signed_distance(query))
+                    history["obstacle_signed_distance"].append(obstacle_distance)
                     if self.cfg.variant == "dcol":
                         dcol_lookahead = self._dcol_gap(query[:, 1:-1], parameters["margin"])
                     history["margin"].append(parameters["margin"])
                     history["target_velocity"].append(target_velocity)
+                    history["height_target"].append(observation["height_target"].detach().clone())
                     history["velocity_prediction"].append(velocity_prediction)
                     history["observed_velocity"].append(state.velocity.detach())
                     history["episode_id"].append(observation["episode_id"].clone())
@@ -451,6 +519,10 @@ class ZhangTrainer:
                     history["bounds"].append(transition["bounds"])
                     history["done"].append(done.clone())
                     history["collision"].append(transition["collision"])
+                    if self.cfg.resolved_velocity_loss_mode == "truncated_window":
+                        history["timeout"].append(transition["timeout"])
+                        history["invalid"].append(transition["invalid"])
+                        history["episode_step"].append(transition["step"])
                     history["executed_command"].append(transition["executed_action"])
                     history["model_velocity_delta"].append(prediction.velocity.detach() - transition["velocity"])
                     terminal_state, state = align_transition(
@@ -528,11 +600,48 @@ class ZhangTrainer:
                 learning_rate = self._learning_rate()
                 self.optimizer.zero_grad(set_to_none=True)
                 gradient_diagnostic = None
-                if initial_updates + update + 1 in self.cfg.gradient_diagnostic_updates:
+                height_gradient = None
+                trainable = tuple(parameter for parameter in self.model.parameters() if parameter.requires_grad)
+                if diagnostic_update:
                     gradient_diagnostic = GradientDiagnostic(self.model, losses, self.cfg)
+                    height_gradient = gradient_diagnostic.component_gradient("height_boundary")
+                elif self.cfg.gradient_projection == "height_priority":
+                    components = torch.autograd.grad(
+                        losses["height_boundary"], trainable, retain_graph=True, allow_unused=True,
+                    )
+                    height_gradient = torch.cat([
+                        (torch.zeros_like(parameter) if gradient is None else gradient.detach()).reshape(-1)
+                        for parameter, gradient in zip(trainable, components, strict=True)
+                    ])
                 actor_loss.backward()
                 if gradient_diagnostic is not None:
                     gradient_diagnostic.check_total_gradient()
+                action_probe = None
+                if diagnostic_update or self.cfg.gradient_projection == "height_priority":
+                    total_gradient = torch.cat([
+                        (torch.zeros_like(parameter) if parameter.grad is None else parameter.grad.detach()).reshape(-1)
+                        for parameter in trainable
+                    ])
+                    if diagnostic_update:
+                        action_probe = ActionUpdateProbe(
+                            self.model, self.optimizer, total_flat=total_gradient, height_flat=height_gradient,
+                            height_weight=self.cfg.coef_height_boundary, max_grad_norm=self.cfg.max_grad_norm,
+                            probe=fixed_action_probe,
+                        )
+                    if self.cfg.gradient_projection == "height_priority":
+                        projected, projection_metrics = height_priority_gradient(
+                            total_gradient, height_gradient, self.cfg.coef_height_boundary,
+                        )
+                        offset = 0
+                        for parameter in trainable:
+                            end = offset + parameter.numel()
+                            if parameter.grad is not None:
+                                parameter.grad.copy_(projected[offset:end].view_as(parameter))
+                            offset = end
+                        algorithm_metrics.update({
+                            f"Projection/{name}": float(value) for name, value in projection_metrics.items()
+                            if isinstance(value, (bool, int, float))
+                        })
                 try:
                     grad_norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.cfg.max_grad_norm,
                                                              error_if_nonfinite=True)
@@ -545,6 +654,13 @@ class ZhangTrainer:
                 gradient_record = None
                 if gradient_diagnostic is not None:
                     gradient_record = gradient_diagnostic.finish(self.optimizer, grad_norm, self.cfg.max_grad_norm)
+                    gradient_record["applied_gradient_projection"] = self.cfg.gradient_projection
+                    gradient_record["optimizer_action_probe"] = action_probe.finish(
+                        self.model, applied_projection=self.cfg.gradient_projection,
+                    )
+                    gradient_record["optimizer_action_probe"]["probe_selection"] = fixed_action_probe_metadata
+                    gradient_record["diagnostic_s"] += action_probe.diagnostic_s
+                    del action_probe
                     del gradient_diagnostic
                 if self.actor_critic is not None:
                     self.critic_monitor.before_step()
@@ -571,6 +687,14 @@ class ZhangTrainer:
                                completed_episodes=int(terminated_count),
                                rollout_steps=rollout_steps, environment_steps=self.environment_steps,
                                executed_action_max_error=float(execution_error))
+                if torch.device(self.env.device).type == "cuda":
+                    for name, read_value in (
+                        ("allocated", torch.cuda.memory_allocated),
+                        ("reserved", torch.cuda.memory_reserved),
+                        ("peak_allocated", torch.cuda.max_memory_allocated),
+                        ("peak_reserved", torch.cuda.max_memory_reserved),
+                    ):
+                        metrics[f"Memory/torch_{name}_mb"] = read_value(self.env.device) / 2**20
                 if gradient_record is not None:
                     heights = torch.stack(history["position"]).detach()[..., 2]
                     gradient_record.update(

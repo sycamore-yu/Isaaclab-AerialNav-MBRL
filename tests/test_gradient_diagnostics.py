@@ -35,7 +35,7 @@ def _losses(model, cfg):
     heading = torch.eye(3, device=device).expand(2, -1, -1)
     lookahead = torch.linspace(0, 0.1, 10, device=device)[None, :, None]
     history = {name: [] for name in (
-        "velocity", "target_velocity", "episode_id", "position", "obstacle_distance", "margin",
+        "velocity", "target_velocity", "episode_id", "position", "obstacle_signed_distance", "height_target", "margin",
         "command", "previous_command", "velocity_prediction", "observed_velocity",
     )}
     for frame in depth:
@@ -45,7 +45,8 @@ def _losses(model, cfg):
         query = position[:, None] + velocity[:, None] * lookahead
         closest = query.detach().clone()
         closest[..., 0] = 1.0
-        history["obstacle_distance"].append((closest - query).norm(dim=-1))
+        history["obstacle_signed_distance"].append((closest - query).norm(dim=-1))
+        history["height_target"].append(torch.full((2,), 2.0, device=device))
         history["observed_velocity"].append(velocity.detach())
         position = position + velocity * 0.1 + command * 0.005
         velocity = velocity + command * 0.1

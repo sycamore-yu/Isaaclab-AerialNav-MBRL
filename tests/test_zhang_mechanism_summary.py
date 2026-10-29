@@ -228,6 +228,23 @@ class MechanismSummaryFixtureTests(unittest.TestCase):
         self.assertIsNone(stage["summary"]["rollout_steps_max"])
         self.assertEqual(stage["data_status"], "partial")
 
+    def test_missing_required_configuration_identity_blocks_matched_budget(self):
+        self.run_fixture("first", num_envs=256)
+        second, _ = self.run_fixture("second", num_envs=256)
+        original = json.loads((second / "config.json").read_text())
+        # A live run can have valid numeric reports even when its config file
+        # is incomplete. Those samples cannot establish a declared ablation.
+        for key in ("observation_normalization", "lr_schedule"):
+            with self.subTest(missing=key):
+                config = json.loads(json.dumps(original))
+                config["train"].pop(key)
+                self.write(second / "config.json", config)
+                result = self.summary()
+                self.assertTrue(self.stage(result, "second")["identity_missing_fields"])
+                self.assertIsNotNone(self.stage(result, "second")["summary"]["stage_environment_steps"])
+                self.assertIsNone(result["comparisons"][0]["budget_stage_environment_steps"])
+                self.assertEqual(result["comparisons"][0]["missing_or_mismatched_runs"], ["second"])
+
     def test_missing_start_of_later_stage_is_not_treated_as_a_complete_stage(self):
         directory, records = self.run_fixture("truncated_prefix", horizons=(16, 32, 16),
                                               base_steps=9000, update_offset=100, stage="pretrain_s1")
@@ -237,6 +254,37 @@ class MechanismSummaryFixtureTests(unittest.TestCase):
         self.assertIsNone(stage["summary"]["stage_environment_steps"])
         self.assertIsNone(stage["summary"]["stage_elapsed_s"])
         self.assertTrue(any(issue["kind"] == "missing_stage_start" for issue in stage["read_validation_issues"]))
+
+    def test_declared_restart_parameters_prevent_comparing_a_different_configuration(self):
+        first, _ = self.run_fixture("first", num_envs=256)
+        second, _ = self.run_fixture("second", num_envs=256)
+        declared = {"height_loss_mode": "target_exp", "optimizer": "adamw", "weight_decay": 0.01,
+                    "velocity_loss_mode": "truncated_window", "gradient_projection": "none",
+                    "plateau_patience": 2, "ahac_max_horizon": 300, "num_envs": 256}
+        for entry, directory in zip(self.entries, (first, second), strict=True):
+            entry.update(declared)
+            config = json.loads((directory / "config.json").read_text())
+            config["train"].update({key: value for key, value in declared.items() if key != "num_envs"})
+            self.write(directory / "config.json", config)
+        matched = self.summary()
+        self.assertEqual(matched["comparisons"][0]["status"], "available")
+        self.assertEqual(matched["runs"][0]["manifest_identity"]["height_loss_mode"], "target_exp")
+        for key, value in (("height_loss_mode", "target_huber"), ("optimizer", "adam"),
+                           ("velocity_loss_mode", "full_window"), ("plateau_patience", 5),
+                           ("ahac_max_horizon", 150), ("gradient_projection", "height_priority")):
+            with self.subTest(parameter=key):
+                config = json.loads((second / "config.json").read_text())
+                config["train"].update({name: expected for name, expected in declared.items() if name != "num_envs"})
+                config["train"][key] = value
+                self.write(second / "config.json", config)
+                result = self.summary()
+                self.assertIn(key, self.stage(result, "second")["identity_mismatches"])
+                self.assertIsNone(result["comparisons"][0]["budget_stage_environment_steps"])
+        config["train"].pop("height_loss_mode")
+        self.write(second / "config.json", config)
+        result = self.summary()
+        self.assertIn("height_loss_mode", self.stage(result, "second")["identity_missing_fields"])
+        self.assertIn("height_loss_mode", self.stage(result, "second")["identity_mismatches"])
 
     def test_cli_writes_strict_json_without_mutating_fixture_sources(self):
         directory, _ = self.run_fixture("cli", horizons=(16,))

@@ -7,7 +7,7 @@ from test_zhang_contract import loss_history
 from isaaclab_navrl.tasks.navigation.geometry import (
     TerrainDistance,
     dynamic_signed_distance,
-    obstacle_signed_distance,
+    nearest_obstacle_signed_distance,
     primitive_signed_distance,
 )
 from isaaclab_navrl.zhang.config import ZhangTrainCfg
@@ -41,7 +41,7 @@ def test_static_sign_escape_sides_corners_deep_surface_and_ground(device, open_b
         torch.testing.assert_close(gradient[[0, 1, 2, 6, 7], axis], fd[[0, 1, 2, 6, 7]], atol=2e-4, rtol=2e-4)
     empty = q.new_empty(0, 3)
     ground = q.new_tensor([[3, 3, -2.0]]).requires_grad_()
-    gap = obstacle_signed_distance(ground, terrain.signed_distance(ground), empty, empty) - 0.3
+    gap = nearest_obstacle_signed_distance(ground, terrain.signed_distance(ground), empty, empty) - 0.3
     assert gap.item() < -2
     torch.testing.assert_close(torch.autograd.grad(gap.sum(), ground)[0], ground.new_tensor([[0, 0, 1]]))
     # The DCOL static branch must preserve the negative interior distance.
@@ -64,7 +64,7 @@ def test_dynamic_interior_centre_axis_and_loss_gradients(size):
     assert (dcol_grad.norm(dim=-1) > 0).all()
     assert (dynamic_min_alpha(q.detach() + dcol_grad * 0.01, 0.3, center, sizes) > alpha.detach()).all()
     history = loss_history(torch.zeros(3, 3, 3, dtype=q.dtype))
-    history['obstacle_distance'] = [sdf[:, None].expand(-1, 10)] * 3
+    history['obstacle_signed_distance'] = [sdf[:, None].expand(-1, 10)] * 3
     losses, _ = zhang_losses(history, ZhangTrainCfg())
     for name in ['obstacle_avoidance', 'collision']:
         descent = -torch.autograd.grad(losses[name], q, retain_graph=True)[0]

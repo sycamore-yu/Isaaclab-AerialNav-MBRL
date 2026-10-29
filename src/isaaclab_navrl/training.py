@@ -1,7 +1,26 @@
-"""Shared training-only reporting; no extra evaluation environment or rollout."""
+"""Shared training lifecycle and reporting; no extra evaluation rollout."""
 
 import json
+import signal
+from contextlib import contextmanager
 from pathlib import Path
+
+
+@contextmanager
+def graceful_training_stop(trainer):
+    """Request stopping at an update boundary, then restore process handlers."""
+    previous = {}
+
+    def request_stop(signum, _frame):
+        trainer.request_stop(signum)
+
+    try:
+        for signum in (signal.SIGINT, signal.SIGTERM):
+            previous[signum] = signal.signal(signum, request_stop)
+        yield
+    finally:
+        for signum, handler in previous.items():
+            signal.signal(signum, handler)
 
 
 def write_json(path, value):

@@ -51,7 +51,7 @@ def main():
             torch.testing.assert_close(lidar_delta[valid_lidar], torch.full_like(lidar_delta[valid_lidar], .05), atol=1e-6, rtol=0)
             assert all(b - a == 1 for a, b in zip(physics_steps, physics_steps[1:], strict=False))
             assert env.physics_dt == env.step_dt == .05 and env.curriculum.min_episodes == 1024
-            tau = env.controller.rotor_parameters['tau_up']
+            tau = env.controller.controller.rotor_parameters['tau_up']
             torch.testing.assert_close(tau, torch.full_like(tau, 1 - .57**5))
             result.update(status='passed', physics_dt=env.physics_dt, policy_dt=env.step_dt,
                           physics_steps=20, policy_steps=20, simulated_s=1.0,

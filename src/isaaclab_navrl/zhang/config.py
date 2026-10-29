@@ -4,22 +4,25 @@ import math
 from dataclasses import dataclass
 from typing import Literal
 
-ZHANG_VARIANTS = ("step", "continuous", "dcol", "truncated_window")
+ZHANG_VARIANTS = ("step", "continuous", "dcol")
 ZHANG_ALGORITHMS = ("bptt", "shac", "ahac")
 
 
 @dataclass
 class ZhangTrainCfg:
-    variant: Literal["step", "continuous", "dcol", "truncated_window"] = "step"
+    variant: Literal["step", "continuous", "dcol"] = "step"
     algorithm: Literal["bptt", "shac", "ahac"] = "bptt"
     timesteps: int = 150
     max_iterations: int | None = None
     stop_after_acceptance: bool = False
     physics_dt: float = 0.01
     policy_dt: float = 0.1
+    velocity_loss_mode: Literal["variant_default", "per_step", "truncated_window", "full_window"] = "variant_default"
     velocity_window_s: float = 2.0
     grad_decay: float = 0.4
     lr: float = 0.001
+    optimizer: Literal["adamw", "adam"] = "adamw"
+    weight_decay: float = 0.01
     cosine_period_updates: int = 400
     min_lr_ratio: float = 0.01
     lr_schedule: Literal["cosine", "plateau", "constant"] = "cosine"
@@ -36,8 +39,9 @@ class ZhangTrainCfg:
     critic_lr: float = 0.0005
     critic_iterations: int = 16
     critic_max_iterations: int = 64
+    critic_value_transform: Literal["linear", "softplus"] = "linear"
     ahac_min_horizon: int = 16
-    ahac_max_horizon: int = 150
+    ahac_max_horizon: int = 300
     ahac_initial_horizon: int = 32
     ahac_risk_clearance: float = 0.1
     ahac_risk_scale: float = 0.05
@@ -51,11 +55,25 @@ class ZhangTrainCfg:
     coef_d_acc: float = 0.01
     coef_d_jerk: float = 0.001
     coef_height_boundary: float = 1.0
+    height_loss_mode: Literal["target_exp", "target_huber", "boundary_huber"] = "target_exp"
+    height_target_range: tuple[float, float] = (0.5, 2.5)
     boundary_margin: float = 0.5
     boundary_scale: float = 0.5
     height_bounds: tuple[float, float] = (0.2, 4.0)
     seed: int = 0
     gradient_diagnostic_updates: tuple[int, ...] = ()
+    gradient_projection: Literal["none", "height_priority"] = "none"
+
+    @property
+    def resolved_velocity_loss_mode(self) -> Literal["per_step", "window", "truncated_window"]:
+        """Select velocity supervision without changing collision geometry or critic memory."""
+        if self.velocity_loss_mode == "variant_default":
+            return "per_step" if self.variant == "step" else "truncated_window"
+        if self.velocity_loss_mode == "full_window":
+            return "window"
+        if self.velocity_loss_mode in ("per_step", "truncated_window"):
+            return self.velocity_loss_mode
+        raise ValueError("velocity_loss_mode must be variant_default, per_step, truncated_window, or full_window")
 
     @property
     def velocity_window_steps(self) -> int:
@@ -69,6 +87,24 @@ class ZhangTrainCfg:
             raise ValueError(f"variant must be one of {ZHANG_VARIANTS}")
         if self.algorithm not in ZHANG_ALGORITHMS:
             raise ValueError(f"algorithm must be one of {ZHANG_ALGORITHMS}")
+        _ = self.resolved_velocity_loss_mode
+        if self.optimizer not in ("adamw", "adam"):
+            raise ValueError("optimizer must be adamw or adam")
+        if not math.isfinite(self.weight_decay) or self.weight_decay < 0:
+            raise ValueError("weight_decay must be finite and nonnegative")
+        if self.height_loss_mode not in ("target_exp", "target_huber", "boundary_huber"):
+            raise ValueError("height_loss_mode must be target_exp, target_huber, or boundary_huber")
+        if (len(self.height_target_range) != 2 or not all(math.isfinite(x) for x in self.height_target_range)
+                or not self.height_bounds[0] < self.height_target_range[0] < self.height_target_range[1] < self.height_bounds[1]):
+            raise ValueError("height_target_range must be a finite increasing interval inside the height bounds")
+        if self.gradient_projection not in ("none", "height_priority"):
+            raise ValueError("gradient_projection must be none or height_priority")
+        if self.gradient_projection != "none" and self.algorithm != "bptt":
+            raise ValueError("Height-priority projection currently requires the unbootstrapped BPTT objective")
+        if self.critic_value_transform not in ("linear", "softplus"):
+            raise ValueError("critic_value_transform must be linear or softplus")
+        if self.algorithm == "bptt" and self.critic_value_transform != "linear":
+            raise ValueError("A non-linear critic_value_transform requires SHAC or AHAC")
         if self.algorithm != "bptt" and self.variant != "dcol":
             raise ValueError("The SHAC/AHAC comparisons require the dcol configuration")
         if self.algorithm != "bptt" and self.gradient_diagnostic_updates:

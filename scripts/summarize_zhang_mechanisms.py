@@ -17,9 +17,15 @@ from pathlib import Path
 STAGES = ("pretrain_s0", "pretrain_s1", "pretrain_s2", "finetune_s1", "finetune_s2")
 RATES = ("success_rate", "collision_rate", "bounds_rate", "invalid_rate", "timeout_rate")
 IDENTITY = ("variant", "algorithm", "normalization", "lr_schedule", "seed")
+DECLARED_PARAMETERS = (
+    "velocity_loss_mode", "height_loss_mode", "optimizer", "weight_decay", "gradient_projection",
+    "plateau_patience", "ahac_max_horizon", "num_envs",
+)
 NUMERICAL_METRICS = (
     "surrogate_velocity_error_mps", "surrogate_vertical_velocity_bias_mps", "executed_action_max_error",
     "Optim/update_ratio", "Optim/layers/fc/update_ratio", "Optim/head/az/update_ratio", "Optim/head/vz/update_ratio",
+    "velocity_valid_samples", "velocity_short_terminal_samples", "velocity_sample_fraction",
+    "mean_abs_target_altitude_error_m",
 )
 
 
@@ -247,8 +253,12 @@ def summarize_stage(run_path, stage, declared):
             "lr_schedule": config.get("training", {}).get("algorithm", {}).get("schedule"),
             "seed": config.get("seed"),
         }
-    mismatches = {key: {"manifest": declared[key], "observed": observed[key]} for key in IDENTITY
-                  if observed[key] is not None and observed[key] != declared[key]}
+    keys = (*IDENTITY, *(key for key in DECLARED_PARAMETERS if key in declared))
+    observed.update({key: train.get(key) for key in DECLARED_PARAMETERS if key in declared})
+    if "num_envs" in declared:
+        observed["num_envs"] = environment.get("num_envs", result.get("num_envs"))
+    mismatches = {key: {"manifest": declared[key], "observed": observed[key]} for key in keys
+                  if observed[key] != declared[key] and (observed[key] is not None or key not in IDENTITY)}
     issues = []
     updates = enrich_updates(updates, result, environment.get("num_envs", result.get("num_envs")), update_source, issues)
     reports = enrich_reports(reports, updates, stage, issues)
@@ -264,7 +274,7 @@ def summarize_stage(run_path, stage, declared):
         "stage_passed": result.get("stage_passed"), "acceptance_passed": result.get("acceptance_passed"),
         "error": result.get("error"), "sources": sources, "read_validation_issues": issues,
         "observed_identity": observed, "identity_mismatches": mismatches,
-        "identity_missing_fields": [key for key in IDENTITY if observed[key] is None],
+        "identity_missing_fields": [key for key in keys if observed[key] is None],
         "environment": environment, "notes": notes, "summary": summarize_window(updates, reports, result),
     }
     return summary, updates, reports
@@ -312,7 +322,9 @@ def summarize(root, manifest_path):
             stage_summary, updates, reports = summarize_stage(path, stage, entry)
             stages.append(stage_summary)
             raw[(entry["name"], stage)] = (updates, reports)
-        runs.append({"name": entry["name"], "path": str(path), "manifest_identity": {key: entry[key] for key in IDENTITY},
+        identity_keys = (*IDENTITY, *(key for key in DECLARED_PARAMETERS if key in entry))
+        runs.append({"name": entry["name"], "path": str(path),
+                     "manifest_identity": {key: entry[key] for key in identity_keys},
                      "result_source": source, "status": (result or {}).get("status"),
                      "acceptance_passed": (result or {}).get("acceptance_passed"), "stages": stages})
     discovered = set()
@@ -329,6 +341,7 @@ def summarize(root, manifest_path):
         cohort = [run for run in runs if run["manifest_identity"]["seed"] == seed]
         for index, stage in enumerate(STAGES):
             missing = [run["name"] for run in cohort if run["stages"][index]["identity_mismatches"]
+                       or run["stages"][index]["identity_missing_fields"]
                        or run["stages"][index]["summary"]["stage_environment_steps"] is None]
             budget = (min(run["stages"][index]["summary"]["stage_environment_steps"] for run in cohort)
                       if len(cohort) >= 2 and not missing else None)
