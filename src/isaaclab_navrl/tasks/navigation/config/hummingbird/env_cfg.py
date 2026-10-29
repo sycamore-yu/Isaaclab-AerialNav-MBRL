@@ -216,8 +216,10 @@ class ZhangNavRLEnvCfg(NavRLEnvCfg):
                 pos=(0.09, 0.0, 0.095), rot=(0.0, 0.0, 0.0, 1.0), convention="world"
             ),
             pattern_cfg=patterns.PinholeCameraPatternCfg.from_intrinsic_matrix(
-                [554.254691191187, 0.0, 320.5, 0.0, 554.254691191187, 240.5, 0.0, 0.0, 1.0],
-                width=640, height=480,
+                # Scale the NavRL calibration with the image to preserve its field of view.
+                [554.254691191187 / 4, 0.0, 320.5 / 4,
+                 0.0, 554.254691191187 / 4, 240.5 / 4, 0.0, 0.0, 1.0],
+                width=160, height=120,
             ),
             max_distance=24.0,
             depth_clipping_behavior="max",

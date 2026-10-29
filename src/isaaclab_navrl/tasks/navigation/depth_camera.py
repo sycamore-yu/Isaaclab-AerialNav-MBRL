@@ -98,7 +98,7 @@ def _raycast_shared_meshes(
 class BatchedDepthCamera(MultiMeshRayCasterCamera):
     """An official sensor extension retaining pooled features for all drones.
 
-    ``image_shape`` and intrinsic matrices describe the full 480 x 640 sensor.
+    ``image_shape`` and intrinsic matrices describe the configured raw sensor.
     ``data.output['policy_depth']`` contains its transformed 12 x 16 result.
     ``last_depth_batch`` exposes the most recently computed raw depth batch
     for numerical checks without retaining all full-resolution images.

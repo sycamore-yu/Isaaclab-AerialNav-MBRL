@@ -35,7 +35,7 @@ def main():
     cfg.scene.reference_depth.class_type = ResolvableString("isaaclab.sensors:MultiMeshRayCasterCamera")
     result = {
         "status": "running", "num_envs": 17,
-        "full_resolution": [480, 640], "pooled_resolution": [12, 16],
+        "full_resolution": [120, 160], "pooled_resolution": [12, 16],
         "atol": 2e-5, "rtol": 1e-5, "stages": {},
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -65,7 +65,7 @@ def main():
             env.reset()
             camera, reference = env.scene["depth_camera"], env.scene["reference_depth"]
             camera.cfg.pixel_noise_std = 0.0
-            assert camera.image_shape == (480, 640)
+            assert camera.image_shape == (120, 160)
             assert camera._batch_size == 16
             result["world_mesh"] = camera.world_mesh_info
             result["intrinsics"] = camera.data.intrinsic_matrices.torch.cpu().tolist()

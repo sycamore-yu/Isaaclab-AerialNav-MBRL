@@ -62,7 +62,8 @@ def main():
             camera = env.scene["depth_camera"]
             # Keep the training image-noise cost while holding physical parameters fixed.
             camera.cfg.pixel_noise_std = args.pixel_noise_std
-            assert camera.image_shape == (480, 640), "This benchmark must trace all original camera pixels"
+            assert camera.image_shape == (cfg.scene.depth_camera.pattern_cfg.height,
+                                          cfg.scene.depth_camera.pattern_cfg.width)
             if not str(env.device).startswith("cuda"):
                 raise ValueError("Use the actual CUDA simulation device for this performance measurement")
             action = torch.zeros(env.num_envs, 3, device=env.device)
@@ -105,8 +106,8 @@ def main():
                 "seed": cfg.seed, "terrain_seed": cfg.terrain_seed,
                 "static_obstacles": cfg.num_static_obstacles, "dynamic_obstacles": cfg.num_dynamic_obstacles,
                 "physics_dt": env.physics_dt, "policy_dt": env.step_dt,
-                "source_resolution": [480, 640], "pooled_resolution": [12, 16],
-                "full_resolution_rays_per_frame": env.num_envs * 480 * 640,
+                "source_resolution": list(camera.image_shape), "pooled_resolution": [12, 16],
+                "full_resolution_rays_per_frame": env.num_envs * camera.num_rays,
                 "camera_class": f"{type(camera).__module__}.{type(camera).__name__}",
                 "camera_batch_size": camera.cfg.batch_size,
                 "pixel_noise_std": camera.cfg.pixel_noise_std,

@@ -6,8 +6,8 @@ from isaaclab_navrl.tasks.navigation.depth_processing import depth_features
 
 
 def test_full_resolution_pixel_is_not_replaced_by_a_coarse_center_ray():
-    depth = torch.full((1, 1, 480, 640), 24.0)
-    depth[0, 0, 161, 321] = 0.5
+    depth = torch.full((1, 1, 120, 160), 24.0)
+    depth[0, 0, 41, 81] = 0.5
     features = depth_features(depth)
     expected = torch.full((1, 1, 12, 16), -0.475)
     expected[0, 0, 4, 8] = 5.4
