@@ -168,6 +168,20 @@ class BatchedDepthCamera(MultiMeshRayCasterCamera):
         }
         self._data.info = {"policy_depth": {"source_image_shape": self.image_shape}}
         self._compute_intrinsic_matrices()
+        # Preserve pinhole_camera_pattern's arithmetic, but build its constants
+        # once. Intrinsics change only through the per-episode setter below.
+        pattern = self.cfg.pattern_cfg
+        grid = torch.meshgrid(
+            torch.arange(0, pattern.width, dtype=torch.int32, device=self._device),
+            torch.arange(0, pattern.height, dtype=torch.int32, device=self._device),
+            indexing="xy",
+        )
+        pixels = torch.vstack(list(map(torch.ravel, grid))).T
+        pixels = torch.hstack([pixels, torch.ones((len(pixels), 1), device=self._device)])
+        pixels += torch.tensor([[0.5, 0.5, 0]], device=self._device)
+        self._ray_pixels = pixels.T
+        self._ray_axis_sign = torch.tensor([1, -1, -1], device=self._device).unsqueeze(0).unsqueeze(2)
+        self._ray_inverse_intrinsics = torch.inverse(self._data.intrinsic_matrices.torch)
         self._create_offset_buffers(self._num_envs)
         self._frame_wp = wp.zeros(self._num_envs, dtype=wp.int64, device=self._device)
         self._frame = wp.to_torch(self._frame_wp)
@@ -186,8 +200,18 @@ class BatchedDepthCamera(MultiMeshRayCasterCamera):
 
     def set_intrinsic_matrices(self, matrices, focal_length=1.0, env_ids=None):
         indices = slice(None) if env_ids is None else env_ids
-        self._data.intrinsic_matrices.torch[indices] = matrices.to(self._device)
+        matrices = matrices.to(device=self._device, dtype=self._data.intrinsic_matrices.torch.dtype)
+        # Keep native singular-matrix error checking outside the frame hot path.
+        inverse = torch.inverse(matrices)
+        self._data.intrinsic_matrices.torch[indices] = matrices
+        self._ray_inverse_intrinsics[indices] = inverse
         self._focal_length = focal_length
+
+    def _local_rays(self, begin, end):
+        pixels = torch.matmul(self._ray_inverse_intrinsics[begin:end], self._ray_pixels)
+        pixels = pixels[:, [2, 0, 1], :] * self._ray_axis_sign
+        directions = (pixels / torch.linalg.norm(pixels, dim=1, keepdim=True)).permute(0, 2, 1)
+        return torch.zeros_like(directions, device=self._device), directions
 
     def set_mount_pitch(self, pitch, env_ids):
         """Apply per-episode source camera pitch around the fixed NavRL mount."""
@@ -228,9 +252,7 @@ class BatchedDepthCamera(MultiMeshRayCasterCamera):
                 end = min(begin + self._batch_size, self._num_envs)
                 count = end - begin
                 mask = _slice(env_mask, begin, end)
-                local_starts, local_directions = self.cfg.pattern_cfg.func(
-                    self.cfg.pattern_cfg, self._data.intrinsic_matrices.torch[begin:end], self._device
-                )
+                local_starts, local_directions = self._local_rays(begin, end)
                 wp.launch(
                     camera_kernels.update_ray_caster_kernel,
                     dim=(count, self.num_rays),

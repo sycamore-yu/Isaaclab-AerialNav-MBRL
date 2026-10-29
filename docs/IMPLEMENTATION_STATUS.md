@@ -46,6 +46,10 @@ Zhang 保留 CNN + GRU192、10 维状态输入、六维交错输出和现有损�
 
 原始记录为 `logs/profile/zhang_1024_current.json` 和 `logs/profile/zhang_1024_batch64.json`。测量时有其他训练任务共享 GPU，且插桩会改变 CUDA 调度；这些数字用于定位当前瓶颈，不能视为独占 GPU 的训练吞吐量。相机分辨率、采样频率、噪声与池化语义均未更改。
 
+随后将固定像素网格缓存，并把内参求逆从每帧的 64 个批次移到初始化和内参更新时。逐环境内参更新保留原求逆错误检查，射线矩阵乘法、换轴、归一化及后续深度处理的顺序保持原样。当前测得未插桩基线 673.40 ms/策略步，深度采样 498.57 ms/策略步，分别比之前减少约 7.3% 和 8.9%；这是上述共享 GPU 条件下的环境测量，不是端到端训练提速承诺。记录为 `logs/profile/zhang_1024_cached_intrinsics.json`。
+
+`logs/smoke/camera_cached_intrinsics_parity.json` 覆盖初始姿态、倾斜姿态、所有动态物体移动、部分环境重置、像素噪声及部分相机内参更新。17 个环境同时覆盖 16 相机整批和 1 相机尾批；六种情况下原始深度及池化特征的最大绝对误差均为 0。缓存版本保留，正式 Zhang 启动时使用该版本。同步行为依据 PyTorch 2.11 官方文档：https://docs.pytorch.org/docs/2.11/generated/torch.linalg.inv.html 。
+
 ## 已有迁移检查
 
 原地形、Lee 控制与电机响应、LiDAR 排列与偏航、NavRL 奖励与终止、共享场景碰撞隔离等检查保留。相机加速采用原生局部三角网格与顶层包围盒筛选；`logs/smoke/camera_tlas_parity.json` 中，17 个环境的初始、倾斜、动态物体移动、局部重置和噪声处理对照均为深度误差 0。控制器 CUDA Graph 的 1024 环境输出、部分重置和随机数状态对照见 `logs/profile/controller_cuda_graph_1024.json`。

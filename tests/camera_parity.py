@@ -169,6 +169,14 @@ def main():
             camera.cfg.pixel_noise_std = 0.02
             camera._noise_rng.manual_seed(20261028)
             measure("pixel_noise_before_pool")
+            matrices = camera.data.intrinsic_matrices.torch[reset_ids].clone()
+            scale = torch.tensor([0.85, 1.1, 1.25], device=env.device)
+            matrices[:, 0, 0] *= scale
+            matrices[:, 1, 1] *= scale
+            matrices[:, 0, 2] += torch.tensor([-4.0, 2.0, 5.0], device=env.device)
+            camera.set_intrinsic_matrices(matrices, env_ids=reset_ids)
+            reference.set_intrinsic_matrices(matrices, env_ids=reset_ids)
+            measure("partial_intrinsics_update")
             result["status"] = "completed"
             persist()
             print("CAMERA_PARITY " + json.dumps(result), flush=True)
