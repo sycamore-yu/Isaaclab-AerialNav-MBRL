@@ -81,6 +81,24 @@ class AcceptanceProtocolTests(unittest.TestCase):
             {"timesteps": 150, "lr": 0.001, "coef_d_jerk": 0.0},
         )
 
+    def test_velocity_loss_mode_is_preserved_across_stages_for_all_algorithms(self):
+        self.assertEqual(parse_train_args([]), {})
+        for algorithm in ("bptt", "shac", "ahac"):
+            for mode in ("variant_default", "per_step"):
+                values = parse_train_args(["--variant", "dcol", "--algorithm", algorithm,
+                                           "--velocity_loss_mode", mode, "--velocity_window_s", "2"])
+                for stage in STAGES:
+                    with self.subTest(algorithm=algorithm, mode=mode, stage=stage):
+                        command = self.command(stage=stage, train_args=values)
+                        self.assertEqual(command.count("--velocity_loss_mode"), 1)
+                        self.assertEqual(command[command.index("--velocity_loss_mode") + 1], mode)
+                        self.assertEqual(command[command.index("--velocity_window_s") + 1], "2.0")
+                        self.assertNotIn("--velocity_loss_mode",
+                                         self.command(method="navrl", stage=stage, train_args=values))
+        for raw in ("window", "step", "", "PER_STEP"):
+            with self.subTest(raw=raw), self.assertRaises(ValueError):
+                parse_train_args(["--velocity_loss_mode", raw])
+
     def test_critic_transform_requires_ac_and_is_preserved_across_all_stages(self):
         self.assertEqual(parse_train_args(["--critic_value_transform", "linear"]),
                          {"critic_value_transform": "linear"})

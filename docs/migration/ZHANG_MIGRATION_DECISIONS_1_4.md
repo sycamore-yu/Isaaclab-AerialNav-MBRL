@@ -76,6 +76,19 @@ SHAC/AHAC可选 `critic_value_transform=softplus`，只约束成本critic最终�
 检查点。新旧代码使用隔离工作树，原活动实验的后续阶段继续读取原源码。完整协议见
 [后续诊断与对照](../ZHANG_DIAGNOSTIC_FOLLOWUPS_20261029.md)。
 
+## 速度监督与碰撞几何的独立对照
+
+`velocity_loss_mode=variant_default` 保留上文第10项的默认映射：step逐步，continuous/dcol窗口。
+可显式使用 `--velocity_loss_mode per_step`，在保留DCOL几何与原重置规则的同时，
+对每个策略步的终止前速度计算本步目标误差。该开关适用于BPTT、SHAC与AHAC；
+它不改变critic的窗口历史维度、其他六项成本、控制器或课程，也不重新启用truncated_window。
+正式新对照从随机初始化开始，按相同环境策略步比较，未取得更好结果前不替换默认。
+机制诊断、停止的窗口SHAC证据及对照协议见[逐步速度经验](DCOL_STEP_VELOCITY_EXPERIENCE.md)。
+
+连续方案的高度系数8是单独的诊断对照，默认仍为1。选择依据是当前轨迹上实测的
+高度与碰撞参数梯度冲突，而不是对总损失标量的比较；见
+[连续展开梯度诊断](../results/zhang_continuous_gradient_diagnosis_20261029.md)。
+
 ## 方法来源
 
 网络、六维输出解码、损失和简化动力学参考作者发布的 [HenryHuYu/DiffPhysDrone](https://github.com/HenryHuYu/DiffPhysDrone/tree/271936190b5c2a5e760230e718fa6b167718a5bf)，对应 `model.py`、`main_cuda.py`、`env_cuda.py` 和 `src/dynamics_kernel.cu`。本次使用的源快照没有附带 `LICENSE` 或 `NOTICE` 文件，项目未为该源代码另行指定许可证；README 要求的论文引用保留如下：

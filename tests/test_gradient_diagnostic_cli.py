@@ -58,6 +58,7 @@ class GradientDiagnosticCliTests(unittest.TestCase):
         self.assertEqual(args.stage, "pretrain_s0")
         self.assertEqual(args.algorithm, "bptt")
         self.assertEqual(args.critic_value_transform, "linear")
+        self.assertEqual(args.velocity_loss_mode, "variant_default")
         self.assertEqual(args.lr_schedule, "cosine")
         self.assertIs(args.observation_normalization, False)
         self.assertIs(args.recovery_enabled, True)
@@ -88,6 +89,57 @@ class GradientDiagnosticCliTests(unittest.TestCase):
                     with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as error:
                         trainer.main()
                     self.assertEqual(error.exception.code, 2)
+
+    def test_velocity_loss_cli_choices_are_explicit_and_reject_unknown_values(self):
+        for mode in ("variant_default", "per_step"):
+            with self.subTest(mode=mode):
+                args = parse_training_cli(["--variant", "dcol", "--velocity_loss_mode", mode])
+                self.assertEqual(args.velocity_loss_mode, mode)
+                self.assertEqual(args.velocity_window_s, 2.0)
+        for raw in ("window", "step", "", "PER_STEP"):
+            with self.subTest(raw=raw):
+                with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as error:
+                    parse_training_cli(["--velocity_loss_mode", raw])
+                self.assertEqual(error.exception.code, 2)
+
+    def test_velocity_loss_reaches_the_training_configuration_without_changing_window(self):
+        class CapturedConfiguration(Exception):
+            def __init__(self, values):
+                self.values = values
+
+        def capture_configuration(**values):
+            raise CapturedConfiguration(values)
+
+        environment = types.SimpleNamespace(scene=types.SimpleNamespace(), sim=types.SimpleNamespace(),
+                                            sim_to_real=types.SimpleNamespace(), configure_scene=lambda: None)
+        imports = {
+            "gymnasium": types.SimpleNamespace(), "torch": types.SimpleNamespace(),
+            "isaaclab_navrl.tasks": types.SimpleNamespace(),
+            "isaaclab_navrl.tasks.navigation.config.hummingbird.env_cfg": types.SimpleNamespace(
+                ZhangNavRLEnvCfg=lambda: environment),
+            "isaaclab_navrl.tasks.navigation.curriculum": types.SimpleNamespace(STAGE_CONFIGS=acceptance.STAGE_CONFIG),
+            "isaaclab_navrl.training": types.SimpleNamespace(write_json=None),
+            "isaaclab_navrl.zhang.config": types.SimpleNamespace(ZhangTrainCfg=capture_configuration),
+            "isaaclab_navrl.zhang.runner": types.SimpleNamespace(ZhangTrainer=None),
+        }
+        original_import = __import__
+
+        def intercept(name, *args, **kwargs):
+            return imports[name] if name in imports else original_import(name, *args, **kwargs)
+
+        with tempfile.TemporaryDirectory(prefix="velocity_mode_cli_unit_") as temporary:
+            for algorithm in ("bptt", "shac", "ahac"):
+                for mode in ("variant_default", "per_step"):
+                    tokens = ["train_zhang.py", "--log_dir", str(Path(temporary) / "stage"),
+                              "--variant", "dcol", "--algorithm", algorithm,
+                              "--velocity_loss_mode", mode, "--velocity_window_s", "2"]
+                    with self.subTest(algorithm=algorithm, mode=mode):
+                        with patch.object(sys, "argv", tokens), patch("builtins.__import__", side_effect=intercept):
+                            with self.assertRaises(CapturedConfiguration) as captured:
+                                trainer.main()
+                        self.assertEqual(captured.exception.values["velocity_loss_mode"], mode)
+                        self.assertEqual(captured.exception.values["velocity_window_s"], 2.0)
+                        self.assertEqual(captured.exception.values["algorithm"], algorithm)
 
     def test_stop_signals_only_request_a_boundary_stop_and_restore_original_handlers(self):
         first, second = object(), object()

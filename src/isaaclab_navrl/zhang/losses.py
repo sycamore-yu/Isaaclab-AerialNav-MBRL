@@ -63,6 +63,9 @@ def zhang_transition_costs(history, cfg, velocity_history=None):
     cost is scaled by ``T*N/valid_count``, preserving the valid-window mean.
     Cached prefix samples may complete a window, but receive neither a new
     score nor a gradient. Windows crossing an episode boundary remain masked.
+    The independent per-step velocity mode instead scores every transition,
+    including terminal velocities, and needs no window cache or sample scaling.
+    It does not change the variant's obstacle geometry or any other cost.
 
     Continuous rollouts also require ``ground_signed_distance`` at the ten
     original pre-step look-ahead queries: query_z minus 0.01, before subtracting
@@ -80,7 +83,7 @@ def zhang_transition_costs(history, cfg, velocity_history=None):
     episode = torch.stack(history["episode_id"])
     timesteps, num_envs = velocity.shape[:2]
     detached_history = None
-    if cfg.variant == "step":
+    if cfg.resolved_velocity_loss_mode == "per_step":
         velocity_cost = velocity_step_loss(velocity, target, reduction="none")
         valid_samples = velocity.new_tensor(timesteps * num_envs)
     else:

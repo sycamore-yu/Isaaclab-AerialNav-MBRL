@@ -17,6 +17,7 @@ class ZhangTrainCfg:
     stop_after_acceptance: bool = False
     physics_dt: float = 0.01
     policy_dt: float = 0.1
+    velocity_loss_mode: Literal["variant_default", "per_step"] = "variant_default"
     velocity_window_s: float = 2.0
     grad_decay: float = 0.4
     lr: float = 0.001
@@ -59,6 +60,15 @@ class ZhangTrainCfg:
     gradient_diagnostic_updates: tuple[int, ...] = ()
 
     @property
+    def resolved_velocity_loss_mode(self) -> Literal["per_step", "window"]:
+        """Select velocity supervision without changing collision geometry or critic memory."""
+        if self.velocity_loss_mode == "variant_default":
+            return "per_step" if self.variant == "step" else "window"
+        if self.velocity_loss_mode == "per_step":
+            return "per_step"
+        raise ValueError("velocity_loss_mode must be variant_default or per_step")
+
+    @property
     def velocity_window_steps(self) -> int:
         steps = round(self.velocity_window_s / self.policy_dt)
         if steps < 1 or abs(steps * self.policy_dt - self.velocity_window_s) > 1e-7:
@@ -70,6 +80,7 @@ class ZhangTrainCfg:
             raise ValueError(f"variant must be one of {ZHANG_VARIANTS}")
         if self.algorithm not in ZHANG_ALGORITHMS:
             raise ValueError(f"algorithm must be one of {ZHANG_ALGORITHMS}")
+        _ = self.resolved_velocity_loss_mode
         if self.critic_value_transform not in ("linear", "softplus"):
             raise ValueError("critic_value_transform must be linear or softplus")
         if self.algorithm == "bptt" and self.critic_value_transform != "linear":

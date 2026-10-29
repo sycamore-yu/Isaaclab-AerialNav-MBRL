@@ -52,6 +52,15 @@ dcol 保持原逻辑碰撞/越界重置，先保留终止转移的损失和图�
 近边界平滑二次增长，远越界线性增长，梯度持续指向内部。
 这是标准SmoothL1，近边界曲率为旧指数项的一半，没有暗中把系数乘二。
 
+### 后续单因素诊断
+
+短回合导致窗口速度监督覆盖不足时，可使用独立的 `--velocity_loss_mode per_step`，
+在不变更DCOL几何的情况下给每个策略步提供速度误差。默认variant_default保持原映射；
+SHAC固定H32，BPTT固定H150，不能在比较时遗漏这个区别。
+[窗口监督经验](migration/DCOL_STEP_VELOCITY_EXPERIENCE.md)保留原SHAC停止检查点与对照协议。
+连续方案另行检验高度系数8；默认高度系数仍为1，局部梯度依据及结论边界见
+[U1/U7/U10分析](results/zhang_continuous_gradient_diagnosis_20261029.md)。
+
 ## 运行统计归一化
 
 开关为 `--observation_normalization 0|1`，默认0。

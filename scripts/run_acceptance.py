@@ -48,6 +48,7 @@ TRAIN_ARG_CHOICES = {
     "algorithm": ("bptt", "shac", "ahac"),
     "lr_schedule": ("cosine", "plateau", "constant"),
     "critic_value_transform": ("linear", "softplus"),
+    "velocity_loss_mode": ("variant_default", "per_step"),
 }
 TRAIN_ARG_TYPES = {
     "variant": str,
@@ -58,6 +59,7 @@ TRAIN_ARG_TYPES = {
     "recovery_enabled": parse_binary_flag,
     "timesteps": int,
     "velocity_window_s": float,
+    "velocity_loss_mode": str,
     "camera_batch_size": int,
     "lr": float,
     "max_grad_norm": float,

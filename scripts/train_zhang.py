@@ -61,6 +61,8 @@ def main():
     parser.add_argument("--algorithm", choices=("bptt", "shac", "ahac"), default="bptt",
                         help="ahac selects AHAC-derived DCOL synchronous adaptation")
     parser.add_argument("--timesteps", type=int, default=150)
+    parser.add_argument("--velocity_loss_mode", choices=("variant_default", "per_step"), default="variant_default",
+                        help="Velocity supervision; variant_default preserves each variant's current loss")
     parser.add_argument("--velocity_window_s", type=float, default=2.0)
     parser.add_argument("--camera_batch_size", type=int, default=16,
                         help="Depth raycast environment batch size; does not change image resolution")
@@ -135,7 +137,8 @@ def main():
     cfg.sim.device = args.device
     cfg.depth_camera_batch_size = args.camera_batch_size
     cfg.configure_scene()
-    fields = ("variant", "algorithm", "timesteps", "max_iterations", "stop_after_acceptance", "velocity_window_s", "lr", "max_grad_norm",
+    fields = ("variant", "algorithm", "timesteps", "max_iterations", "stop_after_acceptance", "velocity_loss_mode",
+              "velocity_window_s", "lr", "max_grad_norm",
               "grad_decay", "coef_obj_avoidance", "coef_collide", "coef_d_acc", "coef_d_jerk",
               "coef_height_boundary", "boundary_margin", "boundary_scale", "cosine_period_updates", "seed",
               "gradient_diagnostic_updates", "observation_normalization", "lr_schedule", "recovery_enabled",
@@ -149,6 +152,7 @@ def main():
     args.log_dir.mkdir(parents=True, exist_ok=True)
     write_json(args.log_dir / "config.json", {
         "method": "zhang", "variant": args.variant, "algorithm": args.algorithm, "train": asdict(train_cfg),
+        "resolved_velocity_loss_mode": train_cfg.resolved_velocity_loss_mode,
         "algorithm_label": "AHAC-derived DCOL synchronous adaptation" if args.algorithm == "ahac" else args.algorithm,
         "height_boundary_loss": "smooth_l1",
         "environment": {"num_envs": args.num_envs, "seed": args.seed, "terrain_seed": args.terrain_seed,

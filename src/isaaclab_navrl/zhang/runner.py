@@ -316,6 +316,8 @@ class ZhangTrainer:
     def _result(self, status, checkpoint=None, error=None):
         result = {
             "method": "zhang", "variant": self.cfg.variant, "algorithm": self.cfg.algorithm, "status": status,
+            "velocity_loss_mode": self.cfg.velocity_loss_mode,
+            "resolved_velocity_loss_mode": self.cfg.resolved_velocity_loss_mode,
             "fresh": self.parent_checkpoint is None,
             "stage": self.env.cfg.training_stage, "stage_updates": self.stage_updates,
             "parent_checkpoint": self.parent_checkpoint,

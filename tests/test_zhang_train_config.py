@@ -8,6 +8,41 @@ from isaaclab_navrl.zhang.config import ZhangTrainCfg
 
 
 class ZhangTrainConfigTests(unittest.TestCase):
+    def test_default_velocity_mode_preserves_each_variant(self):
+        for variant, expected in (("step", "per_step"), ("continuous", "window"), ("dcol", "window")):
+            with self.subTest(variant=variant):
+                cfg = ZhangTrainCfg(variant=variant)
+                cfg.validate()
+                self.assertEqual(cfg.velocity_loss_mode, "variant_default")
+                self.assertEqual(cfg.resolved_velocity_loss_mode, expected)
+
+    def test_explicit_per_step_is_independent_of_dcol_algorithm_and_preserves_critic_window(self):
+        for algorithm in ("bptt", "shac", "ahac"):
+            with self.subTest(algorithm=algorithm):
+                cfg = ZhangTrainCfg(variant="dcol", algorithm=algorithm, velocity_loss_mode="per_step",
+                                    velocity_window_s=2.0)
+                cfg.validate()
+                self.assertEqual(cfg.resolved_velocity_loss_mode, "per_step")
+                self.assertEqual(cfg.velocity_window_steps, 20)
+                payload = json.loads(json.dumps(asdict(cfg)))
+                self.assertEqual(payload["velocity_loss_mode"], "per_step")
+                restored = ZhangTrainCfg(**payload)
+                restored.validate()
+                self.assertEqual(restored.resolved_velocity_loss_mode, "per_step")
+                self.assertEqual(restored.velocity_window_steps, 20)
+        ZhangTrainCfg(variant="continuous", velocity_loss_mode="per_step").validate()
+
+    def test_invalid_velocity_modes_fail_and_per_step_does_not_disable_window_validation(self):
+        for value in ("window", "step", "", None, True):
+            with self.subTest(value=value):
+                cfg = ZhangTrainCfg(velocity_loss_mode=value)
+                with self.assertRaisesRegex(ValueError, "velocity_loss_mode"):
+                    cfg.validate()
+                with self.assertRaisesRegex(ValueError, "velocity_loss_mode"):
+                    _ = cfg.resolved_velocity_loss_mode
+        with self.assertRaisesRegex(ValueError, "velocity_window_s"):
+            ZhangTrainCfg(variant="dcol", velocity_loss_mode="per_step", velocity_window_s=0.15).validate()
+
     def test_linear_remains_default_for_every_algorithm(self):
         for algorithm in ("bptt", "shac", "ahac"):
             with self.subTest(algorithm=algorithm):
