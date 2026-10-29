@@ -1,0 +1,1303 @@
+{
+  "captured_at": "2026-10-29T10:06:57.163252+00:00",
+  "code_commit": "50766ecfc9b7971ee2a7e64d9f5ed45fd3cd43f5",
+  "source_manifest": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_mechanisms_20261029.json",
+  "source_summary": "logs/curriculum/zhang_new_mechanisms_summary.json",
+  "common_budget_environment_steps": 921600,
+  "complete_updates_only": true,
+  "acceptance_passed": false,
+  "phase": "early_learning_not_selection",
+  "runs": [
+    {
+      "name": "dcol_baseline",
+      "latest_update": 6,
+      "stage_environment_steps": 921600,
+      "stage_elapsed_s": 373.48037742299493,
+      "natural_report_count": 4,
+      "first_natural_80_percent": null,
+      "latest_report": {
+        "update": 6,
+        "dynamic_obstacles": 0,
+        "episodes": 1911,
+        "counts": {
+          "success": 19,
+          "collision": 572,
+          "bounds": 1320,
+          "invalid": 0,
+          "timeout": 0
+        },
+        "success_rate": 0.009942438513867086,
+        "collision_rate": 0.29931972789115646,
+        "bounds_rate": 0.6907378335949764,
+        "invalid_rate": 0,
+        "timeout_rate": 0,
+        "success_time_mean_s": 4.020526371504131,
+        "episode_return_mean": -120.52379661601978,
+        "episode_length_mean": 73.98953427524856,
+        "reward_per_step_mean": -1.628930331790697,
+        "stage": "pretrain_s0",
+        "static_obstacles": 300,
+        "randomization": false,
+        "new_best": true,
+        "checkpoint": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_baseline_seed0_20261029/zhang/pretrain_s0/checkpoint_best_pretrain_s0.pt",
+        "source": {
+          "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_baseline_seed0_20261029/zhang/pretrain_s0/training_statistics.jsonl",
+          "line": 4
+        },
+        "update_source": {
+          "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_baseline_seed0_20261029/zhang/pretrain_s0/updates.jsonl",
+          "line": 6
+        },
+        "environment_steps": 921600,
+        "stage_environment_steps": 921600,
+        "elapsed_s": 373.4699253709987,
+        "stage_elapsed_s": 373.48037742299493
+      },
+      "recent_five": {
+        "report_count": 4,
+        "episodes": 9478,
+        "aggregation": "episodes_weighted_last_five_natural_reports",
+        "rates": {
+          "success_rate": 0.007174509390166702,
+          "collision_rate": 0.09643384680312302,
+          "bounds_rate": 0.8962861363156784,
+          "invalid_rate": 0,
+          "timeout_rate": 0.00010550749103186325
+        },
+        "metric_coverage": {
+          "success_rate": {
+            "reports": 4,
+            "episodes": 9478
+          },
+          "collision_rate": {
+            "reports": 4,
+            "episodes": 9478
+          },
+          "bounds_rate": {
+            "reports": 4,
+            "episodes": 9478
+          },
+          "invalid_rate": {
+            "reports": 4,
+            "episodes": 9478
+          },
+          "timeout_rate": {
+            "reports": 4,
+            "episodes": 9478
+          }
+        },
+        "sources": [
+          {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_baseline_seed0_20261029/zhang/pretrain_s0/training_statistics.jsonl",
+            "line": 1
+          },
+          {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_baseline_seed0_20261029/zhang/pretrain_s0/training_statistics.jsonl",
+            "line": 2
+          },
+          {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_baseline_seed0_20261029/zhang/pretrain_s0/training_statistics.jsonl",
+            "line": 3
+          },
+          {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_baseline_seed0_20261029/zhang/pretrain_s0/training_statistics.jsonl",
+            "line": 4
+          }
+        ]
+      },
+      "best_report": {
+        "update": 6,
+        "dynamic_obstacles": 0,
+        "episodes": 1911,
+        "counts": {
+          "success": 19,
+          "collision": 572,
+          "bounds": 1320,
+          "invalid": 0,
+          "timeout": 0
+        },
+        "success_rate": 0.009942438513867086,
+        "collision_rate": 0.29931972789115646,
+        "bounds_rate": 0.6907378335949764,
+        "invalid_rate": 0,
+        "timeout_rate": 0,
+        "success_time_mean_s": 4.020526371504131,
+        "episode_return_mean": -120.52379661601978,
+        "episode_length_mean": 73.98953427524856,
+        "reward_per_step_mean": -1.628930331790697,
+        "stage": "pretrain_s0",
+        "static_obstacles": 300,
+        "randomization": false,
+        "new_best": true,
+        "checkpoint": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_baseline_seed0_20261029/zhang/pretrain_s0/checkpoint_best_pretrain_s0.pt",
+        "source": {
+          "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_baseline_seed0_20261029/zhang/pretrain_s0/training_statistics.jsonl",
+          "line": 4
+        },
+        "update_source": {
+          "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_baseline_seed0_20261029/zhang/pretrain_s0/updates.jsonl",
+          "line": 6
+        },
+        "environment_steps": 921600,
+        "stage_environment_steps": 921600,
+        "elapsed_s": 373.4699253709987,
+        "stage_elapsed_s": 373.48037742299493
+      },
+      "numerical_metrics": {
+        "surrogate_velocity_error_mps": {
+          "samples": 6,
+          "latest": 0.00413072993978858,
+          "max": 0.00413072993978858,
+          "max_abs": 0.00413072993978858,
+          "max_source": {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_baseline_seed0_20261029/zhang/pretrain_s0/updates.jsonl",
+            "line": 6,
+            "update": 6
+          }
+        },
+        "surrogate_vertical_velocity_bias_mps": {
+          "samples": 6,
+          "latest": 0.0008477396913804114,
+          "max": 0.0008477396913804114,
+          "max_abs": 0.0008477396913804114,
+          "max_source": {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_baseline_seed0_20261029/zhang/pretrain_s0/updates.jsonl",
+            "line": 6,
+            "update": 6
+          }
+        },
+        "executed_action_max_error": {
+          "samples": 6,
+          "latest": 0,
+          "max": 0,
+          "max_abs": 0,
+          "max_source": {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_baseline_seed0_20261029/zhang/pretrain_s0/updates.jsonl",
+            "line": 1,
+            "update": 1
+          }
+        },
+        "Optim/update_ratio": {
+          "samples": 6,
+          "latest": 0.020023929605854265,
+          "max": 0.027583981727839206,
+          "max_abs": 0.027583981727839206,
+          "max_source": {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_baseline_seed0_20261029/zhang/pretrain_s0/updates.jsonl",
+            "line": 1,
+            "update": 1
+          }
+        },
+        "Optim/layers/fc/update_ratio": {
+          "samples": 6,
+          "latest": 0.2116601843436695,
+          "max": 2.405500694138048,
+          "max_abs": 2.405500694138048,
+          "max_source": {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_baseline_seed0_20261029/zhang/pretrain_s0/updates.jsonl",
+            "line": 1,
+            "update": 1
+          }
+        },
+        "Optim/head/az/update_ratio": {
+          "samples": 6,
+          "latest": 0.12875521175606303,
+          "max": 2.3405263454388656,
+          "max_abs": 2.3405263454388656,
+          "max_source": {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_baseline_seed0_20261029/zhang/pretrain_s0/updates.jsonl",
+            "line": 1,
+            "update": 1
+          }
+        },
+        "Optim/head/vz/update_ratio": {
+          "samples": 6,
+          "latest": 0.3100946686238288,
+          "max": 2.3984838421264802,
+          "max_abs": 2.3984838421264802,
+          "max_source": {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_baseline_seed0_20261029/zhang/pretrain_s0/updates.jsonl",
+            "line": 1,
+            "update": 1
+          }
+        }
+      }
+    },
+    {
+      "name": "dcol_rms",
+      "latest_update": 6,
+      "stage_environment_steps": 921600,
+      "stage_elapsed_s": 372.20837398897856,
+      "natural_report_count": 5,
+      "first_natural_80_percent": null,
+      "latest_report": {
+        "update": 6,
+        "dynamic_obstacles": 0,
+        "episodes": 2308,
+        "counts": {
+          "success": 29,
+          "collision": 318,
+          "bounds": 1961,
+          "invalid": 0,
+          "timeout": 0
+        },
+        "success_rate": 0.012564991334488735,
+        "collision_rate": 0.13778162911611785,
+        "bounds_rate": 0.8496533795493935,
+        "invalid_rate": 0,
+        "timeout_rate": 0,
+        "success_time_mean_s": 2.255517254166048,
+        "episode_return_mean": -149.82630637530852,
+        "episode_length_mean": 65.76473136915078,
+        "reward_per_step_mean": -2.27821665588966,
+        "stage": "pretrain_s0",
+        "static_obstacles": 300,
+        "randomization": false,
+        "new_best": true,
+        "checkpoint": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_rms_seed0_20261029/zhang/pretrain_s0/checkpoint_best_pretrain_s0.pt",
+        "source": {
+          "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_rms_seed0_20261029/zhang/pretrain_s0/training_statistics.jsonl",
+          "line": 5
+        },
+        "update_source": {
+          "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_rms_seed0_20261029/zhang/pretrain_s0/updates.jsonl",
+          "line": 6
+        },
+        "environment_steps": 921600,
+        "stage_environment_steps": 921600,
+        "elapsed_s": 372.1874689140823,
+        "stage_elapsed_s": 372.20837398897856
+      },
+      "recent_five": {
+        "report_count": 5,
+        "episodes": 8590,
+        "aggregation": "episodes_weighted_last_five_natural_reports",
+        "rates": {
+          "success_rate": 0.008032596041909196,
+          "collision_rate": 0.05692665890570431,
+          "bounds_rate": 0.9350407450523865,
+          "invalid_rate": 0,
+          "timeout_rate": 0
+        },
+        "metric_coverage": {
+          "success_rate": {
+            "reports": 5,
+            "episodes": 8590
+          },
+          "collision_rate": {
+            "reports": 5,
+            "episodes": 8590
+          },
+          "bounds_rate": {
+            "reports": 5,
+            "episodes": 8590
+          },
+          "invalid_rate": {
+            "reports": 5,
+            "episodes": 8590
+          },
+          "timeout_rate": {
+            "reports": 5,
+            "episodes": 8590
+          }
+        },
+        "sources": [
+          {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_rms_seed0_20261029/zhang/pretrain_s0/training_statistics.jsonl",
+            "line": 1
+          },
+          {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_rms_seed0_20261029/zhang/pretrain_s0/training_statistics.jsonl",
+            "line": 2
+          },
+          {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_rms_seed0_20261029/zhang/pretrain_s0/training_statistics.jsonl",
+            "line": 3
+          },
+          {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_rms_seed0_20261029/zhang/pretrain_s0/training_statistics.jsonl",
+            "line": 4
+          },
+          {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_rms_seed0_20261029/zhang/pretrain_s0/training_statistics.jsonl",
+            "line": 5
+          }
+        ]
+      },
+      "best_report": {
+        "update": 6,
+        "dynamic_obstacles": 0,
+        "episodes": 2308,
+        "counts": {
+          "success": 29,
+          "collision": 318,
+          "bounds": 1961,
+          "invalid": 0,
+          "timeout": 0
+        },
+        "success_rate": 0.012564991334488735,
+        "collision_rate": 0.13778162911611785,
+        "bounds_rate": 0.8496533795493935,
+        "invalid_rate": 0,
+        "timeout_rate": 0,
+        "success_time_mean_s": 2.255517254166048,
+        "episode_return_mean": -149.82630637530852,
+        "episode_length_mean": 65.76473136915078,
+        "reward_per_step_mean": -2.27821665588966,
+        "stage": "pretrain_s0",
+        "static_obstacles": 300,
+        "randomization": false,
+        "new_best": true,
+        "checkpoint": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_rms_seed0_20261029/zhang/pretrain_s0/checkpoint_best_pretrain_s0.pt",
+        "source": {
+          "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_rms_seed0_20261029/zhang/pretrain_s0/training_statistics.jsonl",
+          "line": 5
+        },
+        "update_source": {
+          "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_rms_seed0_20261029/zhang/pretrain_s0/updates.jsonl",
+          "line": 6
+        },
+        "environment_steps": 921600,
+        "stage_environment_steps": 921600,
+        "elapsed_s": 372.1874689140823,
+        "stage_elapsed_s": 372.20837398897856
+      },
+      "numerical_metrics": {
+        "surrogate_velocity_error_mps": {
+          "samples": 6,
+          "latest": 0.003096798900514841,
+          "max": 0.003096798900514841,
+          "max_abs": 0.003096798900514841,
+          "max_source": {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_rms_seed0_20261029/zhang/pretrain_s0/updates.jsonl",
+            "line": 6,
+            "update": 6
+          }
+        },
+        "surrogate_vertical_velocity_bias_mps": {
+          "samples": 6,
+          "latest": 0.0008132505463436246,
+          "max": 0.0008132505463436246,
+          "max_abs": 0.0008132505463436246,
+          "max_source": {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_rms_seed0_20261029/zhang/pretrain_s0/updates.jsonl",
+            "line": 6,
+            "update": 6
+          }
+        },
+        "executed_action_max_error": {
+          "samples": 6,
+          "latest": 0,
+          "max": 0,
+          "max_abs": 0,
+          "max_source": {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_rms_seed0_20261029/zhang/pretrain_s0/updates.jsonl",
+            "line": 1,
+            "update": 1
+          }
+        },
+        "Optim/update_ratio": {
+          "samples": 6,
+          "latest": 0.017401884263048194,
+          "max": 0.02758398342250348,
+          "max_abs": 0.02758398342250348,
+          "max_source": {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_rms_seed0_20261029/zhang/pretrain_s0/updates.jsonl",
+            "line": 1,
+            "update": 1
+          }
+        },
+        "Optim/layers/fc/update_ratio": {
+          "samples": 6,
+          "latest": 0.18869346893538524,
+          "max": 2.4055006981741482,
+          "max_abs": 2.4055006981741482,
+          "max_source": {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_rms_seed0_20261029/zhang/pretrain_s0/updates.jsonl",
+            "line": 1,
+            "update": 1
+          }
+        },
+        "Optim/head/az/update_ratio": {
+          "samples": 6,
+          "latest": 0.13209363939116756,
+          "max": 2.3405263523682844,
+          "max_abs": 2.3405263523682844,
+          "max_source": {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_rms_seed0_20261029/zhang/pretrain_s0/updates.jsonl",
+            "line": 1,
+            "update": 1
+          }
+        },
+        "Optim/head/vz/update_ratio": {
+          "samples": 6,
+          "latest": 0.2770041977464983,
+          "max": 2.398483839286082,
+          "max_abs": 2.398483839286082,
+          "max_source": {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_rms_seed0_20261029/zhang/pretrain_s0/updates.jsonl",
+            "line": 1,
+            "update": 1
+          }
+        }
+      }
+    },
+    {
+      "name": "dcol_plateau",
+      "latest_update": 6,
+      "stage_environment_steps": 921600,
+      "stage_elapsed_s": 374.09412757097743,
+      "natural_report_count": 4,
+      "first_natural_80_percent": null,
+      "latest_report": {
+        "update": 6,
+        "dynamic_obstacles": 0,
+        "episodes": 1884,
+        "counts": {
+          "success": 16,
+          "collision": 561,
+          "bounds": 1307,
+          "invalid": 0,
+          "timeout": 0
+        },
+        "success_rate": 0.008492569002123142,
+        "collision_rate": 0.29777070063694266,
+        "bounds_rate": 0.6937367303609342,
+        "invalid_rate": 0,
+        "timeout_rate": 0,
+        "success_time_mean_s": 2.9856250607408583,
+        "episode_return_mean": -129.37945854942257,
+        "episode_length_mean": 75.09023354564756,
+        "reward_per_step_mean": -1.7229864982477707,
+        "stage": "pretrain_s0",
+        "static_obstacles": 300,
+        "randomization": false,
+        "new_best": false,
+        "source": {
+          "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_plateau_seed0_20261029/zhang/pretrain_s0/training_statistics.jsonl",
+          "line": 4
+        },
+        "update_source": {
+          "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_plateau_seed0_20261029/zhang/pretrain_s0/updates.jsonl",
+          "line": 6
+        },
+        "environment_steps": 921600,
+        "stage_environment_steps": 921600,
+        "elapsed_s": 374.08630692295264,
+        "stage_elapsed_s": 374.09412757097743
+      },
+      "recent_five": {
+        "report_count": 4,
+        "episodes": 9446,
+        "aggregation": "episodes_weighted_last_five_natural_reports",
+        "rates": {
+          "success_rate": 0.0067753546474698285,
+          "collision_rate": 0.09803091255557908,
+          "bounds_rate": 0.8950878678805844,
+          "invalid_rate": 0,
+          "timeout_rate": 0.00010586491636671607
+        },
+        "metric_coverage": {
+          "success_rate": {
+            "reports": 4,
+            "episodes": 9446
+          },
+          "collision_rate": {
+            "reports": 4,
+            "episodes": 9446
+          },
+          "bounds_rate": {
+            "reports": 4,
+            "episodes": 9446
+          },
+          "invalid_rate": {
+            "reports": 4,
+            "episodes": 9446
+          },
+          "timeout_rate": {
+            "reports": 4,
+            "episodes": 9446
+          }
+        },
+        "sources": [
+          {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_plateau_seed0_20261029/zhang/pretrain_s0/training_statistics.jsonl",
+            "line": 1
+          },
+          {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_plateau_seed0_20261029/zhang/pretrain_s0/training_statistics.jsonl",
+            "line": 2
+          },
+          {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_plateau_seed0_20261029/zhang/pretrain_s0/training_statistics.jsonl",
+            "line": 3
+          },
+          {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_plateau_seed0_20261029/zhang/pretrain_s0/training_statistics.jsonl",
+            "line": 4
+          }
+        ]
+      },
+      "best_report": {
+        "update": 4,
+        "dynamic_obstacles": 0,
+        "episodes": 2314,
+        "counts": {
+          "success": 23,
+          "collision": 57,
+          "bounds": 2234,
+          "invalid": 0,
+          "timeout": 0
+        },
+        "success_rate": 0.009939498703543647,
+        "collision_rate": 0.024632670700086432,
+        "bounds_rate": 0.9654278305963699,
+        "invalid_rate": 0,
+        "timeout_rate": 0,
+        "success_time_mean_s": 3.7526087872684,
+        "episode_return_mean": -187.4117353236562,
+        "episode_length_mean": 68.14909248055315,
+        "reward_per_step_mean": -2.7500254002228353,
+        "stage": "pretrain_s0",
+        "static_obstacles": 300,
+        "randomization": false,
+        "new_best": true,
+        "checkpoint": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_plateau_seed0_20261029/zhang/pretrain_s0/checkpoint_best_pretrain_s0.pt",
+        "source": {
+          "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_plateau_seed0_20261029/zhang/pretrain_s0/training_statistics.jsonl",
+          "line": 2
+        },
+        "update_source": {
+          "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_plateau_seed0_20261029/zhang/pretrain_s0/updates.jsonl",
+          "line": 4
+        },
+        "environment_steps": 614400,
+        "stage_environment_steps": 614400,
+        "elapsed_s": 247.71372021897696,
+        "stage_elapsed_s": 247.72154086700175
+      },
+      "numerical_metrics": {
+        "surrogate_velocity_error_mps": {
+          "samples": 6,
+          "latest": 0.004028355237096548,
+          "max": 0.004028355237096548,
+          "max_abs": 0.004028355237096548,
+          "max_source": {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_plateau_seed0_20261029/zhang/pretrain_s0/updates.jsonl",
+            "line": 6,
+            "update": 6
+          }
+        },
+        "surrogate_vertical_velocity_bias_mps": {
+          "samples": 6,
+          "latest": 0.0008250906248576939,
+          "max": 0.0008250906248576939,
+          "max_abs": 0.0008250906248576939,
+          "max_source": {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_plateau_seed0_20261029/zhang/pretrain_s0/updates.jsonl",
+            "line": 6,
+            "update": 6
+          }
+        },
+        "executed_action_max_error": {
+          "samples": 6,
+          "latest": 0,
+          "max": 0,
+          "max_abs": 0,
+          "max_source": {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_plateau_seed0_20261029/zhang/pretrain_s0/updates.jsonl",
+            "line": 1,
+            "update": 1
+          }
+        },
+        "Optim/update_ratio": {
+          "samples": 6,
+          "latest": 0.02002389199484981,
+          "max": 0.027583983825195314,
+          "max_abs": 0.027583983825195314,
+          "max_source": {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_plateau_seed0_20261029/zhang/pretrain_s0/updates.jsonl",
+            "line": 1,
+            "update": 1
+          }
+        },
+        "Optim/layers/fc/update_ratio": {
+          "samples": 6,
+          "latest": 0.20783625753795099,
+          "max": 2.4055006981741482,
+          "max_abs": 2.4055006981741482,
+          "max_source": {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_plateau_seed0_20261029/zhang/pretrain_s0/updates.jsonl",
+            "line": 1,
+            "update": 1
+          }
+        },
+        "Optim/head/az/update_ratio": {
+          "samples": 6,
+          "latest": 0.12554555395496378,
+          "max": 2.3405263523682844,
+          "max_abs": 2.3405263523682844,
+          "max_source": {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_plateau_seed0_20261029/zhang/pretrain_s0/updates.jsonl",
+            "line": 1,
+            "update": 1
+          }
+        },
+        "Optim/head/vz/update_ratio": {
+          "samples": 6,
+          "latest": 0.30807594644732567,
+          "max": 2.398483839286082,
+          "max_abs": 2.398483839286082,
+          "max_source": {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_plateau_seed0_20261029/zhang/pretrain_s0/updates.jsonl",
+            "line": 1,
+            "update": 1
+          }
+        }
+      }
+    },
+    {
+      "name": "dcol_shac",
+      "latest_update": 28,
+      "stage_environment_steps": 917504,
+      "stage_elapsed_s": 405.25808772898745,
+      "natural_report_count": 12,
+      "first_natural_80_percent": null,
+      "latest_report": {
+        "update": 28,
+        "dynamic_obstacles": 0,
+        "episodes": 1567,
+        "counts": {
+          "success": 8,
+          "collision": 117,
+          "bounds": 1442,
+          "invalid": 0,
+          "timeout": 0
+        },
+        "success_rate": 0.005105296745373325,
+        "collision_rate": 0.07466496490108487,
+        "bounds_rate": 0.9202297383535418,
+        "invalid_rate": 0,
+        "timeout_rate": 0,
+        "success_time_mean_s": 1.3200000100769103,
+        "episode_return_mean": -100.00727389067241,
+        "episode_length_mean": 42.498404594767074,
+        "reward_per_step_mean": -2.353200663513532,
+        "stage": "pretrain_s0",
+        "static_obstacles": 300,
+        "randomization": false,
+        "new_best": false,
+        "source": {
+          "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_shac_seed0_20261029/zhang/pretrain_s0/training_statistics.jsonl",
+          "line": 12
+        },
+        "update_source": {
+          "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_shac_seed0_20261029/zhang/pretrain_s0/updates.jsonl",
+          "line": 28
+        },
+        "environment_steps": 917504,
+        "stage_environment_steps": 917504,
+        "elapsed_s": 405.2528607080458,
+        "stage_elapsed_s": 405.25808772898745
+      },
+      "recent_five": {
+        "report_count": 5,
+        "episodes": 7432,
+        "aggregation": "episodes_weighted_last_five_natural_reports",
+        "rates": {
+          "success_rate": 0.006458557588805167,
+          "collision_rate": 0.0439989235737352,
+          "bounds_rate": 0.9495425188374597,
+          "invalid_rate": 0,
+          "timeout_rate": 0
+        },
+        "metric_coverage": {
+          "success_rate": {
+            "reports": 5,
+            "episodes": 7432
+          },
+          "collision_rate": {
+            "reports": 5,
+            "episodes": 7432
+          },
+          "bounds_rate": {
+            "reports": 5,
+            "episodes": 7432
+          },
+          "invalid_rate": {
+            "reports": 5,
+            "episodes": 7432
+          },
+          "timeout_rate": {
+            "reports": 5,
+            "episodes": 7432
+          }
+        },
+        "sources": [
+          {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_shac_seed0_20261029/zhang/pretrain_s0/training_statistics.jsonl",
+            "line": 8
+          },
+          {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_shac_seed0_20261029/zhang/pretrain_s0/training_statistics.jsonl",
+            "line": 9
+          },
+          {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_shac_seed0_20261029/zhang/pretrain_s0/training_statistics.jsonl",
+            "line": 10
+          },
+          {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_shac_seed0_20261029/zhang/pretrain_s0/training_statistics.jsonl",
+            "line": 11
+          },
+          {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_shac_seed0_20261029/zhang/pretrain_s0/training_statistics.jsonl",
+            "line": 12
+          }
+        ]
+      },
+      "best_report": {
+        "update": 26,
+        "dynamic_obstacles": 0,
+        "episodes": 1520,
+        "counts": {
+          "success": 17,
+          "collision": 99,
+          "bounds": 1404,
+          "invalid": 0,
+          "timeout": 0
+        },
+        "success_rate": 0.01118421052631579,
+        "collision_rate": 0.06513157894736842,
+        "bounds_rate": 0.9236842105263158,
+        "invalid_rate": 0,
+        "timeout_rate": 0,
+        "success_time_mean_s": 1.7488235211109413,
+        "episode_return_mean": -100.09502763936395,
+        "episode_length_mean": 43.24671052631579,
+        "reward_per_step_mean": -2.3145119344615988,
+        "stage": "pretrain_s0",
+        "static_obstacles": 300,
+        "randomization": false,
+        "new_best": true,
+        "checkpoint": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_shac_seed0_20261029/zhang/pretrain_s0/checkpoint_best_pretrain_s0.pt",
+        "source": {
+          "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_shac_seed0_20261029/zhang/pretrain_s0/training_statistics.jsonl",
+          "line": 11
+        },
+        "update_source": {
+          "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_shac_seed0_20261029/zhang/pretrain_s0/updates.jsonl",
+          "line": 26
+        },
+        "environment_steps": 851968,
+        "stage_environment_steps": 851968,
+        "elapsed_s": 376.1318425569916,
+        "stage_elapsed_s": 376.1370695779333
+      },
+      "numerical_metrics": {
+        "surrogate_velocity_error_mps": {
+          "samples": 28,
+          "latest": 0.004821084439754486,
+          "max": 0.004962558392435312,
+          "max_abs": 0.004962558392435312,
+          "max_source": {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_shac_seed0_20261029/zhang/pretrain_s0/updates.jsonl",
+            "line": 27,
+            "update": 27
+          }
+        },
+        "surrogate_vertical_velocity_bias_mps": {
+          "samples": 28,
+          "latest": 0.0013459587935358286,
+          "max": 0.0013459587935358286,
+          "max_abs": 0.0013459587935358286,
+          "max_source": {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_shac_seed0_20261029/zhang/pretrain_s0/updates.jsonl",
+            "line": 28,
+            "update": 28
+          }
+        },
+        "executed_action_max_error": {
+          "samples": 28,
+          "latest": 0,
+          "max": 0,
+          "max_abs": 0,
+          "max_source": {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_shac_seed0_20261029/zhang/pretrain_s0/updates.jsonl",
+            "line": 1,
+            "update": 1
+          }
+        },
+        "Optim/update_ratio": {
+          "samples": 28,
+          "latest": 0.010472347832105374,
+          "max": 0.02733016514583604,
+          "max_abs": 0.02733016514583604,
+          "max_source": {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_shac_seed0_20261029/zhang/pretrain_s0/updates.jsonl",
+            "line": 1,
+            "update": 1
+          }
+        },
+        "Optim/layers/fc/update_ratio": {
+          "samples": 28,
+          "latest": 0.04436473450640395,
+          "max": 2.4038110973447844,
+          "max_abs": 2.4038110973447844,
+          "max_source": {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_shac_seed0_20261029/zhang/pretrain_s0/updates.jsonl",
+            "line": 1,
+            "update": 1
+          }
+        },
+        "Optim/head/az/update_ratio": {
+          "samples": 28,
+          "latest": 0.03342510289472368,
+          "max": 2.340530794121662,
+          "max_abs": 2.340530794121662,
+          "max_source": {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_shac_seed0_20261029/zhang/pretrain_s0/updates.jsonl",
+            "line": 1,
+            "update": 1
+          }
+        },
+        "Optim/head/vz/update_ratio": {
+          "samples": 28,
+          "latest": 0.048805585677860974,
+          "max": 2.398487450139833,
+          "max_abs": 2.398487450139833,
+          "max_source": {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_shac_seed0_20261029/zhang/pretrain_s0/updates.jsonl",
+            "line": 1,
+            "update": 1
+          }
+        }
+      }
+    },
+    {
+      "name": "dcol_ahac",
+      "latest_update": 15,
+      "stage_environment_steps": 921600,
+      "stage_elapsed_s": 441.5323324680794,
+      "natural_report_count": 10,
+      "first_natural_80_percent": null,
+      "latest_report": {
+        "update": 15,
+        "dynamic_obstacles": 0,
+        "episodes": 2210,
+        "counts": {
+          "success": 9,
+          "collision": 0,
+          "bounds": 2201,
+          "invalid": 0,
+          "timeout": 0
+        },
+        "success_rate": 0.004072398190045249,
+        "collision_rate": 0,
+        "bounds_rate": 0.9959276018099548,
+        "invalid_rate": 0,
+        "timeout_rate": 0,
+        "success_time_mean_s": 0.5766666649530331,
+        "episode_return_mean": -124.64436678605921,
+        "episode_length_mean": 40.73710407239819,
+        "reward_per_step_mean": -3.0597257616678055,
+        "stage": "pretrain_s0",
+        "static_obstacles": 300,
+        "randomization": false,
+        "new_best": false,
+        "source": {
+          "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_ahac_seed0_20261029/zhang/pretrain_s0/training_statistics.jsonl",
+          "line": 10
+        },
+        "update_source": {
+          "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_ahac_seed0_20261029/zhang/pretrain_s0/updates.jsonl",
+          "line": 15
+        },
+        "environment_steps": 921600,
+        "stage_environment_steps": 921600,
+        "elapsed_s": 441.5274051860906,
+        "stage_elapsed_s": 441.5323324680794
+      },
+      "recent_five": {
+        "report_count": 5,
+        "episodes": 9659,
+        "aggregation": "episodes_weighted_last_five_natural_reports",
+        "rates": {
+          "success_rate": 0.0032094419712185526,
+          "collision_rate": 0.004658867377575318,
+          "bounds_rate": 0.9921316906512061,
+          "invalid_rate": 0,
+          "timeout_rate": 0
+        },
+        "metric_coverage": {
+          "success_rate": {
+            "reports": 5,
+            "episodes": 9659
+          },
+          "collision_rate": {
+            "reports": 5,
+            "episodes": 9659
+          },
+          "bounds_rate": {
+            "reports": 5,
+            "episodes": 9659
+          },
+          "invalid_rate": {
+            "reports": 5,
+            "episodes": 9659
+          },
+          "timeout_rate": {
+            "reports": 5,
+            "episodes": 9659
+          }
+        },
+        "sources": [
+          {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_ahac_seed0_20261029/zhang/pretrain_s0/training_statistics.jsonl",
+            "line": 6
+          },
+          {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_ahac_seed0_20261029/zhang/pretrain_s0/training_statistics.jsonl",
+            "line": 7
+          },
+          {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_ahac_seed0_20261029/zhang/pretrain_s0/training_statistics.jsonl",
+            "line": 8
+          },
+          {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_ahac_seed0_20261029/zhang/pretrain_s0/training_statistics.jsonl",
+            "line": 9
+          },
+          {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_ahac_seed0_20261029/zhang/pretrain_s0/training_statistics.jsonl",
+            "line": 10
+          }
+        ]
+      },
+      "best_report": {
+        "update": 8,
+        "dynamic_obstacles": 0,
+        "episodes": 1037,
+        "counts": {
+          "success": 7,
+          "collision": 59,
+          "bounds": 971,
+          "invalid": 0,
+          "timeout": 0
+        },
+        "success_rate": 0.006750241080038573,
+        "collision_rate": 0.05689488910318226,
+        "bounds_rate": 0.9363548698167792,
+        "invalid_rate": 0,
+        "timeout_rate": 0,
+        "success_time_mean_s": 1.30714285772826,
+        "episode_return_mean": -155.1941394649568,
+        "episode_length_mean": 63.028929604628736,
+        "reward_per_step_mean": -2.4622683653120396,
+        "stage": "pretrain_s0",
+        "static_obstacles": 300,
+        "randomization": false,
+        "new_best": true,
+        "checkpoint": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_ahac_seed0_20261029/zhang/pretrain_s0/checkpoint_best_pretrain_s0.pt",
+        "source": {
+          "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_ahac_seed0_20261029/zhang/pretrain_s0/training_statistics.jsonl",
+          "line": 3
+        },
+        "update_source": {
+          "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_ahac_seed0_20261029/zhang/pretrain_s0/updates.jsonl",
+          "line": 8
+        },
+        "environment_steps": 376832,
+        "stage_environment_steps": 376832,
+        "elapsed_s": 187.65642869099975,
+        "stage_elapsed_s": 187.66135597298853
+      },
+      "numerical_metrics": {
+        "surrogate_velocity_error_mps": {
+          "samples": 15,
+          "latest": 0.001611446845345199,
+          "max": 0.0022924961522221565,
+          "max_abs": 0.0022924961522221565,
+          "max_source": {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_ahac_seed0_20261029/zhang/pretrain_s0/updates.jsonl",
+            "line": 11,
+            "update": 11
+          }
+        },
+        "surrogate_vertical_velocity_bias_mps": {
+          "samples": 15,
+          "latest": 0.000767685764003545,
+          "max": 0.0008899230160750449,
+          "max_abs": 0.0008899230160750449,
+          "max_source": {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_ahac_seed0_20261029/zhang/pretrain_s0/updates.jsonl",
+            "line": 11,
+            "update": 11
+          }
+        },
+        "executed_action_max_error": {
+          "samples": 15,
+          "latest": 0,
+          "max": 0,
+          "max_abs": 0,
+          "max_source": {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_ahac_seed0_20261029/zhang/pretrain_s0/updates.jsonl",
+            "line": 1,
+            "update": 1
+          }
+        },
+        "Optim/update_ratio": {
+          "samples": 15,
+          "latest": 0.018361762102914955,
+          "max": 0.027360610234281435,
+          "max_abs": 0.027360610234281435,
+          "max_source": {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_ahac_seed0_20261029/zhang/pretrain_s0/updates.jsonl",
+            "line": 1,
+            "update": 1
+          }
+        },
+        "Optim/layers/fc/update_ratio": {
+          "samples": 15,
+          "latest": 0.07752993855578803,
+          "max": 2.404127329700588,
+          "max_abs": 2.404127329700588,
+          "max_source": {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_ahac_seed0_20261029/zhang/pretrain_s0/updates.jsonl",
+            "line": 1,
+            "update": 1
+          }
+        },
+        "Optim/head/az/update_ratio": {
+          "samples": 15,
+          "latest": 0.07754405299198401,
+          "max": 2.340530801051068,
+          "max_abs": 2.340530801051068,
+          "max_source": {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_ahac_seed0_20261029/zhang/pretrain_s0/updates.jsonl",
+            "line": 1,
+            "update": 1
+          }
+        },
+        "Optim/head/vz/update_ratio": {
+          "samples": 15,
+          "latest": 0.08114769555252008,
+          "max": 2.398487445879242,
+          "max_abs": 2.398487445879242,
+          "max_source": {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_dcol_ahac_seed0_20261029/zhang/pretrain_s0/updates.jsonl",
+            "line": 1,
+            "update": 1
+          }
+        }
+      }
+    },
+    {
+      "name": "continuous",
+      "latest_update": 6,
+      "stage_environment_steps": 921600,
+      "stage_elapsed_s": 332.86035040498246,
+      "natural_report_count": 2,
+      "first_natural_80_percent": null,
+      "latest_report": {
+        "update": 5,
+        "dynamic_obstacles": 0,
+        "episodes": 1024,
+        "counts": {
+          "success": 4,
+          "collision": 54,
+          "bounds": 966,
+          "invalid": 0,
+          "timeout": 0
+        },
+        "success_rate": 0.00390625,
+        "collision_rate": 0.052734375,
+        "bounds_rate": 0.943359375,
+        "invalid_rate": 0,
+        "timeout_rate": 0,
+        "success_time_mean_s": 6.492500305175781,
+        "episode_return_mean": -163305.91614341736,
+        "episode_length_mean": 352,
+        "reward_per_step_mean": -463.93726177107203,
+        "stage": "pretrain_s0",
+        "static_obstacles": 300,
+        "randomization": false,
+        "new_best": true,
+        "checkpoint": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_continuous_seed0_20261029/zhang/pretrain_s0/checkpoint_best_pretrain_s0.pt",
+        "source": {
+          "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_continuous_seed0_20261029/zhang/pretrain_s0/training_statistics.jsonl",
+          "line": 2
+        },
+        "update_source": {
+          "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_continuous_seed0_20261029/zhang/pretrain_s0/updates.jsonl",
+          "line": 5
+        },
+        "environment_steps": 768000,
+        "stage_environment_steps": 768000,
+        "elapsed_s": 277.10787590104155,
+        "stage_elapsed_s": 277.1313534830697
+      },
+      "recent_five": {
+        "report_count": 2,
+        "episodes": 2048,
+        "aggregation": "episodes_weighted_last_five_natural_reports",
+        "rates": {
+          "success_rate": 0.0029296875,
+          "collision_rate": 0.04736328125,
+          "bounds_rate": 0.94873046875,
+          "invalid_rate": 0,
+          "timeout_rate": 0.0009765625
+        },
+        "metric_coverage": {
+          "success_rate": {
+            "reports": 2,
+            "episodes": 2048
+          },
+          "collision_rate": {
+            "reports": 2,
+            "episodes": 2048
+          },
+          "bounds_rate": {
+            "reports": 2,
+            "episodes": 2048
+          },
+          "invalid_rate": {
+            "reports": 2,
+            "episodes": 2048
+          },
+          "timeout_rate": {
+            "reports": 2,
+            "episodes": 2048
+          }
+        },
+        "sources": [
+          {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_continuous_seed0_20261029/zhang/pretrain_s0/training_statistics.jsonl",
+            "line": 1
+          },
+          {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_continuous_seed0_20261029/zhang/pretrain_s0/training_statistics.jsonl",
+            "line": 2
+          }
+        ]
+      },
+      "best_report": {
+        "update": 5,
+        "dynamic_obstacles": 0,
+        "episodes": 1024,
+        "counts": {
+          "success": 4,
+          "collision": 54,
+          "bounds": 966,
+          "invalid": 0,
+          "timeout": 0
+        },
+        "success_rate": 0.00390625,
+        "collision_rate": 0.052734375,
+        "bounds_rate": 0.943359375,
+        "invalid_rate": 0,
+        "timeout_rate": 0,
+        "success_time_mean_s": 6.492500305175781,
+        "episode_return_mean": -163305.91614341736,
+        "episode_length_mean": 352,
+        "reward_per_step_mean": -463.93726177107203,
+        "stage": "pretrain_s0",
+        "static_obstacles": 300,
+        "randomization": false,
+        "new_best": true,
+        "checkpoint": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_continuous_seed0_20261029/zhang/pretrain_s0/checkpoint_best_pretrain_s0.pt",
+        "source": {
+          "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_continuous_seed0_20261029/zhang/pretrain_s0/training_statistics.jsonl",
+          "line": 2
+        },
+        "update_source": {
+          "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_continuous_seed0_20261029/zhang/pretrain_s0/updates.jsonl",
+          "line": 5
+        },
+        "environment_steps": 768000,
+        "stage_environment_steps": 768000,
+        "elapsed_s": 277.10787590104155,
+        "stage_elapsed_s": 277.1313534830697
+      },
+      "numerical_metrics": {
+        "surrogate_velocity_error_mps": {
+          "samples": 6,
+          "latest": 0.0011364540550857782,
+          "max": 0.0011364540550857782,
+          "max_abs": 0.0011364540550857782,
+          "max_source": {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_continuous_seed0_20261029/zhang/pretrain_s0/updates.jsonl",
+            "line": 6,
+            "update": 6
+          }
+        },
+        "surrogate_vertical_velocity_bias_mps": {
+          "samples": 6,
+          "latest": 0.0005763888475485146,
+          "max": 0.0005763888475485146,
+          "max_abs": 0.0005763888475485146,
+          "max_source": {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_continuous_seed0_20261029/zhang/pretrain_s0/updates.jsonl",
+            "line": 6,
+            "update": 6
+          }
+        },
+        "executed_action_max_error": {
+          "samples": 6,
+          "latest": 0,
+          "max": 0,
+          "max_abs": 0,
+          "max_source": {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_continuous_seed0_20261029/zhang/pretrain_s0/updates.jsonl",
+            "line": 1,
+            "update": 1
+          }
+        },
+        "Optim/update_ratio": {
+          "samples": 6,
+          "latest": 0.015491341964479304,
+          "max": 0.027583967989972136,
+          "max_abs": 0.027583967989972136,
+          "max_source": {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_continuous_seed0_20261029/zhang/pretrain_s0/updates.jsonl",
+            "line": 1,
+            "update": 1
+          }
+        },
+        "Optim/layers/fc/update_ratio": {
+          "samples": 6,
+          "latest": 0.20418843874208137,
+          "max": 2.4055010683083027,
+          "max_abs": 2.4055010683083027,
+          "max_source": {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_continuous_seed0_20261029/zhang/pretrain_s0/updates.jsonl",
+            "line": 1,
+            "update": 1
+          }
+        },
+        "Optim/head/az/update_ratio": {
+          "samples": 6,
+          "latest": 0.2589468659728879,
+          "max": 2.3405276800445924,
+          "max_abs": 2.3405276800445924,
+          "max_source": {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_continuous_seed0_20261029/zhang/pretrain_s0/updates.jsonl",
+            "line": 1,
+            "update": 1
+          }
+        },
+        "Optim/head/vz/update_ratio": {
+          "samples": 6,
+          "latest": 0.29449851574278785,
+          "max": 2.398484936389714,
+          "max_abs": 2.398484936389714,
+          "max_source": {
+            "path": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_new_continuous_seed0_20261029/zhang/pretrain_s0/updates.jsonl",
+            "line": 1,
+            "update": 1
+          }
+        }
+      }
+    }
+  ]
+}
