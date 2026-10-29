@@ -32,6 +32,7 @@ class ZhangTrainCfg:
     boundary_scale: float = 0.5
     height_bounds: tuple[float, float] = (0.2, 4.0)
     seed: int = 0
+    gradient_diagnostic_updates: tuple[int, ...] = ()
 
     @property
     def velocity_window_steps(self) -> int:
@@ -60,4 +61,7 @@ class ZhangTrainCfg:
             raise ValueError("height_bounds and boundary_margin must leave a positive interior interval")
         if self.boundary_scale <= 0 or self.coef_height_boundary < 0:
             raise ValueError("boundary_scale must be positive and coef_height_boundary must be nonnegative")
+        if (any(type(update) is not int or update < 1 for update in self.gradient_diagnostic_updates)
+                or len(set(self.gradient_diagnostic_updates)) != len(self.gradient_diagnostic_updates)):
+            raise ValueError("gradient_diagnostic_updates must contain unique positive integers")
         _ = self.velocity_window_steps

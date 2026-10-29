@@ -15,6 +15,7 @@ from isaaclab_navrl.tasks.navigation.curriculum import STAGE_CONFIGS
 from isaaclab_navrl.tasks.navigation.randomization import DifferentiableDelay
 from isaaclab_navrl.training import record_curriculum, write_json
 
+from .diagnostics import GradientDiagnostic
 from .dynamics import PointMassState, align_state, align_transition, policy_transition
 from .losses import zhang_losses
 from .model import ZhangPolicy, decode_action, policy_state
@@ -122,6 +123,7 @@ class ZhangTrainer:
                             "static_obstacles": self.env.cfg.num_static_obstacles,
                             "dynamic_obstacles": self.env.cfg.num_dynamic_obstacles,
                             "physics_dt": self.env.physics_dt, "policy_dt": self.env.step_dt,
+                            "depth_camera_batch_size": getattr(self.env.cfg, "depth_camera_batch_size", None),
                             "training_stage": self.env.cfg.training_stage, "variant": self.cfg.variant,
                             "sim_to_real": asdict(self.env.cfg.sim_to_real)},
             "torch_rng_state": torch.get_rng_state(),
@@ -294,7 +296,12 @@ class ZhangTrainer:
                 for group in self.optimizer.param_groups:
                     group["lr"] = learning_rate
                 self.optimizer.zero_grad(set_to_none=True)
+                gradient_diagnostic = None
+                if initial_updates + update + 1 in self.cfg.gradient_diagnostic_updates:
+                    gradient_diagnostic = GradientDiagnostic(self.model, losses, self.cfg)
                 losses["total"].backward()
+                if gradient_diagnostic is not None:
+                    gradient_diagnostic.check_total_gradient()
                 try:
                     grad_norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.cfg.max_grad_norm,
                                                              error_if_nonfinite=True)
@@ -302,6 +309,10 @@ class ZhangTrainer:
                     self.nonfinite_grad_events += 1
                     raise
                 self.optimizer.step()
+                gradient_record = None
+                if gradient_diagnostic is not None:
+                    gradient_record = gradient_diagnostic.finish(self.optimizer, grad_norm, self.cfg.max_grad_norm)
+                    del gradient_diagnostic
                 self.stage_updates = update + 1
                 self.completed_updates = initial_updates + self.stage_updates
                 self.environment_steps += self.cfg.timesteps * self.env.num_envs
@@ -313,6 +324,22 @@ class ZhangTrainer:
                                elapsed_s=self.elapsed_s, update_s=time.perf_counter() - update_started,
                                completed_episodes=int(terminated_count),
                                executed_action_max_error=float(execution_error))
+                if gradient_record is not None:
+                    heights = torch.stack(history["position"]).detach()[..., 2]
+                    gradient_record.update(
+                        update=self.completed_updates, stage=self.env.cfg.training_stage,
+                        variant=self.cfg.variant, environment_steps=self.environment_steps,
+                        num_envs=self.env.num_envs, train_cfg=asdict(self.cfg), rollout=metrics.copy(),
+                        upper_boundary_active_fraction=float((
+                            heights > self.cfg.height_bounds[1] - self.cfg.boundary_margin
+                        ).float().mean()),
+                        lower_boundary_active_fraction=float((
+                            heights < self.cfg.height_bounds[0] + self.cfg.boundary_margin
+                        ).float().mean()),
+                    )
+                    with (self.log_dir / "gradient_diagnostics.jsonl").open("a") as diagnostic_log:
+                        diagnostic_log.write(json.dumps(gradient_record, allow_nan=False) + "\n")
+                    metrics["gradient_diagnostic_s"] = gradient_record["diagnostic_s"]
                 log.write(json.dumps(metrics, allow_nan=False) + "\n")
                 log.flush()
                 for name, value in metrics.items():

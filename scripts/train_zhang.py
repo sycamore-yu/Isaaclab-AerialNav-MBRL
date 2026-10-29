@@ -7,6 +7,19 @@ from pathlib import Path
 from isaaclab.app import add_launcher_args, launch_simulation
 
 
+def parse_gradient_diagnostic_updates(raw: str) -> tuple[int, ...]:
+    """Parse an opt-in list of unique positive global completed-update numbers."""
+    if raw == "":
+        return ()
+    parts = raw.split(",")
+    if any(not part.isascii() or not part.isdecimal() for part in parts):
+        raise ValueError("gradient_diagnostic_updates requires comma-separated positive integers without empty entries")
+    updates = tuple(int(part) for part in parts)
+    if any(update < 1 for update in updates) or len(set(updates)) != len(updates):
+        raise ValueError("gradient_diagnostic_updates must contain unique positive integers")
+    return updates
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument("--log_dir", type=Path, required=True)
@@ -21,6 +34,8 @@ def main():
     parser.add_argument("--variant", choices=("step", "continuous", "dcol", "truncated_window"), default="step")
     parser.add_argument("--timesteps", type=int, default=150)
     parser.add_argument("--velocity_window_s", type=float, default=2.0)
+    parser.add_argument("--camera_batch_size", type=int, default=16,
+                        help="Depth raycast environment batch size; does not change image resolution")
     parser.add_argument("--lr", type=float, default=None, help="Default: 0.001 pretraining, 0.00005 fine-tuning")
     parser.add_argument("--cosine_period_updates", type=int, default=400)
     parser.add_argument("--max_grad_norm", type=float, default=5.0)
@@ -32,11 +47,15 @@ def main():
     parser.add_argument("--coef_height_boundary", type=float, default=1.0)
     parser.add_argument("--boundary_margin", type=float, default=0.5)
     parser.add_argument("--boundary_scale", type=float, default=0.5)
+    parser.add_argument("--gradient_diagnostic_updates", type=parse_gradient_diagnostic_updates, default=(),
+                        help="Optional unique global completed-update numbers, e.g. 20,22,24,26; empty disables")
     add_launcher_args(parser)
     parser.set_defaults(visualizer=["none"])
     args = parser.parse_args()
     if args.num_envs < 1:
         parser.error("num_envs must be positive")
+    if args.camera_batch_size < 1:
+        parser.error("camera_batch_size must be positive")
     if args.stage == "pretrain_s1" and args.checkpoint is not None:
         parser.error("Pretraining S1 must start from random initialization")
     if args.stage != "pretrain_s1" and args.checkpoint is None and args.max_iterations is None:
@@ -66,10 +85,12 @@ def main():
     cfg.training_curriculum = True
     cfg.sim_to_real.enabled = stage["randomization"]
     cfg.sim.device = args.device
+    cfg.depth_camera_batch_size = args.camera_batch_size
     cfg.configure_scene()
     fields = ("variant", "timesteps", "max_iterations", "stop_after_acceptance", "velocity_window_s", "lr", "max_grad_norm",
               "grad_decay", "coef_obj_avoidance", "coef_collide", "coef_d_acc", "coef_d_jerk",
-              "coef_height_boundary", "boundary_margin", "boundary_scale", "cosine_period_updates", "seed")
+              "coef_height_boundary", "boundary_margin", "boundary_scale", "cosine_period_updates", "seed",
+              "gradient_diagnostic_updates")
     train_cfg = ZhangTrainCfg(**{name: getattr(args, name) for name in fields})
     train_cfg.validate()
     torch.manual_seed(args.seed)
@@ -84,6 +105,7 @@ def main():
                         "physics_dt": cfg.sim.dt, "policy_dt": cfg.sim.dt * cfg.decimation,
                         "depth_camera": {"width": cfg.scene.depth_camera.pattern_cfg.width,
                                          "height": cfg.scene.depth_camera.pattern_cfg.height,
+                                         "batch_size": cfg.depth_camera_batch_size,
                                          "policy_shape": [12, 16],
                                          "pixel_noise_std": cfg.scene.depth_camera.pixel_noise_std},
                         "sim_to_real": asdict(cfg.sim_to_real)},

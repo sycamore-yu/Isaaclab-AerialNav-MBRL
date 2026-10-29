@@ -19,10 +19,27 @@ STAGE_CONFIG = {
     "finetune_s1": {"static_obstacles": 300, "dynamic_obstacles": 60, "randomization": True},
     "finetune_s2": {"static_obstacles": 400, "dynamic_obstacles": 100, "randomization": True},
 }
+
+
+def parse_gradient_diagnostic_updates(raw: str) -> tuple[int, ...]:
+    """Validate the same opt-in update-list grammar as train_zhang.py."""
+    if raw == "":
+        return ()
+    parts = raw.split(",")
+    if any(not part.isascii() or not part.isdecimal() for part in parts):
+        raise ValueError("gradient_diagnostic_updates requires comma-separated positive integers without empty entries")
+    updates = tuple(int(part) for part in parts)
+    if any(update < 1 for update in updates) or len(set(updates)) != len(updates):
+        raise ValueError("gradient_diagnostic_updates must contain unique positive integers")
+    return updates
+
+
+TrainArgValue = str | int | float | tuple[int, ...]
 TRAIN_ARG_TYPES = {
     "variant": str,
     "timesteps": int,
     "velocity_window_s": float,
+    "camera_batch_size": int,
     "lr": float,
     "max_grad_norm": float,
     "grad_decay": float,
@@ -34,10 +51,11 @@ TRAIN_ARG_TYPES = {
     "boundary_margin": float,
     "boundary_scale": float,
     "cosine_period_updates": int,
+    "gradient_diagnostic_updates": parse_gradient_diagnostic_updates,
 }
 
 
-def parse_train_args(tokens: list[str]) -> dict[str, str | int | float]:
+def parse_train_args(tokens: list[str]) -> dict[str, TrainArgValue]:
     """Accept only Zhang hyperparameters; process and curriculum flags stay fixed."""
     values = {}
     index = 1 if tokens and tokens[0] == "--" else 0
@@ -60,6 +78,8 @@ def parse_train_args(tokens: list[str]) -> dict[str, str | int | float]:
         if key == "variant":
             if value not in ("step", "continuous", "dcol", "truncated_window"):
                 raise ValueError(f"Unknown Zhang variant: {value}")
+        elif key == "gradient_diagnostic_updates":
+            pass  # The converter above validates the complete tuple.
         elif not math.isfinite(value):
             raise ValueError(f"{option} must be finite")
         elif key.startswith("coef_") or key in ("grad_decay", "boundary_margin"):
@@ -82,7 +102,7 @@ def build_command(
     seed: int,
     device: str,
     finetune_lr: float,
-    train_args: dict[str, str | int | float],
+    train_args: dict[str, TrainArgValue],
     parent_checkpoint: Path | None,
     executable: str = sys.executable,
 ) -> list[str]:
@@ -102,7 +122,8 @@ def build_command(
     if method == "zhang":
         for key, value in train_args.items():
             if key != "lr" or not stage.startswith("finetune_"):
-                command += [f"--{key}", str(value)]
+                formatted = ",".join(str(update) for update in value) if isinstance(value, tuple) else str(value)
+                command += [f"--{key}", formatted]
     if stage.startswith("finetune_"):
         command += ["--lr", str(finetune_lr)]
     return command
@@ -172,7 +193,7 @@ def write_json(path: Path, value: dict[str, Any]) -> None:
     temporary.replace(path)
 
 
-def run_pipeline(args: argparse.Namespace, train_args: dict[str, str | int | float]) -> int:
+def run_pipeline(args: argparse.Namespace, train_args: dict[str, TrainArgValue]) -> int:
     output = Path(args.output).expanduser().resolve()
     output.mkdir(parents=True, exist_ok=False)
     methods = ("zhang", "navrl") if args.method == "both" else (args.method,)
