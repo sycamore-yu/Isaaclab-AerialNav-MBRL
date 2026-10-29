@@ -71,11 +71,19 @@ def real_static_collision(env, action):
     axis = torch.arange(-19.8, 20.0, 0.2, device=env.device)
     x, y = torch.meshgrid(axis, axis, indexing="ij")
     query = torch.stack((x.flatten(), y.flatten(), torch.full_like(x.flatten(), 2.0)), dim=-1)
-    closest = env.terrain_distance.closest_points(query)
-    delta = closest - query
-    distance = delta[:, :2].norm(dim=-1)
-    eligible = ((delta[:, 2].abs() < 0.02) & (distance > 0.12) & (distance < 0.28)
-                & torch.isfinite(closest).all(dim=-1))
+    query.requires_grad_()
+    with torch.enable_grad():
+        distance = env.terrain_distance.signed_distance(query)
+        normal = torch.autograd.grad(distance.sum(), query)[0]
+    query, distance = query.detach(), distance.detach()
+    delta = -distance[:, None] * normal
+    closest = query + delta
+    deep = distance < -0.05
+    assert bool(deep.any()), "Actual terrain must supply interior samples"
+    escaped = env.terrain_distance.signed_distance(query[deep] + 0.001 * normal[deep])
+    assert bool((escaped > distance[deep]).all()), "Actual terrain interior gradients must escape"
+    eligible = ((distance > 0.12) & (distance < 0.28) & torch.isfinite(distance)
+                & (normal[:, 2].abs() < 0.02))
     candidates = eligible.nonzero().flatten()
     if not len(candidates):
         return {"status": "no_eligible_vertical_surface", "attempts": [], "synthetic_detector_events": False}
@@ -166,8 +174,9 @@ def check_failures(env, action):
         initial_episodes = env.episode_id.clone()
         _, _, terminated, timeout, info = env.step(action)
         transition = info["transition"]
-        expected = action.new_tensor([3, 3, 2], dtype=torch.int8)
-        assert bool(transition["bounds"][:2].all()) and not bool(transition["collision"][:2].any())
+        expected = action.new_tensor([2, 3, 2], dtype=torch.int8)
+        assert bool(transition["bounds"][:2].all())
+        assert bool(transition["collision"][0]) and not bool(transition["collision"][1])
         assert bool(transition["collision"][2]) and not bool(timeout[:3].any())
         torch.testing.assert_close(transition["first_event_code"][:3], expected, rtol=0, atol=0)
         torch.testing.assert_close(terminated[:3], torch.full_like(terminated[:3], not continuous), rtol=0, atol=0)
@@ -310,7 +319,7 @@ def main():
                 result["depth_camera"] = check_perception(env)
                 progress("static_only_distance_gradient")
                 query = env.root_state()[:, None, :3].detach().requires_grad_()
-                vectors = env.nearest_obstacle_vector(query)
+                vectors = env.obstacle_signed_distance(query)
                 vectors.square().sum().backward()
                 assert bool(torch.isfinite(vectors).all() & torch.isfinite(query.grad).all())
                 result["static_only_distance_gradient_finite"] = True

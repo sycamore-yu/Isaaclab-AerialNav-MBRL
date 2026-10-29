@@ -90,7 +90,7 @@ def make_plateau_scheduler(
     schedule: str = "cosine",
     *,
     factor: float = 0.5,
-    patience: int = 5,
+    patience: int = 2,
     threshold: float = 0.005,
     cooldown: int = 2,
     min_lr: float = 1e-6,

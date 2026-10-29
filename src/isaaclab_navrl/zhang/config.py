@@ -4,13 +4,13 @@ import math
 from dataclasses import dataclass
 from typing import Literal
 
-ZHANG_VARIANTS = ("step", "continuous", "dcol")
+ZHANG_VARIANTS = ("step", "continuous", "dcol", "truncated_window")
 ZHANG_ALGORITHMS = ("bptt", "shac", "ahac")
 
 
 @dataclass
 class ZhangTrainCfg:
-    variant: Literal["step", "continuous", "dcol"] = "step"
+    variant: Literal["step", "continuous", "dcol", "truncated_window"] = "step"
     algorithm: Literal["bptt", "shac", "ahac"] = "bptt"
     timesteps: int = 150
     max_iterations: int | None = None
@@ -24,7 +24,7 @@ class ZhangTrainCfg:
     min_lr_ratio: float = 0.01
     lr_schedule: Literal["cosine", "plateau", "constant"] = "cosine"
     plateau_factor: float = 0.5
-    plateau_patience: int = 5
+    plateau_patience: int = 2
     plateau_threshold: float = 0.005
     plateau_cooldown: int = 2
     minimum_lr: float = 1e-6
@@ -100,8 +100,8 @@ class ZhangTrainCfg:
             self.ahac_risk_scale, self.ahac_risk_budget, self.ahac_dual_lr
         )) or not math.isfinite(self.ahac_risk_clearance) or self.ahac_risk_clearance < 0:
             raise ValueError("Invalid AHAC DCOL risk parameters")
-        if self.physics_dt != 0.01 or self.policy_dt != 0.1:
-            raise ValueError("The approved task requires 100 Hz physics and a 10 Hz policy")
+        if (self.physics_dt, self.policy_dt) not in ((0.01, 0.1), (0.05, 0.05)):
+            raise ValueError("Supported timing is 100/10 Hz or synchronized 20/20 Hz")
         if self.timesteps < 2 or (self.max_iterations is not None and self.max_iterations < 1):
             raise ValueError("Training requires at least two rollout steps and one update")
         if self.cosine_period_updates < 1:

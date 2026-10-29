@@ -17,6 +17,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument("--log_dir", type=Path, required=True)
     parser.add_argument("--num_envs", type=int, default=1024)
+    parser.add_argument("--report_episodes", type=int, default=None)
     parser.add_argument("--max_iterations", type=int, default=None,
                         help="Optional update limit for a smoke run; default unlimited")
     parser.add_argument("--stop_after_acceptance", action="store_true",
@@ -34,6 +35,8 @@ def main():
         parser.error("num_envs and max_iterations must be positive")
     if args.lr is not None and not 0.0 < args.lr < float("inf"):
         parser.error("lr must be finite and positive")
+    if args.report_episodes is not None and args.report_episodes < 1:
+        parser.error("report_episodes must be positive")
     if args.stage == "pretrain_s0" and args.checkpoint is not None:
         parser.error("pretrain_s0 must start from random initialization, without a checkpoint")
     if args.stage != "pretrain_s0" and args.max_iterations is None and args.checkpoint is None:
@@ -66,7 +69,7 @@ def main():
             result["acceptance_passed"] = bool(
                 args.stage == "finetune_s2"
                 and env.curriculum.stage_passed
-                and args.num_envs >= 1024
+                and env.curriculum.min_episodes >= 1024
                 and env.cfg.num_static_obstacles == 400
                 and env.cfg.num_dynamic_obstacles == 100
                 and env.cfg.sim_to_real.enabled
@@ -102,6 +105,7 @@ def main():
         cfg.seed = args.seed
         cfg.terrain_seed = args.terrain_seed
         cfg.training_stage = args.stage
+        cfg.training_report_episodes = args.report_episodes
         cfg.training_curriculum = True
         cfg.num_static_obstacles = stage_config["static_obstacles"]
         cfg.num_dynamic_obstacles = stage_config["dynamic_obstacles"]
@@ -134,6 +138,7 @@ def main():
             "method": "navrl", "fresh": parent_checkpoint is None,
             "stage": args.stage, "parent_checkpoint": parent_checkpoint,
             "num_envs": args.num_envs, "max_updates": args.max_iterations,
+            "report_episodes": args.report_episodes or args.num_envs,
             "seed": args.seed, "terrain_seed": args.terrain_seed,
             "stop_after_acceptance": args.stop_after_acceptance,
             "static_obstacles": cfg.num_static_obstacles,
@@ -188,6 +193,7 @@ def main():
                 write_result()
                 updates = count() if args.max_iterations is None else range(args.max_iterations)
                 for stage_update in updates:
+                    update_started = time.perf_counter()
                     global_update = initial_updates + stage_update + 1
                     runner.current_learning_iteration = global_update - 1
                     runner.learn(num_learning_iterations=1, init_at_random_ep_len=False)
@@ -197,6 +203,12 @@ def main():
                         initial_environment_steps
                         + (stage_update + 1) * agent_cfg.num_steps_per_env * args.num_envs
                     )
+                    with (log_dir / "updates.jsonl").open("a") as stream:
+                        stream.write(json.dumps({
+                            "update": global_update, "environment_steps": result["environment_steps"],
+                            "rollout_steps": agent_cfg.num_steps_per_env, "elapsed_s": elapsed_s(),
+                            "update_s": time.perf_counter() - update_started,
+                        }, allow_nan=False) + "\n")
                     record_curriculum(env.curriculum, global_update, log_dir, runner.logger.writer, save_checkpoint)
                     if global_update % agent_cfg.save_interval == 0:
                         save_checkpoint(log_dir / "checkpoint_latest.pt")

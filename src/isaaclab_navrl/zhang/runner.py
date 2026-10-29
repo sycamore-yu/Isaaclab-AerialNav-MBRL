@@ -153,12 +153,12 @@ class ZhangTrainer:
             self._pending_critic_state = None
 
     def _dcol_gap(self, query, radius, obstacle_positions=None):
-        """True dynamic-body DCOL with the original actual-mesh static clearance."""
+        """Dynamic-body DCOL with signed actual-mesh static clearance."""
         from .dcol import hybrid_collision_gap
 
         radius = radius.reshape(-1, *([1] * (query.ndim - 2))).expand(query.shape[:-1])
         return hybrid_collision_gap(
-            query, radius, self.env.terrain_distance.closest_points(query),
+            query, radius, self.env.terrain_distance.signed_distance(query),
             self.env.motion.position if obstacle_positions is None else obstacle_positions, self.env.motion.size,
         )
 
@@ -334,7 +334,7 @@ class ZhangTrainer:
             "curriculum": self.env.curriculum.state_dict() if self.env.curriculum is not None else None,
             "acceptance_passed": bool(
                 self.env.curriculum is not None and self.env.curriculum.acceptance_passed
-                and self.env.num_envs >= 1024 and self.env.cfg.num_static_obstacles == 400
+                and self.env.curriculum.min_episodes >= 1024 and self.env.cfg.num_static_obstacles == 400
                 and self.env.cfg.num_dynamic_obstacles == 100 and self.env.cfg.sim_to_real.enabled
             ),
             "stage_passed": bool(self.env.curriculum is not None and self.env.curriculum.stage_passed),
@@ -360,8 +360,8 @@ class ZhangTrainer:
                 "dynamic_geometry": "sphere_vs_axis_aligned_box_or_finite_z_cylinder",
                 "dynamic_selection": "minimum_common_scale_over_all_dynamic_obstacles",
                 "dynamic_metric": "radius_times_alpha_minus_one_metre_scaled_proxy_not_signed_distance",
-                "static_geometry": "actual_world_mesh_unchanged_unsigned_surface_clearance",
-                "static_deep_penetration_gradient_solved": False,
+                "static_geometry": "actual_world_mesh_signed_surface_clearance",
+                "static_deep_penetration_gradient_solved": True,
                 "ground_gap": "query_height_minus_0.01_minus_radius",
                 "terminal_sample": "first_collision_substep_position_and_obstacles_or_policy_terminal_position",
                 "collision_gradient": "aligned_surrogate_at_the_same_physics_substep_before_reset",
@@ -420,7 +420,7 @@ class ZhangTrainer:
                     command, velocity_prediction = decode_action(output, heading, parameters["thr_est_error"])
                     # Source main_cuda records p + v * sub_div before env.run, including terminating steps.
                     query = state.position[:, None] + state.velocity[:, None] * lookahead
-                    history["obstacle_vector"].append(self.env.nearest_obstacle_vector(query))
+                    history["obstacle_distance"].append(self.env.obstacle_signed_distance(query))
                     if self.cfg.variant == "dcol":
                         dcol_lookahead = self._dcol_gap(query[:, 1:-1], parameters["margin"])
                     history["margin"].append(parameters["margin"])

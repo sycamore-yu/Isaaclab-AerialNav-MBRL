@@ -111,6 +111,7 @@ class NavRLEnvCfg(DirectRLEnvCfg):
     depth_camera_batch_size: int = 16
     training_curriculum: bool = True
     training_stage: str | None = None
+    training_report_episodes: int | None = None
     sim_to_real: SimToRealCfg = SimToRealCfg()
     events = NavigationEventsCfg()
     terrain_seed: int = 0
@@ -215,6 +216,7 @@ class ZhangEventsCfg(NavigationEventsCfg):
 class ZhangNavRLEnvCfg(NavRLEnvCfg):
     method = "zhang"
     variant: str = "step"
+    timing: str = "baseline"
     decimation = 10
     events = ZhangEventsCfg()
 
@@ -224,9 +226,17 @@ class ZhangNavRLEnvCfg(NavRLEnvCfg):
         super().__post_init__()
 
     def configure_scene(self):
-        if self.variant not in ("step", "continuous", "dcol"):
+        if self.variant not in ("step", "continuous", "dcol", "truncated_window"):
             raise ValueError(f"Unknown Zhang variant: {self.variant}")
+        if self.timing not in ("baseline", "unified_20hz"):
+            raise ValueError(f"Unknown Zhang timing: {self.timing}")
+        self.sim.dt = 0.05 if self.timing == "unified_20hz" else 0.01
+        self.decimation = 1 if self.timing == "unified_20hz" else 10
+        self.sim.render_interval = self.decimation
         super().configure_scene()
+        period = self.sim.dt * self.decimation
+        self.events.disturbance.interval_range_s = (period, period)
+        self.events.disturbance.params["interval_s"] = period
         # UsdFileCfg's original None preserves the asset's collision attributes.
         # Reassign on every configuration pass so a previous variant cannot leak.
         self.scene.drone.spawn.collision_props = (

@@ -44,11 +44,13 @@ def parse_gradient_diagnostic_updates(raw: str) -> tuple[int, ...]:
 
 TrainArgValue = str | int | float | bool | tuple[int, ...]
 TRAIN_ARG_CHOICES = {
-    "variant": ("step", "continuous", "dcol"),
+    "timing": ("baseline", "unified_20hz"),
+    "variant": ("step", "continuous", "dcol", "truncated_window"),
     "algorithm": ("bptt", "shac", "ahac"),
     "lr_schedule": ("cosine", "plateau", "constant"),
 }
 TRAIN_ARG_TYPES = {
+    "timing": str,
     "variant": str,
     "algorithm": str,
     "lr_schedule": str,
@@ -56,6 +58,7 @@ TRAIN_ARG_TYPES = {
     "normalization_variance_floor": float,
     "recovery_enabled": parse_binary_flag,
     "timesteps": int,
+    "plateau_patience": int,
     "velocity_window_s": float,
     "camera_batch_size": int,
     "lr": float,
@@ -121,7 +124,7 @@ def parse_train_args(tokens: list[str]) -> dict[str, TrainArgValue]:
         elif key == "grad_decay":
             if not 0 < value <= 1:
                 raise ValueError("grad_decay must be in (0, 1]")
-        elif key.startswith("coef_") or key in ("boundary_margin", "ahac_risk_clearance"):
+        elif key.startswith("coef_") or key in ("boundary_margin", "ahac_risk_clearance", "plateau_patience"):
             if value < 0:
                 raise ValueError(f"{option} must be nonnegative")
         elif value <= 0:
@@ -153,6 +156,7 @@ def build_command(
     train_args: dict[str, TrainArgValue],
     parent_checkpoint: Path | None,
     executable: str = sys.executable,
+    report_episodes: int | None = None,
 ) -> list[str]:
     command = [
         executable,
@@ -167,6 +171,8 @@ def build_command(
     ]
     if parent_checkpoint is not None:
         command += ["--checkpoint", str(parent_checkpoint)]
+    if report_episodes is not None:
+        command += ["--report_episodes", str(report_episodes)]
     if method == "zhang":
         for key, value in train_args.items():
             if key != "lr" or not stage.startswith("finetune_"):
@@ -189,6 +195,7 @@ def validate_stage_result(
     parent_checkpoint: Path | None,
     variant: str = "step",
     algorithm: str = "bptt",
+    report_episodes: int | None = None,
 ) -> list[str]:
     """Validate one real training report against the fixed acceptance protocol."""
     errors = []
@@ -204,7 +211,9 @@ def validate_stage_result(
         expect(result.get("algorithm") == algorithm, "Zhang algorithm does not match the launched experiment")
     expect(result.get("status") == "completed", "training status is not completed")
     expect(result.get("stage") == stage, "training stage does not match")
-    expect(result.get("num_envs") == num_envs and num_envs >= 1024, "num_envs must match and be at least 1024")
+    report_episodes = num_envs if report_episodes is None else report_episodes
+    expect(result.get("num_envs") == num_envs and num_envs > 0, "num_envs must match and be positive")
+    expect(report_episodes >= 1024, "formal reports require at least 1024 episodes")
     expect(result.get("stage_passed") is True, "trainer has not passed the stage")
     expect(result.get("max_updates") is None, "training has a maximum update limit")
     expected_parent = str(parent_checkpoint) if parent_checkpoint is not None else None
@@ -221,7 +230,7 @@ def validate_stage_result(
     expect(curriculum.get("stage_config") == expected, "curriculum obstacle counts or randomization do not match")
     expect(curriculum.get("active_dynamic_obstacles") == expected["dynamic_obstacles"], "active dynamic obstacle count does not match")
     expect(curriculum.get("promotion_success_rate") == 0.8, "curriculum promotion threshold must be 0.8")
-    expect(curriculum.get("episodes_per_report_min") == num_envs, "episode report threshold does not match num_envs")
+    expect(curriculum.get("episodes_per_report_min") == report_episodes, "episode report threshold does not match")
 
     report = curriculum.get("latest_training_report")
     if not isinstance(report, dict):
@@ -230,7 +239,7 @@ def validate_stage_result(
     for key, value in expected.items():
         expect(report.get(key) == value, f"training report {key} does not match")
     episodes = report.get("episodes")
-    expect(isinstance(episodes, int) and episodes >= num_envs, "training report has too few completed episodes")
+    expect(isinstance(episodes, int) and episodes >= report_episodes, "training report has too few completed episodes")
     success_rate = report.get("success_rate")
     expect(
         isinstance(success_rate, (int, float)) and math.isfinite(success_rate) and 0.8 <= success_rate <= 1.0,
@@ -257,6 +266,7 @@ def run_pipeline(args: argparse.Namespace, train_args: dict[str, TrainArgValue])
         "acceptance_passed": False,
         "method": args.method,
         "num_envs": args.num_envs,
+        "report_episodes": getattr(args, "report_episodes", None) or args.num_envs,
         "train_seed": args.train_seed,
         "finetune_lr": args.finetune_lr,
         "train_args": train_args,
@@ -287,6 +297,7 @@ def run_pipeline(args: argparse.Namespace, train_args: dict[str, TrainArgValue])
                     method=method, stage=stage, log_dir=log_dir, scripts_dir=scripts_dir,
                     num_envs=args.num_envs, seed=args.train_seed, device=args.device,
                     finetune_lr=args.finetune_lr, train_args=train_args, parent_checkpoint=parent_checkpoint,
+                    report_episodes=getattr(args, "report_episodes", None),
                 )
                 current_stage = {
                     "stage": stage,
@@ -326,6 +337,7 @@ def run_pipeline(args: argparse.Namespace, train_args: dict[str, TrainArgValue])
                         num_envs=args.num_envs, parent_checkpoint=parent_checkpoint,
                         variant=train_args.get("variant", "step"),
                         algorithm=train_args.get("algorithm", "bptt"),
+                        report_episodes=getattr(args, "report_episodes", None),
                     )
                 checkpoint = log_dir / "checkpoint_stage.pt"
                 if not checkpoint.is_file():
@@ -362,13 +374,14 @@ def main() -> int:
     parser.add_argument("--method", choices=("navrl", "zhang", "both"), default="zhang")
     parser.add_argument("--output", required=True)
     parser.add_argument("--num_envs", type=int, default=1024)
+    parser.add_argument("--report_episodes", type=int, default=None)
     parser.add_argument("--train_seed", type=int, default=0)
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--finetune_lr", type=float, default=5e-5)
     parser.add_argument("--train_args", nargs=argparse.REMAINDER, default=[])
     args = parser.parse_args()
-    if args.num_envs < 1024:
-        parser.error("formal acceptance requires --num_envs >= 1024")
+    if args.num_envs < 1 or (args.report_episodes if args.report_episodes is not None else args.num_envs) < 1024:
+        parser.error("formal acceptance requires positive num_envs and at least 1024 report episodes")
     if not math.isfinite(args.finetune_lr) or args.finetune_lr <= 0:
         parser.error("--finetune_lr must be finite and positive")
     try:

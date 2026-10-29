@@ -1,0 +1,97 @@
+{
+  "recorded_at": "2026-10-29T12:56:25.971807+00:00",
+  "controller_pid": 879183,
+  "manifest": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_signed_geometry_20261029/manifest.json",
+  "summary": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_signed_geometry_20261029/summary.json",
+  "frozen_identity": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_signed_geometry_20261029/source/identity.json",
+  "frozen_identity_sha256": "7573d8ffd109fbb06bb80e603e6c0a7608fd22db6fe3b7a994fb6c8a71dab23f",
+  "verification": {
+    "tests_passed": 204,
+    "subtests_passed": 102,
+    "ruff": "passed",
+    "evidence_root": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/geometry_fix_checks"
+  },
+  "complete_comparison_passed": false,
+  "runs": [
+    {
+      "name": "dcol",
+      "method": "zhang",
+      "variant": "dcol",
+      "algorithm": "bptt",
+      "launch_status": "running",
+      "pid": 879194,
+      "update": 2,
+      "environment_steps": 307200,
+      "grad_norm": 2.5559208393096924,
+      "executed_action_max_error": 0.0
+    },
+    {
+      "name": "step",
+      "method": "zhang",
+      "variant": "step",
+      "algorithm": "bptt",
+      "launch_status": "running",
+      "pid": 879195,
+      "update": 2,
+      "environment_steps": 307200,
+      "grad_norm": 2.723006248474121,
+      "executed_action_max_error": 0.0
+    },
+    {
+      "name": "truncated",
+      "method": "zhang",
+      "variant": "truncated_window",
+      "algorithm": "bptt",
+      "launch_status": "running",
+      "pid": 879196,
+      "update": 2,
+      "environment_steps": 307200,
+      "grad_norm": 2.5486066341400146,
+      "executed_action_max_error": 0.0
+    },
+    {
+      "name": "plateau",
+      "method": "zhang",
+      "variant": "dcol",
+      "algorithm": "bptt",
+      "launch_status": "running",
+      "pid": 879197,
+      "update": 2,
+      "environment_steps": 307200,
+      "grad_norm": 2.5558714866638184,
+      "executed_action_max_error": 0.0
+    },
+    {
+      "name": "shac",
+      "method": "zhang",
+      "variant": "dcol",
+      "algorithm": "shac",
+      "launch_status": "queued",
+      "pid": null
+    },
+    {
+      "name": "ahac",
+      "method": "zhang",
+      "variant": "dcol",
+      "algorithm": "ahac",
+      "launch_status": "queued",
+      "pid": null
+    },
+    {
+      "name": "navrl_ppo",
+      "method": "navrl",
+      "variant": "navrl",
+      "algorithm": "ppo",
+      "launch_status": "queued",
+      "pid": null
+    },
+    {
+      "name": "continuous",
+      "method": "zhang",
+      "variant": "continuous",
+      "algorithm": "bptt",
+      "launch_status": "queued",
+      "pid": null
+    }
+  ]
+}

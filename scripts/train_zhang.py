@@ -50,6 +50,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument("--log_dir", type=Path, required=True)
     parser.add_argument("--num_envs", type=int, default=1024)
+    parser.add_argument("--report_episodes", type=int, default=None)
+    parser.add_argument("--timing", choices=("baseline", "unified_20hz"), default="baseline")
     parser.add_argument("--max_iterations", type=int, default=None, help="Optional smoke-run limit; default unlimited")
     parser.add_argument("--stop_after_acceptance", action="store_true", help="Finish when this stage reaches 80%")
     parser.add_argument("--stage", choices=("pretrain_s0", "pretrain_s1", "pretrain_s2", "finetune_s1", "finetune_s2"),
@@ -57,7 +59,7 @@ def main():
     parser.add_argument("--checkpoint", type=Path, help="Previous stage checkpoint from this experiment")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--terrain_seed", type=int, default=0)
-    parser.add_argument("--variant", choices=("step", "continuous", "dcol"), default="step")
+    parser.add_argument("--variant", choices=("step", "continuous", "dcol", "truncated_window"), default="step")
     parser.add_argument("--algorithm", choices=("bptt", "shac", "ahac"), default="bptt",
                         help="ahac selects AHAC-derived DCOL synchronous adaptation")
     parser.add_argument("--timesteps", type=int, default=150)
@@ -66,6 +68,7 @@ def main():
                         help="Depth raycast environment batch size; does not change image resolution")
     parser.add_argument("--lr", type=float, default=None, help="Default: 0.001 pretraining, 0.00005 fine-tuning")
     parser.add_argument("--lr_schedule", choices=("cosine", "plateau", "constant"), default="cosine")
+    parser.add_argument("--plateau_patience", type=int, default=2)
     parser.add_argument("--observation_normalization", type=parse_binary_flag, default=False, metavar="{0,1}")
     parser.add_argument("--normalization_variance_floor", type=float, default=1e-4)
     parser.add_argument("--recovery_enabled", type=parse_binary_flag, default=True, metavar="{0,1}")
@@ -100,6 +103,8 @@ def main():
         parser.error("num_envs and max_iterations must be positive")
     if args.camera_batch_size < 1:
         parser.error("camera_batch_size must be positive")
+    if args.report_episodes is not None and args.report_episodes < 1:
+        parser.error("report_episodes must be positive")
     if args.stage == "pretrain_s0" and args.checkpoint is not None:
         parser.error("Pretraining S0 must start from random initialization")
     if args.stage != "pretrain_s0" and args.checkpoint is None and args.max_iterations is None:
@@ -121,6 +126,8 @@ def main():
     stage = STAGE_CONFIGS[args.stage]
     cfg = ZhangNavRLEnvCfg()
     cfg.variant = args.variant
+    cfg.timing = args.timing
+    cfg.training_report_episodes = args.report_episodes
     cfg.scene.num_envs = args.num_envs
     cfg.seed, cfg.terrain_seed = args.seed, args.terrain_seed
     cfg.num_static_obstacles = stage["static_obstacles"]
@@ -134,12 +141,13 @@ def main():
     fields = ("variant", "algorithm", "timesteps", "max_iterations", "stop_after_acceptance", "velocity_window_s", "lr", "max_grad_norm",
               "grad_decay", "coef_obj_avoidance", "coef_collide", "coef_d_acc", "coef_d_jerk",
               "coef_height_boundary", "boundary_margin", "boundary_scale", "cosine_period_updates", "seed",
-              "gradient_diagnostic_updates", "observation_normalization", "lr_schedule", "recovery_enabled",
+              "gradient_diagnostic_updates", "observation_normalization", "lr_schedule", "recovery_enabled", "plateau_patience",
               "normalization_variance_floor",
               "critic_lr", "critic_iterations", "critic_max_iterations", "discount", "td_lambda",
               "ahac_min_horizon", "ahac_max_horizon", "ahac_initial_horizon",
               "ahac_risk_clearance", "ahac_risk_scale", "ahac_risk_budget", "ahac_dual_lr")
-    train_cfg = ZhangTrainCfg(**{name: getattr(args, name) for name in fields})
+    train_cfg = ZhangTrainCfg(**{name: getattr(args, name) for name in fields},
+                              physics_dt=cfg.sim.dt, policy_dt=cfg.sim.dt * cfg.decimation)
     train_cfg.validate()
     torch.manual_seed(args.seed)
     args.log_dir.mkdir(parents=True, exist_ok=True)
@@ -154,6 +162,9 @@ def main():
                         "collision_terminates": args.variant != "continuous",
                         "bounds_terminates": args.variant != "continuous",
                         "physics_dt": cfg.sim.dt, "policy_dt": cfg.sim.dt * cfg.decimation,
+                        "timing": args.timing, "report_episodes": args.report_episodes or args.num_envs,
+                        "lidar_period_s": cfg.scene.lidar.update_period,
+                        "depth_period_s": cfg.scene.depth_camera.update_period,
                         "depth_camera": {"width": cfg.scene.depth_camera.pattern_cfg.width,
                                          "height": cfg.scene.depth_camera.pattern_cfg.height,
                                          "batch_size": cfg.depth_camera_batch_size,

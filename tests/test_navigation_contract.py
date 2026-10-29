@@ -25,7 +25,6 @@ def test_navrl_free_space_observation_and_reward():
     torch.testing.assert_close(result["reward"], torch.tensor([2 + math.log(4)]))
     assert result["lidar"].count_nonzero() == 0
     assert result["dynamic_obstacle"].count_nonzero() == 0
-    assert not result["collision"].any()
 
 
 def test_goal_frame_is_the_fixed_episode_frame():

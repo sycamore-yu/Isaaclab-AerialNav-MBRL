@@ -45,7 +45,7 @@ NavRL 入口保留用于代码兼容；本轮不启动 PPO 训练。Zhang 超参
 
 两任务保留 Hummingbird USD、Lee 控制律和 RotorGroup 电机响应。两环境的深度相机默认采样 160×120 像素，内参随分辨率缩放以保留原视场，再完成逆深度变换、噪声和 12×16 池化。NavRL 策略仍使用原 LiDAR 特征。动态物体同时进入相机、碰撞检测和损失。
 
-Zhang 保留速度匹配、避障、碰撞、加速度、Jerk 和速度预测辅助损失，并增加仅在上下高度边界附近激活、远越界仍有恢复梯度的 SmoothL1 损失。默认 `step` 使用逐策略步速度项；`continuous` 与 `dcol` 保留20步窗口。truncated_window 已取消。continuous 的碰撞和高度越界均不重置，首次失败仍锁存。当前归一化、Plateau、SHAC/AHAC 对照统一使用 dcol，见 [新机制](docs/ZHANG_NEW_MECHANISMS_20261029.md)。学习率预训练默认为 0.001，微调默认为 0.00005；余弦周期为 400 次更新。全局梯度范数裁剪为 5。网络使用激活检查点减少显存。
+Zhang 保留速度匹配、避障、碰撞、加速度、Jerk 和速度预测辅助损失，并增加仅在上下高度边界附近激活、远越界仍有恢复梯度的 SmoothL1 损失。默认 `step` 使用逐策略步速度项；`continuous` 与 `dcol` 保留20步窗口。truncated_window 已恢复短碰撞回合的窗口计分。continuous 的碰撞和高度越界均不重置，首次失败仍锁存。当前八组对照移除 RMS，Plateau patience=2、AHAC 最大 H=300，见 [有符号几何修复与对照](docs/ZHANG_SIGNED_GEOMETRY_20261029.md)。学习率预训练默认为 0.001，微调默认为 0.00005；余弦周期为 400 次更新。全局梯度范数裁剪为 5。网络使用激活检查点减少显存。
 
 ## 扰动与日志
 

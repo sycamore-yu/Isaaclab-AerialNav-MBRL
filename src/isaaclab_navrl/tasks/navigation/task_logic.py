@@ -111,13 +111,12 @@ def navigation_terms(position, velocity, target, direction, lidar_distance, moti
     lidar_distance = lidar_distance.clamp_max(4.0)
     lidar_scan = 4.0 - lidar_distance
     dynamic = position.new_zeros(len(position), 1, 5, 10)
-    dynamic_collision = torch.zeros(len(position), device=position.device, dtype=torch.bool)
     safety_dynamic = position.new_zeros(len(position))
     if len(motion.position):
         relative_all = motion.position[None] - position[:, None]
         relative_all[:, motion.cylinders, 2] = 0.0
         distances_xy = relative_all[..., :2].norm(dim=-1)
-        selected_dist, indices = distances_xy.topk(5, dim=-1, largest=False)
+        selected_dist, indices = distances_xy.topk(min(5, len(motion.position)), dim=-1, largest=False)
         outside = selected_dist > 4.0
         relative_selected = relative_all.gather(1, indices[..., None].expand(-1, -1, 3))
         relative_goal = goal_frame(relative_selected, direction).masked_fill(outside[..., None], 0)
@@ -138,11 +137,7 @@ def navigation_terms(position, velocity, target, direction, lidar_distance, moti
             ),
             dim=-1,
         ).unsqueeze(1)
-        dynamic_collision = (
-            (relative_selected[..., :2].norm(dim=-1) <= widths[..., 0] / 2 + 0.3)
-            & (relative_selected[..., 2].abs() <= heights[..., 0] / 2 + 0.3)
-            & ~outside
-        ).any(dim=-1)
+        dynamic = torch.nn.functional.pad(dynamic, (0, 0, 0, 5 - dynamic.shape[2]))
         surface_distance = (norm[..., 0] - widths[..., 0] / 2).masked_fill(outside, 4.0)
         safety_dynamic = surface_distance.clamp(1e-6, 4.0).log().mean(dim=-1)
     safety_static = lidar_distance.clamp(1e-6, 4.0).log().flatten(1).mean(dim=-1)
@@ -152,10 +147,9 @@ def navigation_terms(position, velocity, target, direction, lidar_distance, moti
     above = (position[:, 2] - height_range[:, 1] - 0.2).clamp_min(0)
     height = below.square() + above.square()
     reward = velocity_reward + 1 + safety_static + safety_dynamic - 0.1 * smooth - 8 * height
-    collision = (lidar_scan.flatten(1).amax(dim=-1) > 3.7) | dynamic_collision
     return {
         "state": state, "lidar": lidar_scan, "dynamic_obstacle": dynamic,
-        "reward": reward, "collision": collision,
+        "reward": reward,
         "bounds": (position[:, 2] < 0.2) | (position[:, 2] > 4.0),
         "reached": distance[:, 0] < 0.5,
         "reward_velocity": velocity_reward, "reward_static": safety_static,

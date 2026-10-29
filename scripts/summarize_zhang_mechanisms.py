@@ -226,8 +226,9 @@ def summarize_window(updates, reports, result=None):
 
 
 def summarize_stage(run_path, stage, declared):
-    directory = run_path / "zhang" / stage
-    config, config_source = read_source(directory / "config.json")
+    method = declared.get("method", "zhang")
+    directory = run_path / method / stage
+    config, config_source = read_source(directory / ("run_config.json" if method == "navrl" else "config.json"))
     result, result_source = read_source(directory / "training_result.json")
     updates, update_source = read_source(directory / "updates.jsonl", jsonl=True)
     reports, report_source = read_source(directory / "training_statistics.jsonl", jsonl=True)
@@ -239,6 +240,13 @@ def summarize_stage(run_path, stage, declared):
         "normalization": train.get("observation_normalization"), "lr_schedule": train.get("lr_schedule"),
         "seed": train.get("seed", environment.get("seed")),
     }
+    if method == "navrl":
+        environment = config
+        observed = {
+            "variant": "navrl", "algorithm": "ppo", "normalization": False,
+            "lr_schedule": config.get("training", {}).get("algorithm", {}).get("schedule"),
+            "seed": config.get("seed"),
+        }
     mismatches = {key: {"manifest": declared[key], "observed": observed[key]} for key in IDENTITY
                   if observed[key] is not None and observed[key] != declared[key]}
     issues = []

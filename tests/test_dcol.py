@@ -113,7 +113,7 @@ def test_coincident_centres_and_symmetry_axes_are_finite(cylinder):
     value.sum().backward()
     assert value[0] == 0
     assert torch.isfinite(value).all() and torch.isfinite(point.grad).all()
-    torch.testing.assert_close(point.grad[0], torch.zeros(3, dtype=torch.float64))
+    torch.testing.assert_close(point.grad[0], torch.tensor([1.25, 0, 0], dtype=torch.float64))
 
 
 def test_dynamic_minimum_handles_both_primitives_and_owns_scene_snapshots():

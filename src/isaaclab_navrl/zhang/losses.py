@@ -40,6 +40,25 @@ def velocity_step_loss(velocity, target, *, reduction="mean"):
     return F.smooth_l1_loss(delta, torch.zeros_like(delta), reduction=reduction)
 
 
+def _short_collision_samples(velocity, target, episode_ids, window, done, collision, current_start, full_valid):
+    time = torch.arange(velocity.shape[0], device=velocity.device)[:, None]
+    changed = torch.cat((torch.ones_like(episode_ids[:1], dtype=torch.bool),
+                         episode_ids[1:] != episode_ids[:-1]), dim=0)
+    start = torch.where(changed, time, 0).cummax(dim=0).values
+    length = time - start + 1
+    gather_start = start[..., None].expand(-1, -1, velocity.shape[-1])
+    cumulative = torch.cat((torch.zeros_like(velocity[:1]), velocity.cumsum(dim=0)), dim=0)
+    average = (cumulative[1:] - cumulative.gather(0, gather_start)) / length[..., None]
+    start_target = target.gather(0, gather_start)
+    delta = (average - start_target).norm(dim=-1)
+    full_scored = torch.zeros_like(done)
+    full_scored[window:] = full_valid
+    # The source omits sample zero: the first episode can reach W samples without
+    # producing a full-window score. Include that terminal once as well.
+    valid = done & collision & (length <= window) & ~full_scored & (time >= current_start)
+    return F.smooth_l1_loss(delta, torch.zeros_like(delta), reduction="none"), valid
+
+
 def height_boundary_loss(position, bounds=(0.2, 4.0), margin=0.5, scale=0.5, *, reduction="mean"):
     """C1 near-boundary penalty with a nonzero inward gradient far outside.
 
@@ -64,13 +83,14 @@ def zhang_transition_costs(history, cfg, velocity_history=None):
     Cached prefix samples may complete a window, but receive neither a new
     score nor a gradient. Windows crossing an episode boundary remain masked.
     """
-    if cfg.variant not in ("step", "continuous", "dcol"):
+    if cfg.variant not in ("step", "continuous", "dcol", "truncated_window"):
         raise ValueError(f"Unsupported Zhang loss variant: {cfg.variant}")
     velocity = torch.stack(history["velocity"])
     target = torch.stack(history["target_velocity"])
     episode = torch.stack(history["episode_id"])
     timesteps, num_envs = velocity.shape[:2]
     detached_history = None
+    short_samples = velocity.new_zeros(())
     if cfg.variant == "step":
         velocity_cost = velocity_step_loss(velocity, target, reduction="none")
         valid_samples = velocity.new_tensor(timesteps * num_envs)
@@ -93,13 +113,23 @@ def zhang_transition_costs(history, cfg, velocity_history=None):
         # endpoints instead of spreading their costs over the current rollout.
         padding = values.new_zeros(min(window, all_velocity.shape[0]), num_envs)
         endpoint_cost = torch.cat((padding, values * valid), dim=0)[prefix_length:]
+        if cfg.variant == "truncated_window":
+            prefix_done = torch.zeros_like(all_episode[:prefix_length], dtype=torch.bool)
+            done = torch.cat((prefix_done, torch.stack(history["done"])), dim=0)
+            collided = torch.cat((prefix_done, torch.stack(history["collision"])), dim=0)
+            short_values, short_valid = _short_collision_samples(
+                all_velocity, all_target, all_episode, window, done, collided, prefix_length, valid
+            )
+            endpoint_cost = endpoint_cost + (short_values * short_valid)[prefix_length:]
+            short_samples = short_valid.sum()
+            valid_samples = valid_samples + short_samples
         velocity_cost = endpoint_cost * (timesteps * num_envs / valid_samples.clamp_min(1))
         detached_history = {
             "velocity": all_velocity[-window:].detach(),
             "target_velocity": all_target[-window:].detach(),
             "episode_id": all_episode[-window:].detach(),
         }
-    distance = torch.stack(history["obstacle_vector"]).norm(dim=-1) - torch.stack(history["margin"])[:, :, None]
+    distance = torch.stack(history["obstacle_distance"]) - torch.stack(history["margin"])[:, :, None]
     # Ten source look-ahead points include both endpoints: dt_sample = policy_dt / 9.
     approach = (-distance.diff(dim=2) * ((distance.shape[2] - 1) / cfg.policy_dt)).clamp_min(1).detach()
     collision_gap = torch.stack(history["dcol_gap"]) if cfg.variant == "dcol" else distance[:, :, 1:]
@@ -126,8 +156,7 @@ def zhang_transition_costs(history, cfg, velocity_history=None):
     losses["total"] = cost.mean()
     losses["velocity_valid_samples"] = valid_samples.detach()
     losses["velocity_sample_fraction"] = valid_samples.detach() / (timesteps * num_envs)
-    # Preserve the inert log key for existing readers of the historical runs.
-    losses["velocity_short_terminal_samples"] = velocity.new_zeros(())
+    losses["velocity_short_terminal_samples"] = short_samples.detach()
     return losses, detached_history, cost
 
 

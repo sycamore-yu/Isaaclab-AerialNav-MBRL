@@ -91,7 +91,7 @@ class AcceptanceProtocolTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             parse_train_args(["--variant", "unknown"])
         with self.assertRaises(ValueError):
-            parse_train_args(["--variant", "truncated_window"])
+            parse_train_args(["--variant", "unknown_variant"])
 
     def test_algorithm_stability_controls_and_explicit_boolean_values_are_preserved(self):
         values = parse_train_args([

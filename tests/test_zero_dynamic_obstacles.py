@@ -64,7 +64,6 @@ def test_zero_dynamic_motion_and_navigation_keep_fixed_observation_shapes():
     assert terms["dynamic_obstacle"].shape == (2, 1, 5, 10)
     torch.testing.assert_close(terms["dynamic_obstacle"], torch.zeros(2, 1, 5, 10))
     torch.testing.assert_close(terms["reward_dynamic"], torch.zeros(2))
-    assert not terms["collision"].any()
     observation = torch.cat([terms[key].flatten(1) for key in ("state", "lidar", "dynamic_obstacle")], dim=-1)
     assert observation.shape == (2, 202) and torch.isfinite(observation).all()
 
@@ -103,7 +102,7 @@ def test_empty_dynamic_geometry_keeps_ground_and_static_gradients(snapshots):
     static_closest = query.detach().clone()
     static_closest[..., 0] = torch.tensor([[10.0, 0.1], [10.0, 0.1]])
     positions = torch.empty(2, 1, 0, 3) if snapshots else torch.empty(0, 3)
-    gap = hybrid_collision_gap(query, 0.3, static_closest, positions, torch.empty(0, 3))
+    gap = hybrid_collision_gap(query, 0.3, (query - static_closest.detach()).norm(dim=-1), positions, torch.empty(0, 3))
     torch.testing.assert_close(gap, torch.tensor([[0.29, -0.2], [0.39, -0.2]]))
     gap.sum().backward()
     torch.testing.assert_close(query.grad, torch.tensor([[[0.0, 0.0, 1.0], [-1.0, 0.0, 0.0]],

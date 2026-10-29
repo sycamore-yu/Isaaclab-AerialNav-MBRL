@@ -58,7 +58,7 @@ def main():
                     depth = env.get_zhang_observation()["depth_features"]
                     assert depth.shape == (4, 1, 12, 16) and torch.isfinite(depth).all()
                 query = env.root_state()[:, None, :3].detach().requires_grad_()
-                vectors = env.nearest_obstacle_vector(query)
+                vectors = env.obstacle_signed_distance(query)
                 vectors.square().sum().backward()
                 assert torch.isfinite(query.grad).all()
                 stages.append({"active_obstacles": difficulty, "allocated_obstacles": 120,

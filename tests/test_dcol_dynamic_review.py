@@ -26,7 +26,7 @@ def test_hybrid_does_not_mix_old_dynamic_distance_into_the_static_branch():
     sizes = torch.tensor([[2.0, 2.0, 1.0]], dtype=torch.float64)
     radius = torch.tensor([[0.3]], dtype=torch.float64)
 
-    gap = hybrid_collision_gap(query, radius, static_closest, positions, sizes)
+    gap = hybrid_collision_gap(query, radius, (query - static_closest.detach()).norm(dim=-1), positions, sizes)
     expected = torch.tensor([[0.3 * (1.15 / 1.3 - 1)]], dtype=torch.float64)
     torch.testing.assert_close(gap, expected, rtol=1e-12, atol=1e-12)
     assert abs(gap.item() - (-0.15)) > 0.1
@@ -47,7 +47,7 @@ def test_hybrid_static_and_ground_use_independent_metric_clearances(empty_dynami
         [[3.0, 0.0, 2.0]], dtype=torch.float64)
     sizes = torch.ones_like(positions)
 
-    gap = hybrid_collision_gap(query, 0.3, static_closest, positions, sizes, ground_z=0.01)
+    gap = hybrid_collision_gap(query, 0.3, (query - static_closest.detach()).norm(dim=-1), positions, sizes, ground_z=0.01)
     torch.testing.assert_close(gap, torch.tensor([-0.1, -0.11], dtype=torch.float64))
     query_gradient, static_gradient = torch.autograd.grad(gap.sum(), (query, static_closest), allow_unused=True)
     torch.testing.assert_close(query_gradient, torch.tensor([[-1.0, 0.0, 0.0], [0.0, 0.0, 1.0]], dtype=torch.float64))
@@ -73,7 +73,7 @@ def test_dynamic_cpu_and_cuda_values_and_position_gradients_agree(use_hybrid):
     for device in ("cpu", "cuda:0"):
         query = source.detach().to(device).requires_grad_()
         if use_hybrid:
-            value = hybrid_collision_gap(query, radii.to(device), static_closest.to(device),
+            value = hybrid_collision_gap(query, radii.to(device), (query - static_closest.to(device)).norm(dim=-1),
                                          positions.to(device), sizes.to(device))
         else:
             value = dynamic_min_alpha(query, radii.to(device), positions.to(device), sizes.to(device),
@@ -127,7 +127,7 @@ def test_per_environment_positions_broadcast_over_lookahead_samples():
     # The public hybrid helper accepts the same per-query snapshot contract.
     static_closest = query.detach().clone()
     static_closest[..., 2] = 0.01
-    gap = hybrid_collision_gap(query, radius, static_closest, positions, sizes)
+    gap = hybrid_collision_gap(query, radius, (query - static_closest.detach()).norm(dim=-1), positions, sizes)
     torch.testing.assert_close(gap, radius * (alpha.detach() - 1))
 
 

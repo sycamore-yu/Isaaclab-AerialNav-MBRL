@@ -11,6 +11,7 @@ from isaaclab_navrl.control import LeeRotorController
 from isaaclab_navrl.zhang.termination import latch_first_event, reset_first_event, termination_mask
 
 from .curriculum import TrainingCurriculum, active_obstacle_indices
+from .geometry import TerrainDistance, obstacle_signed_distance
 from .randomization import PolicyPerturbation
 from .task_logic import DynamicObstacleMotion, goal_frame, navigation_terms
 
@@ -23,10 +24,15 @@ class NavRLEnv(DirectRLEnv):
             cfg.sim_to_real.enabled = False
         cfg.configure_scene()
         super().__init__(cfg, render_mode=render_mode, **kwargs)
+        self.terrain_distance = TerrainDistance.from_stage(self.sim.stage, self.device)
         self.drone = self.scene["drone"]
         self.lidar = self.scene["lidar"]
         self.controller = LeeRotorController(self.num_envs, self.device, dt=self.physics_dt)
         self.curriculum = TrainingCurriculum(self.num_envs, self.device, stage=cfg.training_stage) if cfg.training_curriculum else None
+        if self.curriculum is not None and cfg.training_report_episodes is not None:
+            if cfg.training_report_episodes < 1:
+                raise ValueError("training_report_episodes must be positive")
+            self.curriculum.min_episodes = cfg.training_report_episodes
         self.perturbation = PolicyPerturbation(
             cfg.sim_to_real, self.num_envs, self.device, cfg.seed,
             nominal_action_delay=1 if cfg.method == "zhang" else 0,
@@ -189,6 +195,18 @@ class NavRLEnv(DirectRLEnv):
         self.dynamic_collection.write_body_pose_to_sim_index(body_poses=self._dynamic_pose)
         self.dynamic_collection.write_data_to_sim()
 
+    def obstacle_signed_distance(self, query):
+        return obstacle_signed_distance(
+            query, self.terrain_distance.signed_distance(query), self.motion.position, self.motion.size
+        )
+
+    def _compute_first_events(self):
+        from isaaclab_navrl.zhang.termination import first_events
+
+        state = self.root_state()
+        radius = 0.3  # Shared task sphere; training safety margins are separate.
+        return first_events(state, self.target_pos, self.obstacle_signed_distance(state[:, :3]) - radius)
+
     def _compute_terms(self):
         state = self.root_state()
         hits = self.lidar.data.ray_hits_w.torch
@@ -198,7 +216,7 @@ class NavRLEnv(DirectRLEnv):
             state[:, :3], state[:, 7:10], self.target_pos, self.target_dir, distances,
             self.motion, self.previous_velocity, self.height_range,
         )
-        self._terms["invalid"] = ~torch.isfinite(state).all(dim=-1)
+        self._terms.update(self._compute_first_events())
         return self._terms
 
     def _get_dones(self):
@@ -289,13 +307,15 @@ class ZhangNavRLEnv(NavRLEnv):
         super().__init__(cfg, render_mode=render_mode, **kwargs)
         from isaaclab_navrl.zhang.controller import GraphedLeeRotorController
 
-        from .geometry import TerrainDistance
-
+        if self.physics_dt != 0.01:
+            # Preserve the baseline motor time constant when changing its sample period.
+            for name in ("tau_up", "tau_down"):
+                tau = self.controller.rotor_parameters[name]
+                tau.copy_(1 - (1 - tau).pow(self.physics_dt / 0.01))
         state = self.root_state()
         self.controller = GraphedLeeRotorController(
             self.controller, (state, state[:, 7:10], self.command, self.command[:, :1])
         )
-        self.terrain_distance = TerrainDistance.from_stage(self.sim.stage, self.device)
         self._event_code = torch.zeros(self.num_envs, dtype=torch.int8, device=self.device)
         self._event_time = torch.zeros(self.num_envs, device=self.device)
         self._substep_collision = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
@@ -344,13 +364,6 @@ class ZhangNavRLEnv(NavRLEnv):
         camera.set_intrinsic_matrices(matrices, env_ids=env_ids)
         camera.set_mount_pitch(self.zhang_parameters["camera_pitch"][env_ids].reshape(-1), env_ids)
 
-    def nearest_obstacle_vector(self, query):
-        from .geometry import nearest_obstacle_vector
-
-        return nearest_obstacle_vector(
-            query, self.terrain_distance.closest_points(query), self.motion.position, self.motion.size
-        )
-
     def _pre_physics_step(self, actions):
         self._stepping = True
         self._terms = None
@@ -372,18 +385,9 @@ class ZhangNavRLEnv(NavRLEnv):
                 # The legacy curriculum can change the shared obstacle count.
                 self._dynamic_positions_by_substep = self.motion.position.new_zeros(shape)
 
-    def _compute_first_events(self):
-        from isaaclab_navrl.zhang.termination import first_events
-
-        state = self.root_state()
-        hits = self.lidar.data.ray_hits_w.torch
-        origin = self.lidar.data.pos_w.torch
-        distances = (hits - origin[:, None]).norm(dim=-1).clamp_max(4).reshape(self.num_envs, 1, 36, 4)
-        return first_events(state, self.target_pos, distances, self.motion)
-
     def _record_substep(self, terms):
         # A 10 Hz policy can cross the collision band between observations.
-        # Evaluate the unchanged NavRL rules at every completed PhysX step.
+        # Use the same sphere clearance at every completed PhysX step.
         elapsed_s = self._policy_start_time + self._physical_substep * self.physics_dt
         latch_first_event(self._event_code, self._event_time, terms, elapsed_s)
         # Keep this policy step's first collision even if the episode's first

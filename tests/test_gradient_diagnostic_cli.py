@@ -103,7 +103,7 @@ class GradientDiagnosticCliTests(unittest.TestCase):
                         parse_training_cli([f"--{flag}={raw}"])
                     self.assertEqual(error.exception.code, 2)
         with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
-            parse_training_cli(["--variant", "truncated_window"])
+            parse_training_cli(["--variant", "unknown_variant"])
 
     def test_only_s0_can_be_fresh_in_unlimited_training_for_both_trainers(self):
         cases = (["--stage", "pretrain_s0", "--checkpoint", "/unit/old.pt"],

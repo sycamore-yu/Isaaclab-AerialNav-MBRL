@@ -104,6 +104,24 @@ class MechanismSummaryFixtureTests(unittest.TestCase):
         self.assertIn("H=16", stage["notes"][0])
         self.assertTrue(Path(first["source"]["path"]).is_absolute())
 
+    def test_ppo_keeps_actual_step_budget_and_original_config_identity(self):
+        directory, _ = self.run_fixture("navrl_ppo", horizons=(32, 32), algorithm="ppo")
+        destination = directory.parent.parent / "navrl" / directory.name
+        destination.parent.mkdir()
+        directory.rename(destination)
+        entry = self.entries[-1]
+        entry.update(method="navrl", variant="navrl", lr_schedule="fixed")
+        (destination / "config.json").unlink()
+        self.write(destination / "run_config.json", {
+            "method": "navrl", "seed": 0, "num_envs": 10,
+            "training": {"algorithm": {"schedule": "fixed"}},
+        })
+        result = self.stage(self.summary(), "navrl_ppo")
+        self.assertEqual(result["identity_mismatches"], {})
+        self.assertEqual(result["identity_missing_fields"], [])
+        self.assertEqual(result["summary"]["stage_environment_steps"], 640)
+        self.assertEqual(result["observed_identity"]["algorithm"], "ppo")
+
     def test_common_stage_budget_selects_whole_updates_without_interpolation(self):
         fixed, _ = self.run_fixture("fixed", horizons=(50, 50), algorithm="shac")
         adaptive, _ = self.run_fixture("adaptive", horizons=(32, 16, 16))
