@@ -69,4 +69,13 @@ NavRL 保留已批准的官方 PPO 差异：单一 Adam、平方价值损失、�
 
 两份编排均按四阶段协议运行。Zhang 的有限步检查权重没有加载到正式训练中。启动命令、提交和进程信息保存在各根目录旁的 `.launch.json`；阶段标准输出位于 `<根目录>/<方法>/<阶段>.stdout.log`，实时结果位于 `<根目录>/<方法>/<阶段>/training_result.json`。启动时尚未通过任何阶段；后续以真实JSON为准。
 
+### 速度窗口对照
+
+另以相同种子、H=150和全部其他参数，从随机权重启动2秒（20策略步）速度窗口：
+`logs/curriculum/sim2real_zhang_seed0_h150_w2_20261029/`，编排PID 568193。比较记录位于 `logs/curriculum/zhang_velocity_window_study_20261029.json`。初筛采用第15次更新时已有的完整训练报告；这个比较预算不改变正式训练的无限更新或80%晋级条件。
+
+6秒基线完成15次更新后停止：4025个完成回合，首次到达27（0.671%），高度越界3992（99.180%），碰撞6（0.149%）；有效速度窗口比例仅0.0918%。此前最佳首次到达率为第10次更新的1.949%。停止时保留日志和最佳检查点，没有载入另一组训练。运行JSON将人为中断记为 `KeyboardInterrupt`，对照记录将其标为 `pruned`。
+
+2秒组继续训练，NavRL正式运行也继续。其第9次更新首次到达率2.57%、高度越界33.02%，第10次为1.36%、26.85%；成功率仍低，不能据此声称验收通过。两个窗口的速度损失使用不同的样本集合，不能仅按损失数值比较优劣。
+
 TensorBoard 地址为 `http://100.92.244.71:6012/`，日志根目录为 `logs/curriculum/`。两任务按阶段记录 `Train/<stage>/success_rate`、`collision_rate`、`bounds_rate`、`timeout_rate`、`invalid_rate`、`success_time_mean_s`、`episode_return_mean`、`episode_length_mean` 和 `reward_per_step_mean`。Zhang 另记录原损失、梯度范数、有效速度窗口比例、更新耗时与执行动作误差。
