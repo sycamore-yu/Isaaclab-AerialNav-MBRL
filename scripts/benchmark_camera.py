@@ -34,12 +34,15 @@ def main():
     parser.add_argument("--static_obstacles", type=int, default=350)
     parser.add_argument("--dynamic_obstacles", type=int, default=100)
     parser.add_argument("--pixel_noise_std", type=float, default=0.02)
+    parser.add_argument("--camera_batch_size", type=int, default=None)
     parser.add_argument("--output", type=Path, default=Path("logs/benchmark/camera_16.json"))
     add_launcher_args(parser)
     parser.set_defaults(visualizer=["none"])
     args = parser.parse_args()
     if args.samples < 1 or args.warmup < 1 or args.num_envs < 1:
         parser.error("num_envs, samples, and warmup must be positive")
+    if args.camera_batch_size is not None and args.camera_batch_size < 1:
+        parser.error("camera_batch_size must be positive")
 
     import gymnasium as gym
     import torch
@@ -54,12 +57,15 @@ def main():
     cfg.num_static_obstacles, cfg.num_dynamic_obstacles = args.static_obstacles, args.dynamic_obstacles
     cfg.evaluation = True  # Fixed starts, nominal dynamics, fixed mount and intrinsics.
     cfg.sim.device = args.device
+    if args.camera_batch_size is not None:
+        cfg.depth_camera_batch_size = args.camera_batch_size
     cfg.configure_scene()
     with launch_simulation(cfg, args):
         env = gym.make("Isaac-NavRL-Zhang-Hummingbird-Direct-v0", cfg=cfg).unwrapped
         try:
             env.reset()
             camera = env.scene["depth_camera"]
+            assert camera._batch_size == min(args.num_envs, cfg.depth_camera_batch_size)
             # Keep the training image-noise cost while holding physical parameters fixed.
             camera.cfg.pixel_noise_std = args.pixel_noise_std
             assert camera.image_shape == (cfg.scene.depth_camera.pattern_cfg.height,

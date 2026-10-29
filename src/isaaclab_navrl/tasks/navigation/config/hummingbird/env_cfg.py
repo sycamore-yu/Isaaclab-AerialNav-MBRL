@@ -108,6 +108,7 @@ class NavRLEnvCfg(DirectRLEnvCfg):
     seed = 0
     num_static_obstacles: int = 350
     num_dynamic_obstacles: int = 60
+    depth_camera_batch_size: int = 16
     training_curriculum: bool = True
     training_stage: str | None = None
     sim_to_real: SimToRealCfg = SimToRealCfg()
@@ -172,6 +173,7 @@ class NavRLEnvCfg(DirectRLEnvCfg):
         self.scene.depth_camera = BatchedDepthCameraCfg(
             prim_path="{ENV_REGEX_NS}/Hummingbird/base_link",
             spawn=None,
+            batch_size=self.depth_camera_batch_size,
             update_period=self.sim.dt * self.decimation,
             seed=self.seed + 101,
             pixel_noise_std=(

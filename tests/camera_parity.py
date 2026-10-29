@@ -12,9 +12,14 @@ from isaaclab.app import add_launcher_args, launch_simulation
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=Path("logs/smoke/camera_parity.json"))
+    parser.add_argument("--camera_batch_size", type=int, default=16)
     add_launcher_args(parser)
     parser.set_defaults(visualizer=["none"])
     args = parser.parse_args()
+    if args.camera_batch_size < 3:
+        parser.error("camera_batch_size must be at least 3 to test partial resets")
+    batch_size = args.camera_batch_size
+    num_envs = batch_size + 1
     import gymnasium as gym
     import torch
     from isaaclab.utils.math import quat_apply, quat_from_euler_xyz
@@ -27,14 +32,15 @@ def main():
     cfg = ZhangNavRLEnvCfg()
     cfg.training_curriculum = False
     cfg.num_dynamic_obstacles = 100
-    cfg.scene.num_envs = 17  # Full 16-camera batch plus a one-camera tail.
+    cfg.scene.num_envs = num_envs  # One full camera batch plus a one-camera tail.
     cfg.evaluation = True
     cfg.sim.device = args.device
+    cfg.depth_camera_batch_size = batch_size
     cfg.configure_scene()
     cfg.scene.reference_depth = cfg.scene.depth_camera.copy()
     cfg.scene.reference_depth.class_type = ResolvableString("isaaclab.sensors:MultiMeshRayCasterCamera")
     result = {
-        "status": "running", "num_envs": 17,
+        "status": "running", "num_envs": num_envs, "camera_batch_size": batch_size,
         "full_resolution": [120, 160], "pooled_resolution": [12, 16],
         "atol": 2e-5, "rtol": 1e-5, "stages": {},
     }
@@ -66,13 +72,13 @@ def main():
             camera, reference = env.scene["depth_camera"], env.scene["reference_depth"]
             camera.cfg.pixel_noise_std = 0.0
             assert camera.image_shape == (120, 160)
-            assert camera._batch_size == 16
+            assert camera._batch_size == batch_size
             result["world_mesh"] = camera.world_mesh_info
             result["intrinsics"] = camera.data.intrinsic_matrices.torch.cpu().tolist()
             initial_intrinsics = camera.data.intrinsic_matrices.torch.clone()
 
             def measure(name, *, selected=None, refresh=True):
-                for begin, end in ((0, 16), (16, 17)):
+                for begin, end in ((0, batch_size), (batch_size, num_envs)):
                     cached = camera._local_rays(begin, end)
                     original = camera._compute_local_rays(begin, end)
                     for actual, expected in zip(cached, original, strict=True):
@@ -94,7 +100,7 @@ def main():
                     pooled = camera.data.output["policy_depth"].torch.permute(0, 3, 1, 2).clone()
                 finally:
                     depth_module.depth_features = depth_features
-                assert [len(batch) for batch in raw_batches] == [16, 1], "Tail batch was not exercised."
+                assert [len(batch) for batch in raw_batches] == [batch_size, 1], "Tail batch was not exercised."
                 raw = torch.cat(raw_batches)
                 native = reference.data.output["distance_to_image_plane"].torch.permute(0, 3, 1, 2).clone()
                 noise = None if noise_batches[0] is None else torch.cat(noise_batches)
@@ -102,7 +108,7 @@ def main():
                 chosen = slice(None) if selected is None else selected
                 details = {
                     "batch_sizes": [len(batch) for batch in raw_batches],
-                    "selected_env_ids": list(range(17)) if selected is None else selected.cpu().tolist(),
+                    "selected_env_ids": list(range(num_envs)) if selected is None else selected.cpu().tolist(),
                     "depth": errors(raw[chosen], native[chosen]),
                     "pooled": errors(pooled, expected),
                     "pixel_noise_std": camera.cfg.pixel_noise_std,
@@ -129,14 +135,14 @@ def main():
 
             measure("initial")
             state = env.root_state()
-            phase = torch.linspace(0.2, 2.7, 17, device=env.device)
+            phase = torch.linspace(0.2, 2.7, num_envs, device=env.device)
             roll = 0.23 * phase.sin()
             pitch = 0.19 * phase.cos()
             yaw = -torch.pi / 2 + 0.3 * phase.sin()
             quaternion = quat_from_euler_xyz(roll, pitch, yaw)
             env.drone.write_root_pose_to_sim_index(
                 root_pose=torch.cat((state[:, :3], quaternion), dim=-1),
-                env_ids=torch.arange(17, device=env.device, dtype=torch.int32),
+                env_ids=torch.arange(num_envs, device=env.device, dtype=torch.int32),
             )
             tilted_raw, _ = measure("roll_pitch_yaw")
             env.lidar.update(0.1)
@@ -150,7 +156,7 @@ def main():
             zero = torch.zeros_like(obstacle_phase)
             poses[0, :, 3:7] = quat_from_euler_xyz(zero, zero, obstacle_phase * 0.07)
             state = env.root_state()
-            forward = quat_apply(state[:, 3:7], state.new_tensor([[1.0, 0.0, 0.0]]).expand(17, -1))
+            forward = quat_apply(state[:, 3:7], state.new_tensor([[1.0, 0.0, 0.0]]).expand(num_envs, -1))
             poses[0, 0, :3] = state[0, :3] + 2.0 * forward[0]
             env.dynamic_collection.write_body_pose_to_sim_index(body_poses=poses)
             env.dynamic_collection.write_data_to_sim()
@@ -161,8 +167,8 @@ def main():
             result["dynamic_obstacles_visible_in_depth"] = True
             result["dynamic_obstacles_excluded_from_navrl_lidar"] = True
 
-            reset_ids = torch.tensor([0, 8, 16], device=env.device, dtype=torch.int32)
-            keep = torch.ones(17, dtype=torch.bool, device=env.device)
+            reset_ids = torch.tensor([0, batch_size // 2, batch_size], device=env.device, dtype=torch.int32)
+            keep = torch.ones(num_envs, dtype=torch.bool, device=env.device)
             keep[reset_ids] = False
             frame_before = camera._frame.clone()
             env._reset_idx(reset_ids)
