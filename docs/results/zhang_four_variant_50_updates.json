@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "comparison": "First 50 completed optimizer updates; all four fresh seed 0 runs",
+  "num_envs": 1024,
+  "timesteps": 150,
+  "environment_steps_per_run": 7680000,
+  "stage": "pretrain_s1",
+  "static_obstacles": 300,
+  "dynamic_obstacles": 60,
+  "randomization": false,
+  "any_stage_passed": false,
+  "notes": [
+    "Only reports at update <= 50 are used. A report requires at least 1024 naturally ended episodes; continuous therefore has no U50 report.",
+    "Recent-five statistics are unweighted population statistics across the five most recent eligible reports.",
+    "Training loop elapsed excludes scene initialization and includes changing shared-GPU contention.",
+    "This early single-seed comparison does not establish final convergence or cross-seed stability."
+  ],
+  "runs": [
+    {
+      "variant": "step",
+      "current_update": 51,
+      "budget": 50,
+      "last_report_update": 50,
+      "latest": {
+        "success_rate": 0.009578544061302681,
+        "collision_rate": 0.30779054916985954,
+        "bounds_rate": 0.6813537675606641,
+        "timeout_rate": 0.001277139208173691
+      },
+      "best": [
+        24,
+        0.08925869894099848
+      ],
+      "recent5_mean": 0.010323773834801335,
+      "recent5_std": 0.005223916827802533,
+      "elapsed_at50": 3904.924006702029,
+      "short_collision_samples_total_to50": 0
+    },
+    {
+      "variant": "continuous",
+      "current_update": 51,
+      "budget": 50,
+      "last_report_update": 49,
+      "latest": {
+        "success_rate": 0.009541984732824428,
+        "collision_rate": 0.2643129770992366,
+        "bounds_rate": 0.7251908396946565,
+        "timeout_rate": 0.0009541984732824427
+      },
+      "best": [
+        41,
+        0.041422782530391715
+      ],
+      "recent5_mean": 0.005988411225948243,
+      "recent5_std": 0.002646248504187451,
+      "elapsed_at50": 3932.0777104129666,
+      "short_collision_samples_total_to50": 0
+    },
+    {
+      "variant": "dcol",
+      "current_update": 50,
+      "budget": 50,
+      "last_report_update": 50,
+      "latest": {
+        "success_rate": 0.02771362586605081,
+        "collision_rate": 0.45265588914549654,
+        "bounds_rate": 0.5096227867590454,
+        "timeout_rate": 0.010007698229407237
+      },
+      "best": [
+        37,
+        0.15525876460767946
+      ],
+      "recent5_mean": 0.03603099432322621,
+      "recent5_std": 0.02047936459099108,
+      "elapsed_at50": 4084.6955987479305,
+      "short_collision_samples_total_to50": 0
+    },
+    {
+      "variant": "truncated_window",
+      "current_update": 51,
+      "budget": 50,
+      "last_report_update": 50,
+      "latest": {
+        "success_rate": 0.024585125998770743,
+        "collision_rate": 0.5150583896742471,
+        "bounds_rate": 0.4603564843269822,
+        "timeout_rate": 0
+      },
+      "best": [
+        24,
+        0.08403361344537816
+      ],
+      "recent5_mean": 0.019884444038567744,
+      "recent5_std": 0.010566172314381889,
+      "elapsed_at50": 3920.693787340075,
+      "short_collision_samples_total_to50": 0
+    }
+  ]
+}
