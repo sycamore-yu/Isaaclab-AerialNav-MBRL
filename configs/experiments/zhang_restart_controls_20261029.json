@@ -14,6 +14,7 @@
   ],
   "stage_promotion_success_rate": 0.8,
   "max_updates": null,
+  "launch_order": ["dcol_truncated", "navrl_ppo", "dcol_per_step"],
   "initialization": "random_at_pretrain_s0_only_same_run_stage_handoff_thereafter",
   "capacity_policy": "Sequential initialization; concurrency from measured complete-update memory and throughput; pending cases are not running results. No training-budget or rollout shortening for capacity.",
   "runs": [
@@ -78,7 +79,7 @@
     {
       "name": "navrl_ppo",
       "method": "navrl",
-      "path": "navrl_restart_navrl_ppo_seed0_20261029",
+      "path": "navrl_restart_ppo_seed0_20261029",
       "train_args": {},
       "comparison_question": "原NavRL算法/奖励/动作/时钟的方法对照"
     },

@@ -79,6 +79,10 @@ PPO 的策略步长为0.016 s，Zhang 为0.1 s，因此相同环境转移数不�
 
 [run_acceptance.py](../../scripts/run_acceptance.py) 每次执行一组实验；计划 JSON 不会被该脚本自动读取或启动。编排器需为每组创建独立的新 `--output`，传入 `--method`、`--screening --num_envs 256 --train_seed 0`、设备及微调学习率。所有父级参数放在 `--train_args` 之前；Zhang 的参数放在其后，布尔值编码为 `0/1`，不能直接传 JSON 的 `true/false` 字符串。PPO 使用 `--method navrl` 且不传 Zhang 的 `--train_args`。
 
+本轮新增[容量队列](../../scripts/run_comparison_queue.py)读取该计划并调用上述父入口。启动时和每次派发前验证同一clean commit；使用独立固定提交工作树，训练导入路径显式指向该源码。最多同时运行两个自有pipeline，先DCOL基线、再PPO、再step；每次新初始化要求所有活动组在**当前阶段**至少完成一次完整update，并要求GPU空闲显存覆盖候选预留量再加2048 MiB。预留量分别为PPO3584、普通Zhang4096、AHAC5120 MiB，是容量准入值，不是已测正式运行峰值。
+
+队列写出`queue.json`、原始计划和每组完整命令/PID/状态；`zhang_manifest.json`只加入实际启动的Zhang组。它不改变更新预算、不暂停续训轮转，也不终止其他会话的进程。收到停止信号或发现子进程错误后只停止继续派发，已有子进程继续运行并被记录；下一槽仅在此前pipeline自然结束或显式停止后释放。若活动组长期未完成课程，剩余候选会继续`queued`，不能宣称十二组已全部启动或已完成比较。
+
 现有父脚本拒绝复用已存在的输出目录；S0 不传 checkpoint，后续四阶段只使用本组上一个已通过阶段的 `checkpoint_stage.pt`。`--train_args` 不允许 checkpoint、resume 或 max_iterations 绕过这条谱系。2026-10-29 的本地只读交叉检查已将计划12组全部传过父参数解析，并构造验证60条阶段命令；11组 Zhang 配置均通过 `ZhangTrainCfg.validate()`。该检查未启动训练进程。
 
 启动回执除完整命令外，应明确记录 `name/path/method`、源码提交与工作树状态、screening/规模、训练和地形 seed、五阶段顺序、无限更新设置，以及 Zhang 的以下实际配置：

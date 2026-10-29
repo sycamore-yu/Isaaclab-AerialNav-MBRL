@@ -22,6 +22,7 @@
 | `geometry_proxy_guard_v6/focused_unit.log/xml` | 45通过，4.29 s | 加入出口数值余量；保持原场景门槛。 |
 | `final_validation/all_unit.log/xml`及`manifest.json` | 366通过、2跳过、522个子测试，56.70 s | 一次整合执行；全部待提交源码。四个未修改参考测试使用本工作树逐字副本放在上游NavRL的同级临时测试目录，以保留原相对路径；显式PYTHONPATH指向本工作树，没有使用另一会话后来修改的主目录测试。 |
 | `final_validation/ruff.log`及manifest | 37个Python文件通过 | 全部修改/新增Python文件，未自动修改代码。 |
+| `queue_validation/unit.log/xml`及manifest | 15通过，0.09 s | 后续新增容量队列：12组fresh命令、布尔参数、当前阶段首update门控、显存/槽位边界、实际Zhang汇总身份；不启动仿真。队列脚本及测试两文件Ruff通过。 |
 
 本地 stdlib 交叉检查另有协议24、CLI15、配置11、汇总12项通过；12组计划、60条阶段命令和11组Zhang配置通过检查，未启动仿真。配置身份缺失或不匹配均排除同预算比较；PPO单独汇总。上述不同轮次不能相加冒作一次整套通过。
 
