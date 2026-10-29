@@ -18,14 +18,15 @@
 | 组 | 与20Hz基线的差异 |
 |---|---|
 | hz50 | 物理/策略/传感器均50Hz；2秒窗口100步；H150覆盖3秒 |
-| shac | SHAC H32；另行提交吸收终止/超时/时域末端语义修复和逐步速度监督 |
-| ahac | AHAC-derived，H初始32、16–300；保留完整窗口 |
+| shac | SHAC H32；吸收终止/超时/末端修复；逐步速度监督 |
+| ahac | 新版AHAC-derived，H初始32、16–300；逐步速度监督 |
 | plateau | 仅换Plateau，patience2 |
 | navrl_height | 仅替换高度损失公式，权重仍为1 |
 
 20Hz的H150覆盖7.5秒，50Hz的H150覆盖3秒。频率对照同时改变实际展开时长，
 不能直接作为只改变物理积分精度的因果试验。同步时钟也不会消除短回合窗口缺失。
-20Hz SHAC H32只有1.6秒，需要正确处理bootstrap，新的SHAC组改为逐步速度监督。
+20Hz的SHAC/AHAC初始H32只有1.6秒，两组均改为逐步速度监督和正确的bootstrap。
+共同终止及AHAC五项修复见 [AHAC风险与预算](migration/AHAC_RISK_AND_BUDGET_20261030.md)。
 
 DCOL控制动态几何碰撞损失；`per_step/full_window/truncated_window`控制速度监督。
 原step/truncated两组同样使用DCOL，分别采用逐步/短终止窗口速度损失。

@@ -9,6 +9,7 @@ from isaaclab.app import add_launcher_args, launch_simulation
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--algorithm', choices=('shac', 'ahac'), default='shac')
     add_launcher_args(parser)
     parser.set_defaults(visualizer=['none'])
     args = parser.parse_args()
@@ -42,7 +43,8 @@ def main():
                 return env.get_zhang_observation(), {}
 
             env.reset = injected_reset
-            trainer = ZhangTrainer(env, ZhangTrainCfg(algorithm='shac', timesteps=8, max_iterations=2,
+            trainer = ZhangTrainer(env, ZhangTrainCfg(algorithm=args.algorithm, timesteps=8, max_iterations=2,
+                ahac_initial_horizon=8, ahac_min_horizon=4, ahac_max_horizon=16,
                 critic_iterations=1, critic_max_iterations=1), args.output.parent/(args.output.stem+'_training'))
             d = trainer.run()
             rows = [json.loads(s) for s in (trainer.log_dir/'updates.jsonl').read_text().splitlines()]
@@ -50,10 +52,12 @@ def main():
             timeouts = sum(r['ActorCritic/pre_reset_timeout_count'] for r in rows)
             assert absorbing > 0 and timeouts > 0
             assert all(r['ActorCritic/absorbing_bootstrap_abs_sum'] == 0 for r in rows)
-            assert all(r['velocity_valid_samples'] == 16*8 for r in rows)
+            assert all(r['velocity_valid_samples'] == 16*r['rollout_steps'] for r in rows)
             assert d['nonfinite_grad_events'] == d['nonfinite_events'] == 0
             assert all(r['executed_action_max_error'] == 0 for r in rows)
             result.update(status='passed', updates=d['completed_updates'], environment_steps=d['environment_steps'],
+                          algorithm=args.algorithm,
+                          maximum_critic_optimizer_steps=max(r['ActorCritic/critic_optimizer_steps'] for r in rows),
                           absorbing_terminals=absorbing, pre_reset_timeouts=timeouts,
                           absorbing_bootstrap_abs_sum=0, velocity_loss_mode=trainer.cfg.resolved_velocity_loss_mode,
                           bootstrap_semantics=d['bootstrap_semantics'], nonfinite_grad_events=0)

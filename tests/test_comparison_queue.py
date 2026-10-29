@@ -174,4 +174,4 @@ def test_twenty_hz_successor_plan_preserves_baseline_and_five_new_controls(tmp_p
         assert values['timing'] == ('unified_50hz' if name == 'hz50' else 'unified_20hz')
         assert values['height_loss_mode'] == ('navrl_range' if name == 'navrl_height' else 'target_exp')
         assert values['coef_height_boundary'] == 1
-        assert values['velocity_loss_mode'] == ('per_step' if name == 'shac' else 'full_window')
+        assert values['velocity_loss_mode'] == ('per_step' if name in ('shac', 'ahac') else 'full_window')

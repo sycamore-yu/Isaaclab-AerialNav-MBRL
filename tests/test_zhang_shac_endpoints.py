@@ -1,6 +1,8 @@
 """Exercise real runner bootstrap graphs with deliberately different reset states."""
 import copy
+from types import SimpleNamespace
 
+import pytest
 import torch
 from test_zhang_contract import AnalyticEnv
 
@@ -17,6 +19,8 @@ class EndpointEnv(AnalyticEnv):
         self.trigger_step = trigger_step
         self.cfg.variant = 'dcol'
         self.episode_length_buf = torch.zeros(2, dtype=torch.long)
+        self.motion = SimpleNamespace(size=torch.empty(0, 3))
+        self.terrain_distance = SimpleNamespace(signed_distance=lambda q: q[..., 0]*0+100)
         self.target = torch.tensor([[10., 0., 2.]]).repeat(2, 1)
         self.terminated_flags = torch.zeros(2, dtype=torch.bool)
         self.timeout_flags = torch.zeros(2, dtype=torch.bool)
@@ -69,9 +73,10 @@ class EndpointEnv(AnalyticEnv):
         return {}, torch.zeros(2), terminated, timeout, {'transition': transition}
 
 
-def _run_endpoint_case(tmp_path, trigger_step=1):
+def _run_endpoint_case(tmp_path, trigger_step=1, algorithm="shac"):
     env = EndpointEnv(trigger_step)
-    cfg = ZhangTrainCfg(algorithm='shac', physics_dt=.01, policy_dt=.1,
+    cfg = ZhangTrainCfg(algorithm=algorithm, physics_dt=.01, policy_dt=.1,
+                        ahac_min_horizon=2, ahac_initial_horizon=2, ahac_max_horizon=2,
                         timesteps=2, max_iterations=1, critic_iterations=1, critic_max_iterations=1)
     trainer = ZhangTrainer(env, cfg, tmp_path)
     trainer._dcol_gap = lambda query, radius, positions=None: query[..., 0] * 0 + 5
@@ -103,8 +108,9 @@ def _run_endpoint_case(tmp_path, trigger_step=1):
     return cfg, endpoints, values, targets
 
 
-def test_shac_absorbing_timeout_and_live_final_endpoint(tmp_path):
-    cfg, endpoints, values, targets = _run_endpoint_case(tmp_path)
+@pytest.mark.parametrize("algorithm", ["shac", "ahac"])
+def test_shac_absorbing_timeout_and_live_final_endpoint(tmp_path, algorithm):
+    cfg, endpoints, values, targets = _run_endpoint_case(tmp_path, algorithm=algorithm)
     # The timeout uses old target 10 and position 4, never reset target 200/position 100.
     torch.testing.assert_close(endpoints[0][:, 0].detach(), torch.tensor([.14, .12]))
     torch.testing.assert_close(endpoints[0][:, 25:217].detach(), torch.ones(2, 192))
@@ -121,8 +127,9 @@ def test_shac_absorbing_timeout_and_live_final_endpoint(tmp_path):
     torch.testing.assert_close(td[0, 1], costs[0, 1] + cfg.discount * values[0][1])
 
 
-def test_absorbing_terminal_at_horizon_does_not_gain_a_bootstrap(tmp_path):
-    cfg, endpoints, values, targets = _run_endpoint_case(tmp_path, trigger_step=2)
+@pytest.mark.parametrize("algorithm", ["shac", "ahac"])
+def test_absorbing_terminal_at_horizon_does_not_gain_a_bootstrap(tmp_path, algorithm):
+    cfg, endpoints, values, targets = _run_endpoint_case(tmp_path, trigger_step=2, algorithm=algorithm)
     next_values, cuts, costs = targets[0]
     assert cuts[-1].all() and next_values[-1, 0] == 0
     assert not endpoints[-1].grad[0].any()

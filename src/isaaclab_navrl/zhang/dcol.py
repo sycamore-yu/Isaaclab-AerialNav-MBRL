@@ -216,3 +216,33 @@ def hybrid_collision_gap(query, radius, static_signed_distance, positions, sizes
     ground_gap = query[..., 2] - ground_z - radii
     dynamic_gap = radii * (dynamic_min_alpha(query, radii, positions, sizes) - 1)
     return torch.minimum(torch.minimum(static_gap, ground_gap), dynamic_gap)
+
+
+def height_bounded_gap(query, obstacle_gap, height_bounds=(0.2, 4.0)):
+    """Metre clearance to obstacles and the environment's centre-height bounds."""
+    return torch.minimum(obstacle_gap, torch.minimum(query[..., 2] - height_bounds[0],
+                                                     height_bounds[1] - query[..., 2]))
+
+
+def metric_navigation_gap(query, static_signed_distance, positions, sizes, radius=0.3):
+    """Actual primitive/ground/height clearances for AHAC, independent of DCOL alpha.
+
+    Static terrain retains its documented verified-exit signed proxy. Dynamic
+    selection is detached; only the selected primitive keeps a backward graph.
+    Positions may be shared or broadcast per-query substep snapshots.
+    """
+    from isaaclab_navrl.tasks.navigation.geometry import primitive_signed_distance
+
+    if static_signed_distance.shape != query.shape[:-1]:
+        raise ValueError("Static signed distance must match the query batch")
+    gap = torch.minimum(static_signed_distance - radius, query[..., 2] - 0.01 - radius)
+    if positions.shape[-2]:
+        with torch.no_grad():
+            candidate = primitive_signed_distance(query.detach()[..., None, :], positions.detach(), sizes)
+            winner = candidate.argmin(dim=-1)
+            centers = torch.broadcast_to(positions, (*query.shape[:-1], positions.shape[-2], 3))
+            selected = centers.gather(-2, winner[..., None, None].expand(*winner.shape, 1, 3)).squeeze(-2)
+            selected_size = sizes[winner]
+        dynamic = primitive_signed_distance(query, selected, selected_size) - radius
+        gap = torch.minimum(gap, dynamic)
+    return height_bounded_gap(query, gap)

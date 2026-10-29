@@ -46,8 +46,7 @@ def critic_observation(state, observation, hidden, previous_command, parameters,
                        history, action_delay, observation_delay, episode_steps, max_episode_steps, action_lags):
     """Use h_t before its actor call, and h_(t+1) for the resulting next state.
 
-    AHAC detaches its continuing-reset bootstrap. SHAC uses pre-reset endpoint
-    features and masks absorbing terminals. Live endpoints keep state, hidden,
+    Both algorithms use pre-reset endpoint features and mask absorbing terminals. Live endpoints keep state, hidden,
     temporal-memory and delayed-command paths.
     All mutable environment buffers are cloned or consumed into fresh tensors.
     """

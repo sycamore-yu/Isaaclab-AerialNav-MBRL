@@ -17,6 +17,7 @@ from isaaclab_navrl.training import record_curriculum, write_json
 
 from .actor_critic import ActorCriticSettings, CostActorCritic, short_horizon_cost_objective
 from .critic_state import CriticHistory, critic_observation
+from .dcol import height_bounded_gap, metric_navigation_gap
 from .diagnostics import GradientDiagnostic
 from .dynamics import PointMassState, align_state, align_transition, policy_transition
 from .losses import zhang_transition_costs
@@ -352,7 +353,7 @@ class ZhangTrainer:
             "rollout_steps": self.last_rollout_steps,
             "configured_rollout_steps": self.cfg.timesteps,
             "bootstrap_semantics": ("absorbing_zero_timeout_pre_reset_live_endpoint"
-                                    if self.cfg.algorithm == "shac" else "continuing_reset" if self.actor_critic else None),
+                                    if self.actor_critic else None),
             "adaptive_horizon": self.cfg.algorithm == "ahac",
             "checkpoint": str(checkpoint) if checkpoint is not None else None,
             "elapsed_s": self.elapsed_s, "nonfinite_grad_events": self.nonfinite_grad_events,
@@ -383,6 +384,17 @@ class ZhangTrainer:
             self._initialize_critic(self._critic_observation(
                 state, observation, hidden, previous_command, critic_history, action_history, observation_history
             ))
+            write_json(self.log_dir / "actor_critic_protocol.json", {
+                "bootstrap": "absorbing_zero_timeout_pre_reset_live_endpoint",
+                "velocity_loss_mode": self.cfg.resolved_velocity_loss_mode,
+                "critic_settings": asdict(self.actor_critic.settings),
+                "horizon_controller": self.horizon_controller.state_dict() if self.horizon_controller else None,
+                "risk_metric": ("metre_primitive_ground_height_clearance_static_verified_exit_proxy"
+                                if self.horizon_controller else None),
+                "risk_aggregate": "worst_trajectory_temporal_peak" if self.horizon_controller else None,
+                "stability_diagnostics": ["actor_gradient_clip_ratio", "surrogate_velocity_error_mps"],
+                "physx_contact_jacobian_verified": False,
+            })
         lookahead = torch.linspace(0, self.cfg.policy_dt, 10, device=self.env.device)[None, :, None]
         writer = SummaryWriter(str(self.log_dir / "tensorboard"))
         if self.cfg.variant == "continuous":
@@ -554,7 +566,15 @@ class ZhangTrainer:
                         collision_obstacles = transition["dynamic_positions_by_substep"][pose_index]
                         terminal_gap = self._dcol_gap(collision_position, parameters["margin"], collision_obstacles)
                         history["dcol_gap"].append(torch.cat((dcol_lookahead, terminal_gap[:, None]), dim=1))
-                    if self.cfg.algorithm == "shac":
+                        if self.horizon_controller is not None:
+                            endpoint_clearance = metric_navigation_gap(
+                                collision_position, self.env.terrain_distance.signed_distance(collision_position),
+                                collision_obstacles, self.env.motion.size,
+                            )
+                            history["risk_clearance"].append(torch.cat((
+                                height_bounded_gap(query, obstacle_distance - 0.3), endpoint_clearance[:, None]
+                            ), dim=1))
+                    if self.actor_critic is not None:
                         # DiffAero: absorbing terminals have no future cost; timeouts
                         # and the ordinary horizon use the pre-reset endpoint graph.
                         critic_history.push(terminal_state.velocity, target_velocity, torch.zeros_like(done))
@@ -574,23 +594,6 @@ class ZhangTrainer:
                     previous_command = torch.where(done[:, None], torch.zeros_like(command), command)
                     action_history.reset(done)
                     observation_history.reset(done)
-                    if self.cfg.algorithm == "ahac":
-                        critic_history.push(terminal_state.velocity, target_velocity, done)
-                        next_critic_observation = self._critic_observation(
-                            state, next_observation, hidden, previous_command, critic_history,
-                            action_history, observation_history,
-                        )
-                        next_value = self.actor_critic.bootstrap_value(next_critic_observation.detach())
-                        history["critic_next_value"].append(next_value)
-                        # Intermediate actor bootstraps are used only on reset
-                        # boundaries and are detached. Only the ordinary final
-                        # endpoint needs the frozen critic's live input graph.
-                        if rollout_step == rollout_steps - 1:
-                            live_value = self.actor_critic.actor_value(next_critic_observation)
-                            actor_next_value = torch.where(done, live_value.detach(), live_value)
-                        else:
-                            actor_next_value = next_value
-                        history["actor_next_value"].append(actor_next_value)
                     observation = next_observation
                     terminated_count += done.sum()
                 losses, self.velocity_history, transition_cost = zhang_transition_costs(
@@ -606,7 +609,7 @@ class ZhangTrainer:
                     actor_loss = actor_terms["objective"]
                     algorithm_metrics.update({f"ActorCritic/{name}": float(value.detach())
                                               for name, value in actor_terms.items()})
-                    if self.cfg.algorithm == "shac":
+                    if self.actor_critic is not None:
                         absorbing = torch.stack(history["absorbing_terminal"])
                         values = torch.stack(history["critic_next_value"])
                         algorithm_metrics["ActorCritic/absorbing_terminal_count"] = float(absorbing.sum())
@@ -614,7 +617,7 @@ class ZhangTrainer:
                         algorithm_metrics["ActorCritic/pre_reset_timeout_count"] = float(torch.stack(history["time_truncated"]).sum())
                 risk = None
                 if self.horizon_controller is not None:
-                    risk = self.horizon_controller.risk(torch.stack(history["dcol_gap"]))
+                    risk = self.horizon_controller.risk(torch.stack(history["risk_clearance"]))
                     risk_penalty = self.horizon_controller.penalty(risk)
                     actor_loss = actor_loss + risk_penalty
                     algorithm_metrics["AHAC/constraint_penalty"] = float(risk_penalty.detach())
@@ -699,8 +702,14 @@ class ZhangTrainer:
                     algorithm_metrics.update({f"ActorCritic/{name}": value for name, value in critic_metrics.items()})
                     algorithm_metrics.update({f"Critic/{name}": value
                                               for name, value in self.critic_monitor.after_step().items()})
+                rollout_metrics = rollout_diagnostics(history)
                 if self.horizon_controller is not None:
-                    algorithm_metrics.update(self.horizon_controller.update(risk.detach()))
+                    terminal_fraction = float(torch.stack(history["absorbing_terminal"]).any(dim=0).float().mean())
+                    algorithm_metrics.update(self.horizon_controller.update(
+                        risk.detach(), terminal_fraction=terminal_fraction,
+                        gradient_ratio=float(grad_norm) / self.cfg.max_grad_norm,
+                        model_velocity_error=rollout_metrics["surrogate_velocity_error_mps"],
+                    ))
                 self.stage_updates = update + 1
                 self.completed_updates = initial_updates + self.stage_updates
                 self.environment_steps += rollout_steps * self.env.num_envs
@@ -709,7 +718,7 @@ class ZhangTrainer:
                 metrics = {name: float(value.detach()) for name, value in losses.items()}
                 metrics.update(optimizer_metrics)
                 metrics.update(algorithm_metrics)
-                metrics.update(rollout_diagnostics(history))
+                metrics.update(rollout_metrics)
                 metrics.update(update=self.completed_updates, learning_rate=learning_rate, grad_norm=float(grad_norm),
                                elapsed_s=self.elapsed_s, update_s=time.perf_counter() - update_started,
                                completed_episodes=int(terminated_count),

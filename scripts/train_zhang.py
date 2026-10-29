@@ -44,10 +44,10 @@ def main():
     parser.add_argument("--terrain_seed", type=int, default=0)
     parser.add_argument("--variant", choices=("step", "continuous", "dcol"), default="dcol")
     parser.add_argument("--algorithm", choices=("bptt", "shac", "ahac"), default="bptt",
-                        help="ahac selects AHAC-derived DCOL synchronous adaptation")
+                        help="ahac selects AHAC-derived metric-clearance and stability feedback")
     parser.add_argument("--timesteps", type=int, default=150)
     parser.add_argument("--velocity_loss_mode", choices=("variant_default", "per_step", "truncated_window", "full_window"),
-                        default=None, help="Default: SHAC per_step, otherwise full_window; truncated_window completes unscored "
+                        default=None, help="Default: SHAC/AHAC per_step, otherwise full_window; truncated_window completes unscored "
                         "short terminal windows; variant_default preserves each variant's current loss")
     parser.add_argument("--velocity_window_s", type=float, default=2.0)
     parser.add_argument("--camera_batch_size", type=int, default=64,
@@ -97,7 +97,7 @@ def main():
     parser.set_defaults(visualizer=["none"])
     args = parser.parse_args()
     if args.velocity_loss_mode is None:
-        args.velocity_loss_mode = "per_step" if args.algorithm == "shac" else "full_window"
+        args.velocity_loss_mode = "per_step" if args.algorithm in ("shac", "ahac") else "full_window"
     if args.num_envs < 1 or (args.max_iterations is not None and args.max_iterations < 1):
         parser.error("num_envs and max_iterations must be positive")
     if args.camera_batch_size < 1:
@@ -130,7 +130,7 @@ def main():
     cfg.timing = args.timing
     cfg.training_report_episodes = args.report_episodes
     cfg.height_target_range = (args.height_target_min, args.height_target_max)
-    cfg.capture_terminal_observation = args.algorithm == "shac"
+    cfg.capture_terminal_observation = args.algorithm in ("shac", "ahac")
     cfg.scene.num_envs = args.num_envs
     cfg.seed, cfg.terrain_seed = args.seed, args.terrain_seed
     cfg.num_static_obstacles = stage["static_obstacles"]
@@ -160,7 +160,7 @@ def main():
     write_json(args.log_dir / "config.json", {
         "method": "zhang", "variant": args.variant, "algorithm": args.algorithm, "train": asdict(train_cfg),
         "resolved_velocity_loss_mode": train_cfg.resolved_velocity_loss_mode,
-        "algorithm_label": "AHAC-derived DCOL synchronous adaptation" if args.algorithm == "ahac" else args.algorithm,
+        "algorithm_label": "AHAC-derived metric-clearance and stability feedback" if args.algorithm == "ahac" else args.algorithm,
         "height_loss_mode": train_cfg.height_loss_mode,
         "static_obstacle_distance": "signed_heightfield_occupancy_exit_proxy",
         "static_projection": "float64_selected_face_refinement_float32_storage",

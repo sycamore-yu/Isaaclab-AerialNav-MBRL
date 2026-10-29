@@ -66,7 +66,7 @@ class ZhangTrainCfg:
 
     def __post_init__(self):
         if self.velocity_loss_mode is None:
-            self.velocity_loss_mode = "per_step" if self.algorithm == "shac" else "full_window"
+            self.velocity_loss_mode = "per_step" if self.algorithm in ("shac", "ahac") else "full_window"
 
     @property
     def resolved_velocity_loss_mode(self) -> Literal["per_step", "window", "truncated_window"]:

@@ -226,7 +226,7 @@ def validate_stage_result(
             errors.append(message)
 
     if velocity_loss_mode is None:
-        velocity_loss_mode = "per_step" if algorithm == "shac" else "full_window"
+        velocity_loss_mode = "per_step" if algorithm in ("shac", "ahac") else "full_window"
     expected = STAGE_CONFIG[stage]
     expect(result.get("method") == method, "method does not match the launched trainer")
     if method == "zhang":

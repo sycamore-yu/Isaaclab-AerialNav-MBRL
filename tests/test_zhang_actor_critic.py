@@ -147,7 +147,7 @@ def test_twin_parameters_are_independent_and_actor_uses_larger_cost_gradient():
 
 def test_value_fit_is_independent_of_actor_graph_and_reduces_fixed_target_error():
     settings = ActorCriticSettings(hidden_sizes=(16, 16), critic_lr=0.01, critic_iterations=50,
-                                  critic_batch_size=64, target_tau=1.0, seed=5)
+                                  critic_minibatches=4, target_tau=1.0, seed=5)
     support = CostActorCritic(2, settings)
     observation = torch.linspace(-1, 1, 64).reshape(4, 8, 2).requires_grad_()
     costs = observation.detach().square().sum(dim=-1) + 1
@@ -157,7 +157,8 @@ def test_value_fit_is_independent_of_actor_graph_and_reduces_fixed_target_error(
     metrics = support.fit(observation, costs.requires_grad_(), next_values, cuts)
     after = (support.bootstrap_value(observation) - costs.detach()).square().mean()
     assert after < before * 0.1
-    assert metrics["critic_iterations"] == 50
+    assert metrics["critic_iterations"] == 16
+    assert metrics["critic_optimizer_steps"] == 64
     assert observation.grad is None and costs.grad is None
     assert all(parameter.grad is None for parameter in support.frozen_critics.parameters())
 
@@ -177,7 +178,7 @@ def test_shac_target_ema_and_ahac_hard_snapshot():
 
 @pytest.mark.parametrize("value_transform", ("linear", "softplus"))
 def test_checkpoint_restores_optimizer_value_snapshot_and_private_shuffle_rng(value_transform):
-    settings = ActorCriticSettings(hidden_sizes=(8,), critic_iterations=2, critic_batch_size=3, seed=11,
+    settings = ActorCriticSettings(hidden_sizes=(8,), critic_iterations=2, critic_minibatches=3, seed=11,
                                   value_transform=value_transform)
     support = CostActorCritic(2, settings)
     observation = torch.linspace(-1, 1, 16).reshape(2, 4, 2)
@@ -322,11 +323,11 @@ def test_dcol_risk_uses_nearest_gap_and_preserves_penalty_gradient():
     expected = torch.nn.functional.softplus(torch.tensor([[0.0], [-2.0]]))
     torch.testing.assert_close(risk, expected)
     penalty = controller.penalty(risk)
-    torch.testing.assert_close(penalty, 2.0 * (expected.mean() - 0.1))
+    torch.testing.assert_close(penalty, 2.0 * (expected.max() - 0.1))
     penalty.backward()
     expected_gradient = torch.zeros_like(gaps)
-    expected_gradient[0, 0, 0] = -10.0
-    expected_gradient[1, 0, 1] = -20.0 * torch.sigmoid(torch.tensor(-2.0))
+    expected_gradient[0, 0, 0] = -20.0
+    expected_gradient[1, 0, 1] = 0
     torch.testing.assert_close(gaps.grad, expected_gradient)
     assert controller.dual == 2.0
     empty_geometry = controller.risk(torch.full((2, 3, 1), float("inf")))
@@ -336,6 +337,7 @@ def test_dcol_risk_uses_nearest_gap_and_preserves_penalty_gradient():
 def test_synchronous_horizon_feedback_grows_shrinks_and_holds_in_band():
     controller = AdaptiveHorizonController(AHACSettings(
         initial_horizon=10, min_horizon=4, max_horizon=16, risk_budget=0.125,
+        initial_dual=0.0, stable_updates_required=1,
     ))
     grown = controller.update(torch.zeros(10, 3, requires_grad=True))
     assert controller.horizon == 14 and grown["ahac_horizon_used"] == 10
@@ -356,7 +358,7 @@ def test_synchronous_horizon_feedback_grows_shrinks_and_holds_in_band():
 
 
 def test_dual_projection_and_horizon_use_global_parallel_risk_not_individual_resets():
-    settings = AHACSettings(initial_horizon=4, min_horizon=2, max_horizon=8, dual_lr=10.0, max_dual=1.0)
+    settings = AHACSettings(initial_horizon=4, min_horizon=2, max_horizon=8, dual_lr=10.0, max_dual=1.0, stable_updates_required=1)
     controller = AdaptiveHorizonController(settings)
     risk = torch.tensor([[0.0, 1.0]]).expand(4, 2)
     metrics = controller.update(risk)
@@ -380,7 +382,7 @@ def test_ahac_penalty_uses_dual_snapshot_even_if_controller_updates_before_backw
     controller.update(risk)
     assert controller.dual > 2.0
     penalty.backward()
-    torch.testing.assert_close(risk.grad, torch.ones_like(risk))
+    torch.testing.assert_close(risk.grad, torch.tensor([[0.], [2.]]))
 
 
 def test_ahac_checkpoint_resumes_dual_and_horizon_exactly():
@@ -422,7 +424,7 @@ def test_invalid_trajectory_shapes_and_value_settings_fail_clearly():
     with pytest.raises(ValueError, match="boolean"):
         short_horizon_cost_objective(costs, costs, torch.zeros_like(costs))
     for changes in ({"algorithm": "bptt"}, {"discount": 1.0}, {"td_lambda": -0.1},
-                    {"target_tau": 0}, {"critic_batch_size": 0}, {"hidden_sizes": ()},
+                    {"target_tau": 0}, {"critic_minibatches": 0}, {"hidden_sizes": ()},
                     {"value_transform": "relu"}):
         with pytest.raises(ValueError):
             ActorCriticSettings(**changes).validate()

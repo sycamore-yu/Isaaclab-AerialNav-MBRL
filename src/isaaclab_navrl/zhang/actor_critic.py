@@ -1,9 +1,8 @@
 """Cost-form SHAC/AHAC value learning, independent of the PhysX rollout.
 
 The runner supplies Zhang's actual per-transition costs and augmented critic
-states. SHAC supplies zero next values at absorbing terminals and the original
-pre-reset endpoint value at time truncations. AHAC retains its continuing-reset
-adaptation with detached reset-state values. At an ordinary rollout endpoint,
+states. Both algorithms supply zero next values at absorbing terminals and the
+original pre-reset endpoint value at time truncations. At an ordinary rollout endpoint,
 the frozen critic retains position and recurrent-memory input derivatives.
 
 SHAC uses one critic and an exponential-moving-average target. AHAC uses two
@@ -48,10 +47,9 @@ def _check_discount(discount, td_lambda=None):
 def td_lambda_cost_targets(costs, next_values, trace_cut, *, discount=0.99, td_lambda=0.95):
     """Return detached TD(lambda) targets without crossing a reset boundary.
 
-    ``next_values[t]`` must refer to the state that follows transition ``t``. For
-    a continuing reset that is the actual reset state. ``trace_cut`` stops the
-    lambda recursion; it deliberately does not multiply the bootstrap by zero.
-    An explicitly absorbing terminal can instead supply a zero next value.
+    ``next_values[t]`` is zero for an absorbing terminal and uses the pre-reset
+    endpoint for a time limit. ``trace_cut`` stops the lambda recursion, without
+    erasing the supplied timeout bootstrap or connecting the following episode.
     The last sample always bootstraps from its own supplied next value.
     """
     _check_trajectory(costs, next_values, trace_cut)
@@ -106,7 +104,7 @@ def short_horizon_cost_objective(costs, next_values, trace_cut, *, discount=0.99
 
 @dataclass
 class AHACSettings:
-    """Explicit DCOL-risk adaptation, not the paper's contact-stiffness detector.
+    """Explicit metric-clearance adaptation, not the paper's contact-stiffness detector.
 
     The short-horizon actor/critic objective follows AHAC. The synchronous
     horizon feedback below is a documented task adaptation: it does not copy
@@ -121,14 +119,18 @@ class AHACSettings:
     risk_scale: float = 0.05
     risk_budget: float = 0.10
     dual_lr: float = 0.10
-    initial_dual: float = 0.0
+    initial_dual: float = 1.0
     max_dual: float = 100.0
     shrink_factor: float = 0.8
     growth_steps: int = 4
     safe_budget_fraction: float = 0.5
+    stable_updates_required: int = 3
+    max_terminal_fraction: float = 0.05
+    unstable_gradient_ratio: float = 2.0
+    max_model_velocity_error: float = 0.5
 
     def validate(self):
-        for name in ("initial_horizon", "min_horizon", "max_horizon", "growth_steps"):
+        for name in ("initial_horizon", "min_horizon", "max_horizon", "growth_steps", "stable_updates_required"):
             value = getattr(self, name)
             if type(value) is not int or value < 1:
                 raise ValueError(f"{name} must be a positive integer")
@@ -136,7 +138,10 @@ class AHACSettings:
             raise ValueError("AHAC requires min_horizon <= initial_horizon <= max_horizon")
         if not math.isfinite(self.risk_clearance) or self.risk_clearance < 0:
             raise ValueError("risk_clearance must be finite and nonnegative")
-        for name in ("risk_scale", "risk_budget", "dual_lr", "max_dual"):
+        if not 0 <= self.max_terminal_fraction <= 1:
+            raise ValueError("max_terminal_fraction must be within [0, 1]")
+        for name in ("risk_scale", "risk_budget", "dual_lr", "max_dual",
+                     "unstable_gradient_ratio", "max_model_velocity_error"):
             value = getattr(self, name)
             if not math.isfinite(value) or value <= 0:
                 raise ValueError(f"{name} must be finite and positive")
@@ -164,6 +169,7 @@ class AdaptiveHorizonController:
         self._horizon = self.settings.initial_horizon
         self._dual = float(self.settings.initial_dual)
         self.completed_updates = 0
+        self.stable_updates = 0
 
     @property
     def horizon(self):
@@ -191,66 +197,68 @@ class AdaptiveHorizonController:
             raise ValueError("risk must be a nonempty floating [time, environment] tensor")
 
     def penalty(self, risk):
-        """Return ``mean(dual * (risk - budget))`` with live risk derivatives.
-
-        The dual is a Python scalar snapshot, so later controller updates cannot
-        mutate a tensor saved by autograd. It receives no actor gradients.
-        """
+        """Penalize the worst trajectory's temporal peak, with no batch dilution."""
         self._check_risk(risk)
-        return self._dual * (risk.mean() - self.settings.risk_budget)
+        trajectory_peak = risk.amax(dim=0)
+        return self._dual * (trajectory_peak.amax() - self.settings.risk_budget).relu()
 
     @torch.no_grad()
-    def update(self, risk):
-        """Update the projected dual and choose the next synchronous horizon.
-
-        A full rollout above budget shrinks H by ``floor(H * shrink_factor)``.
-        Below ``safe_budget_fraction * budget`` it grows by ``growth_steps``.
-        The intervening band holds H; all choices are clipped to the bounds.
-        """
+    def update(self, risk, *, terminal_fraction=0.0, gradient_ratio=0.0, model_velocity_error=0.0):
+        """Shrink on any unsafe signal; grow only after consecutive stable updates."""
         self._check_risk(risk)
         if risk.shape[0] != self._horizon:
             raise ValueError("risk time dimension must equal the shared rollout horizon")
-        detached = risk.detach()
         mean, minimum, maximum, over_budget = torch.stack((
-            detached.mean(), detached.amin(), detached.amax(),
-            (detached > self.settings.risk_budget).to(detached.dtype).mean(),
+            risk.detach().mean(), risk.detach().amin(), risk.detach().amax(),
+            (risk.detach() > self.settings.risk_budget).to(risk.dtype).mean(),
         )).cpu().tolist()
-        if not all(math.isfinite(value) for value in (mean, minimum, maximum)) or minimum < 0:
-            raise FloatingPointError("AHAC risk must be finite and nonnegative")
+        values = (mean, minimum, maximum, terminal_fraction, gradient_ratio, model_velocity_error)
+        if not all(math.isfinite(v) and v >= 0 for v in values) or terminal_fraction > 1:
+            raise FloatingPointError("AHAC risk and stability signals must be finite and nonnegative")
         old_horizon, old_dual = self._horizon, self._dual
         self._dual = min(self.settings.max_dual, max(
-            0.0, self._dual + self.settings.dual_lr * (mean - self.settings.risk_budget)
+            0.0, self._dual + self.settings.dual_lr * (maximum - self.settings.risk_budget)
         ))
-        if mean > self.settings.risk_budget:
+        unsafe = (maximum > self.settings.risk_budget
+                  or terminal_fraction > self.settings.max_terminal_fraction
+                  or gradient_ratio > self.settings.unstable_gradient_ratio
+                  or model_velocity_error > self.settings.max_model_velocity_error)
+        safe = (maximum < self.settings.risk_budget * self.settings.safe_budget_fraction
+                and terminal_fraction <= self.settings.max_terminal_fraction
+                and gradient_ratio <= 1 and model_velocity_error <= self.settings.max_model_velocity_error)
+        self.stable_updates = self.stable_updates + 1 if safe and not unsafe else 0
+        if unsafe:
             self._horizon = max(self.settings.min_horizon, math.floor(old_horizon * self.settings.shrink_factor))
-        elif mean < self.settings.risk_budget * self.settings.safe_budget_fraction:
+        elif self.stable_updates >= self.settings.stable_updates_required:
             self._horizon = min(self.settings.max_horizon, old_horizon + self.settings.growth_steps)
+            self.stable_updates = 0
         self.completed_updates += 1
         return {
-            "ahac_horizon_used": old_horizon,
-            "ahac_horizon_next": self._horizon,
+            "ahac_horizon_used": old_horizon, "ahac_horizon_next": self._horizon,
             "ahac_horizon_change": self._horizon - old_horizon,
-            "ahac_dual_before": old_dual,
-            "ahac_dual_after": self._dual,
-            "ahac_risk_mean": mean,
-            "ahac_risk_max": maximum,
-            "ahac_risk_over_budget_fraction": over_budget,
+            "ahac_dual_before": old_dual, "ahac_dual_after": self._dual,
+            "ahac_risk_mean": mean, "ahac_risk_max": maximum,
+            "ahac_constraint_risk": maximum, "ahac_risk_over_budget_fraction": over_budget,
             "ahac_risk_budget": self.settings.risk_budget,
-            "ahac_completed_updates": self.completed_updates,
+            "ahac_terminal_trajectory_fraction": terminal_fraction,
+            "ahac_actor_gradient_clip_ratio": gradient_ratio,
+            "ahac_model_velocity_error_mps": model_velocity_error,
+            "ahac_stable_update_streak": self.stable_updates,
+            "ahac_unsafe": float(unsafe), "ahac_completed_updates": self.completed_updates,
         }
 
     def state_dict(self):
         return {
-            "format_version": 1,
-            "adaptation": "dcol_geometry_synchronous_feedback",
+            "format_version": 2,
+            "adaptation": "metric_clearance_peak_stability_feedback",
             "settings": asdict(self.settings),
             "horizon": self._horizon,
             "dual": self._dual,
-            "completed_updates": self.completed_updates,
+            "completed_updates": self.completed_updates, "stable_updates": self.stable_updates,
         }
 
     def load_state_dict(self, state):
-        if (state["format_version"] != 1 or state["adaptation"] != "dcol_geometry_synchronous_feedback"
+        if (state["format_version"] != 2 or state["adaptation"] != "metric_clearance_peak_stability_feedback"
                 or state["settings"] != asdict(self.settings)):
             raise ValueError("incompatible AHAC adaptation checkpoint")
         horizon, dual, updates = state["horizon"], state["dual"], state["completed_updates"]
@@ -260,7 +268,26 @@ class AdaptiveHorizonController:
             raise ValueError("checkpoint dual is outside configured bounds")
         if type(updates) is not int or updates < 0:
             raise ValueError("checkpoint update count must be a nonnegative integer")
+        stable = state["stable_updates"]
+        if type(stable) is not int or not 0 <= stable < self.settings.stable_updates_required:
+            raise ValueError("checkpoint stable update streak is invalid")
         self._horizon, self._dual, self.completed_updates = horizon, float(dual), updates
+        self.stable_updates = stable
+
+
+def critic_split_indices(shape, fraction, device, generator):
+    """Reserve whole environments where possible; never fit held-out samples."""
+    time, environments = shape
+    if time * environments < 2:
+        raise ValueError("critic validation requires at least two trajectory samples")
+    grid = torch.arange(time * environments, device=device).reshape(time, environments)
+    if environments > 1:
+        order = torch.randperm(environments, device=device, generator=generator)
+        count = min(environments - 1, max(1, math.ceil(fraction * environments)))
+        return grid[:, order[count:]].reshape(-1), grid[:, order[:count]].reshape(-1)
+    order = torch.randperm(time, device=device, generator=generator)
+    count = min(time - 1, max(1, math.ceil(fraction * time)))
+    return order[count:], order[:count]
 
 
 @dataclass
@@ -272,7 +299,9 @@ class ActorCriticSettings:
     td_lambda: float = 0.95
     hidden_sizes: tuple[int, ...] = (256, 256)
     critic_lr: float = 0.0005
-    critic_batch_size: int = 4096
+    critic_minibatches: int = 4
+    critic_max_optimizer_steps: int = 64
+    critic_validation_fraction: float = 0.1
     critic_iterations: int = 16
     critic_max_iterations: int = 64
     critic_min_iterations: int = 6
@@ -289,11 +318,13 @@ class ActorCriticSettings:
         if self.value_transform not in ("linear", "softplus"):
             raise ValueError("value_transform must be linear or softplus")
         _check_discount(self.discount, self.td_lambda)
+        if not 0 < self.critic_validation_fraction < 1:
+            raise ValueError("critic_validation_fraction must be within (0, 1)")
         if self.discount == 1:
-            raise ValueError("continuing positive-cost learning requires discount < 1")
+            raise ValueError("cost value fitting requires discount < 1")
         if not self.hidden_sizes or any(type(size) is not int or size < 1 for size in self.hidden_sizes):
             raise ValueError("hidden_sizes must contain positive integers")
-        for name in ("critic_batch_size", "critic_iterations", "critic_max_iterations",
+        for name in ("critic_minibatches", "critic_max_optimizer_steps", "critic_iterations", "critic_max_iterations",
                      "critic_min_iterations", "critic_convergence_window"):
             value = getattr(self, name)
             if type(value) is not int or value < 1:
@@ -387,11 +418,9 @@ class CostActorCritic:
     def fit(self, observation, costs, next_values, trace_cut):
         """Fit detached cost returns, then prepare the next rollout's value copy.
 
-        Each iteration is one full shuffled pass through the rollout dataset.
-        SHAC uses a fixed number of passes. AHAC stops when all relative changes
-        of the last configured window of pass losses are small, subject to a
-        minimum and a maximum number of passes. This explicit relative stopping
-        rule avoids relying on the locomotion paper's reward-dependent scale.
+        Each pass uses a fixed number of minibatches, independent of H. Total
+        optimizer steps have a hard cap. AHAC convergence is judged on held-out
+        trajectories (or disjoint samples in single-environment unit probes).
         """
         _check_trajectory(costs, next_values, trace_cut)
         self._check_observation(observation)
@@ -403,14 +432,21 @@ class CostActorCritic:
         ).reshape(-1)
         if not bool(torch.isfinite(features).all() & torch.isfinite(targets).all()):
             raise FloatingPointError("non-finite critic observation or target")
+        train, validation = critic_split_indices(costs.shape, self.settings.critic_validation_fraction,
+                                                  self.device, self._shuffle_rng)
         iterations = (self.settings.critic_iterations if self.settings.algorithm == "shac"
                       else self.settings.critic_max_iterations)
-        losses = []
+        losses, validation_losses = [], []
+        optimizer_steps = 0
         grad_norm = targets.new_zeros(())
         for _ in range(iterations):
-            indices = torch.randperm(len(features), device=self.device, generator=self._shuffle_rng)
-            pass_loss = targets.new_zeros(())
-            for selected in indices.split(self.settings.critic_batch_size):
+            if optimizer_steps >= self.settings.critic_max_optimizer_steps:
+                break
+            shuffled = train[torch.randperm(len(train), device=self.device, generator=self._shuffle_rng)]
+            pass_loss, fitted = targets.new_zeros(()), 0
+            for selected in torch.tensor_split(shuffled, min(self.settings.critic_minibatches, len(shuffled))):
+                if optimizer_steps >= self.settings.critic_max_optimizer_steps:
+                    break
                 prediction = torch.stack([critic(features[selected]) for critic in self.critics], dim=-1)
                 loss = (prediction - targets[selected, None]).square().mean()
                 self.optimizer.zero_grad(set_to_none=True)
@@ -419,16 +455,21 @@ class CostActorCritic:
                     self.critics.parameters(), self.settings.critic_max_grad_norm, error_if_nonfinite=True
                 )
                 self.optimizer.step()
+                optimizer_steps += 1
+                fitted += len(selected)
                 pass_loss = pass_loss + loss.detach() * len(selected)
                 grad_norm = torch.maximum(grad_norm, norm.detach())
-            losses.append(float(pass_loss / len(features)))
+            losses.append(float(pass_loss / fitted))
+            with torch.no_grad():
+                estimate = torch.stack([critic(features[validation]) for critic in self.critics], dim=-1)
+                validation_losses.append(float((estimate - targets[validation, None]).square().mean()))
             window = self.settings.critic_convergence_window
             if (self.settings.algorithm == "ahac" and len(losses) >= self.settings.critic_min_iterations
-                    and len(losses) > window):
-                recent = losses[-window - 1:]
+                    and len(validation_losses) > window):
+                recent = validation_losses[-window - 1:]
                 changes = [abs(current - previous) / max(abs(previous), 1e-8)
                            for previous, current in zip(recent[:-1], recent[1:], strict=True)]
-                if max(changes) <= self.settings.critic_relative_tolerance:
+                if max(changes) <= self.settings.critic_relative_tolerance or min(recent[1:]) >= recent[0]:
                     break
         self.update_frozen_critics()
         self.completed_fits += 1
@@ -441,6 +482,12 @@ class CostActorCritic:
         )).cpu().tolist()
         return {
             "critic_loss": losses[-1], "critic_first_pass_loss": losses[0],
+            "critic_optimizer_steps": optimizer_steps,
+            "critic_optimizer_step_cap": self.settings.critic_max_optimizer_steps,
+            "critic_validation_td_mse": validation_losses[-1],
+            "critic_validation_first_pass_td_mse": validation_losses[0],
+            "critic_training_samples": len(train), "critic_validation_samples": len(validation),
+            "critic_minibatches": min(self.settings.critic_minibatches, len(train)),
             "critic_iterations": len(losses), "critic_max_grad_norm_observed": float(grad_norm),
             "critic_target_mean": float(targets.mean()), "critic_target_std": float(targets.std(unbiased=False)),
             "critic_completed_fits": self.completed_fits,
@@ -450,14 +497,14 @@ class CostActorCritic:
 
     def state_dict(self):
         return {
-            "format_version": 1, "input_dim": self.input_dim, "settings": asdict(self.settings),
+            "format_version": 2, "input_dim": self.input_dim, "settings": asdict(self.settings),
             "critics": self.critics.state_dict(), "frozen_critics": self.frozen_critics.state_dict(),
             "optimizer": self.optimizer.state_dict(), "shuffle_rng_state": self._shuffle_rng.get_state(),
             "completed_fits": self.completed_fits,
         }
 
     def load_state_dict(self, state):
-        if (state["format_version"] != 1 or state["input_dim"] != self.input_dim
+        if (state["format_version"] != 2 or state["input_dim"] != self.input_dim
                 or state["settings"]["algorithm"] != self.settings.algorithm
                 or tuple(state["settings"]["hidden_sizes"]) != tuple(self.settings.hidden_sizes)):
             raise ValueError("incompatible actor-critic checkpoint")
