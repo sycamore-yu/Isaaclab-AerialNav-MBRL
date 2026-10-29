@@ -11,6 +11,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from isaaclab_navrl import training
+
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 
 
@@ -91,7 +93,7 @@ class GradientDiagnosticCliTests(unittest.TestCase):
                     self.assertEqual(error.exception.code, 2)
 
     def test_velocity_loss_cli_choices_are_explicit_and_reject_unknown_values(self):
-        for mode in ("variant_default", "per_step"):
+        for mode in ("variant_default", "per_step", "truncated_window"):
             with self.subTest(mode=mode):
                 args = parse_training_cli(["--variant", "dcol", "--velocity_loss_mode", mode])
                 self.assertEqual(args.velocity_loss_mode, mode)
@@ -129,7 +131,7 @@ class GradientDiagnosticCliTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory(prefix="velocity_mode_cli_unit_") as temporary:
             for algorithm in ("bptt", "shac", "ahac"):
-                for mode in ("variant_default", "per_step"):
+                for mode in ("variant_default", "per_step", "truncated_window"):
                     tokens = ["train_zhang.py", "--log_dir", str(Path(temporary) / "stage"),
                               "--variant", "dcol", "--algorithm", algorithm,
                               "--velocity_loss_mode", mode, "--velocity_window_s", "2"]
@@ -143,7 +145,7 @@ class GradientDiagnosticCliTests(unittest.TestCase):
 
     def test_stop_signals_only_request_a_boundary_stop_and_restore_original_handlers(self):
         first, second = object(), object()
-        handlers = {trainer.signal.SIGINT: first, trainer.signal.SIGTERM: second}
+        handlers = {training.signal.SIGINT: first, training.signal.SIGTERM: second}
         requests = []
         stub = types.SimpleNamespace(request_stop=requests.append)
 
@@ -152,15 +154,15 @@ class GradientDiagnosticCliTests(unittest.TestCase):
             handlers[signum] = handler
             return previous
 
-        with patch.object(trainer.signal, "signal", side_effect=install):
+        with patch.object(training.signal, "signal", side_effect=install):
             with self.assertRaisesRegex(RuntimeError, "training error"):
-                with trainer.graceful_training_stop(stub):
-                    handlers[trainer.signal.SIGINT](trainer.signal.SIGINT, None)
-                    handlers[trainer.signal.SIGTERM](trainer.signal.SIGTERM, None)
-                    self.assertEqual(requests, [trainer.signal.SIGINT, trainer.signal.SIGTERM])
+                with training.graceful_training_stop(stub):
+                    handlers[training.signal.SIGINT](training.signal.SIGINT, None)
+                    handlers[training.signal.SIGTERM](training.signal.SIGTERM, None)
+                    self.assertEqual(requests, [training.signal.SIGINT, training.signal.SIGTERM])
                     raise RuntimeError("training error")
-        self.assertIs(handlers[trainer.signal.SIGINT], first)
-        self.assertIs(handlers[trainer.signal.SIGTERM], second)
+        self.assertIs(handlers[training.signal.SIGINT], first)
+        self.assertIs(handlers[training.signal.SIGTERM], second)
 
     def test_binary_flags_and_removed_variant_are_rejected_before_training(self):
         for flag in ("observation_normalization", "recovery_enabled"):

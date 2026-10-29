@@ -1,12 +1,12 @@
 """Train one Zhang BPTT, SHAC, or AHAC curriculum stage on Isaac Lab 3.0 PhysX."""
 
 import argparse
-import signal
-from contextlib import contextmanager
 from dataclasses import asdict
 from pathlib import Path
 
 from isaaclab.app import add_launcher_args, launch_simulation
+
+from isaaclab_navrl.training import graceful_training_stop
 
 
 def parse_binary_flag(raw: str) -> bool:
@@ -29,23 +29,6 @@ def parse_gradient_diagnostic_updates(raw: str) -> tuple[int, ...]:
     return updates
 
 
-@contextmanager
-def graceful_training_stop(trainer):
-    """Request stopping at an update boundary, then restore process handlers."""
-    previous = {}
-
-    def request_stop(signum, _frame):
-        trainer.request_stop(signum)
-
-    try:
-        for signum in (signal.SIGINT, signal.SIGTERM):
-            previous[signum] = signal.signal(signum, request_stop)
-        yield
-    finally:
-        for signum, handler in previous.items():
-            signal.signal(signum, handler)
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument("--log_dir", type=Path, required=True)
@@ -61,8 +44,9 @@ def main():
     parser.add_argument("--algorithm", choices=("bptt", "shac", "ahac"), default="bptt",
                         help="ahac selects AHAC-derived DCOL synchronous adaptation")
     parser.add_argument("--timesteps", type=int, default=150)
-    parser.add_argument("--velocity_loss_mode", choices=("variant_default", "per_step"), default="variant_default",
-                        help="Velocity supervision; variant_default preserves each variant's current loss")
+    parser.add_argument("--velocity_loss_mode", choices=("variant_default", "per_step", "truncated_window"),
+                        default="variant_default", help="Velocity supervision; truncated_window completes unscored "
+                        "short terminal windows; variant_default preserves each variant's current loss")
     parser.add_argument("--velocity_window_s", type=float, default=2.0)
     parser.add_argument("--camera_batch_size", type=int, default=16,
                         help="Depth raycast environment batch size; does not change image resolution")

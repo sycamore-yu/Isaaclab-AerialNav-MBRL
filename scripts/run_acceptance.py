@@ -48,7 +48,7 @@ TRAIN_ARG_CHOICES = {
     "algorithm": ("bptt", "shac", "ahac"),
     "lr_schedule": ("cosine", "plateau", "constant"),
     "critic_value_transform": ("linear", "softplus"),
-    "velocity_loss_mode": ("variant_default", "per_step"),
+    "velocity_loss_mode": ("variant_default", "per_step", "truncated_window"),
 }
 TRAIN_ARG_TYPES = {
     "variant": str,
@@ -195,6 +195,7 @@ def validate_stage_result(
     parent_checkpoint: Path | None,
     variant: str = "step",
     algorithm: str = "bptt",
+    velocity_loss_mode: str = "variant_default",
 ) -> list[str]:
     """Validate one real training report against the fixed acceptance protocol."""
     errors = []
@@ -208,6 +209,13 @@ def validate_stage_result(
     if method == "zhang":
         expect(result.get("variant") == variant, "Zhang variant does not match the launched experiment")
         expect(result.get("algorithm") == algorithm, "Zhang algorithm does not match the launched experiment")
+        resolved_mode = velocity_loss_mode
+        if velocity_loss_mode == "variant_default":
+            resolved_mode = "per_step" if variant == "step" else "window"
+        expect(result.get("velocity_loss_mode") == velocity_loss_mode,
+               "Zhang velocity_loss_mode does not match the launched experiment")
+        expect(result.get("resolved_velocity_loss_mode") == resolved_mode,
+               "Zhang resolved_velocity_loss_mode does not match the launched experiment")
     expect(result.get("status") == "completed", "training status is not completed")
     expect(result.get("stage") == stage, "training stage does not match")
     expect(result.get("num_envs") == num_envs and num_envs >= 1024, "num_envs must match and be at least 1024")
@@ -321,6 +329,27 @@ def run_pipeline(args: argparse.Namespace, train_args: dict[str, TrainArgValue])
                         current_stage["result"] = json.loads(result_path.read_text(encoding="utf-8"))
                     except json.JSONDecodeError as exc:
                         raise ValueError(f"Invalid training result {result_path}: {exc}") from exc
+                result = current_stage["result"]
+                if process.returncode == 0 and isinstance(result, dict) and result.get("status") == "stopped":
+                    # A requested stop saves a complete-update checkpoint but
+                    # does not certify or advance the current curriculum stage.
+                    checkpoint = log_dir / "checkpoint_stopped.pt"
+                    reported_checkpoint = result.get("checkpoint")
+                    if result.get("error") is not None:
+                        raise RuntimeError(f"Stopped trainer reported an error: {result['error']}")
+                    if (not isinstance(reported_checkpoint, str)
+                            or Path(reported_checkpoint).resolve() != checkpoint.resolve()
+                            or not checkpoint.is_file()):
+                        raise RuntimeError(f"Stopped trainer checkpoint is missing or mismatched: {checkpoint}")
+                    current_stage.update(status="stopped", stage_passed=False, acceptance_passed=False,
+                                         checkpoint=str(checkpoint), error=None)
+                    current_method.update(status="stopped", acceptance_passed=False,
+                                          checkpoint=str(checkpoint), error=None)
+                    summary.update(status="stopped", acceptance_passed=False, checkpoint=str(checkpoint),
+                                   error=None, finished_at=datetime.now(UTC).isoformat())
+                    write_json(summary_path, summary)
+                    print(f"Stopped {method}/{stage}: {checkpoint}", flush=True)
+                    return 0
                 errors = []
                 if process.returncode != 0:
                     errors.append(f"trainer exited with code {process.returncode}; see {stdout_log}")
@@ -332,6 +361,7 @@ def run_pipeline(args: argparse.Namespace, train_args: dict[str, TrainArgValue])
                         num_envs=args.num_envs, parent_checkpoint=parent_checkpoint,
                         variant=train_args.get("variant", "step"),
                         algorithm=train_args.get("algorithm", "bptt"),
+                        velocity_loss_mode=train_args.get("velocity_loss_mode", "variant_default"),
                     )
                 checkpoint = log_dir / "checkpoint_stage.pt"
                 if not checkpoint.is_file():

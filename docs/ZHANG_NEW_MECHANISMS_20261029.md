@@ -2,15 +2,18 @@
 
 ## 状态与基线
 
-本轮只训练 Zhang。新机制前代码 f6d5fd4 已标记
+初轮新机制实验仅训练 Zhang。新机制前代码 f6d5fd4 已标记
 `baseline/zhang-pre-new-mechanisms-20261029`；旧七组实验已停止并完整归档实际保存的数据，
 见 [冻结记录](results/zhang_pre_new_mechanisms_archive_20261029.md)。
 归档和相机经验已在 1597ffe 提交。新正式实验在实现提交后从随机初始化开始，
-不使用旧实验或有限步检查的模型。PPO 不启动。
+不使用旧实验或有限步检查的模型。PPO 当时未启动；最新用户已要求另开 fresh PPO 方法对照，
+具体配置差异与待启动状态见 [truncated/PPO 对照](ZHANG_TRUNCATED_PPO_CONTROLS_20261029.md)。
 
-`truncated_window` 已从活动训练配置移除。旧50更新记录中，其最好首次到达率为8.40%，
-step为8.93%；它没有达到预期改善，用户决定取消后续实验。
-这些早期单种子结果不证明两种方法的最终性能等价。
+旧 `variant=truncated_window` 已从活动几何配置移除。旧50更新记录中，其最好首次到达率为8.40%，
+step为8.93%；它没有达到预期改善，用户当时决定取消后续实验。
+这些早期单种子结果及旧几何条件继续保留，不证明两种方法的最终性能等价。
+最新重启的是 DCOL 几何下独立的 `velocity_loss_mode=truncated_window`，
+不恢复旧 variant，也不把旧结果作为新配置的正式结果。
 
 ## 课程与环境
 
@@ -58,6 +61,9 @@ dcol 保持原逻辑碰撞/越界重置，先保留终止转移的损失和图�
 在不变更DCOL几何的情况下给每个策略步提供速度误差。默认variant_default保持原映射；
 SHAC固定H32，BPTT固定H150，不能在比较时遗漏这个区别。
 [窗口监督经验](migration/DCOL_STEP_VELOCITY_EXPERIENCE.md)保留原SHAC停止检查点与对照协议。
+最新新增的 `--velocity_loss_mode truncated_window` 保留完整窗口，按真实回合长度补充合格终止短窗；
+三种速度模式与PPO方法对照的公平因素、共同分母和终止语义见
+[truncated/PPO 对照](ZHANG_TRUNCATED_PPO_CONTROLS_20261029.md)。默认不变。
 连续方案另行检验高度系数8；默认高度系数仍为1，局部梯度依据及结论边界见
 [U1/U7/U10分析](results/zhang_continuous_gradient_diagnosis_20261029.md)。
 

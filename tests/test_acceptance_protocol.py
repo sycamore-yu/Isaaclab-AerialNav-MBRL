@@ -20,13 +20,17 @@ build_command, parse_train_args = protocol.build_command, protocol.parse_train_a
 run_pipeline, validate_stage_result = protocol.run_pipeline, protocol.validate_stage_result
 
 
-def report_fixture(stage="pretrain_s0", parent=None, algorithm="bptt", variant="step"):
+def report_fixture(stage="pretrain_s0", parent=None, algorithm="bptt", variant="step",
+                   velocity_loss_mode="variant_default"):
     config = STAGE_CONFIG[stage].copy()
     final = stage == "finetune_s2"
     return {
         "method": "zhang",
         "variant": variant,
         "algorithm": algorithm,
+        "velocity_loss_mode": velocity_loss_mode,
+        "resolved_velocity_loss_mode": (("per_step" if variant == "step" else "window")
+                                        if velocity_loss_mode == "variant_default" else velocity_loss_mode),
         "status": "completed",
         "stage": stage,
         "num_envs": 1024,
@@ -84,7 +88,7 @@ class AcceptanceProtocolTests(unittest.TestCase):
     def test_velocity_loss_mode_is_preserved_across_stages_for_all_algorithms(self):
         self.assertEqual(parse_train_args([]), {})
         for algorithm in ("bptt", "shac", "ahac"):
-            for mode in ("variant_default", "per_step"):
+            for mode in ("variant_default", "per_step", "truncated_window"):
                 values = parse_train_args(["--variant", "dcol", "--algorithm", algorithm,
                                            "--velocity_loss_mode", mode, "--velocity_window_s", "2"])
                 for stage in STAGES:
@@ -95,9 +99,42 @@ class AcceptanceProtocolTests(unittest.TestCase):
                         self.assertEqual(command[command.index("--velocity_window_s") + 1], "2.0")
                         self.assertNotIn("--velocity_loss_mode",
                                          self.command(method="navrl", stage=stage, train_args=values))
-        for raw in ("window", "step", "", "PER_STEP"):
+        for raw in ("window", "step", "truncated", "", "PER_STEP", "TRUNCATED_WINDOW"):
             with self.subTest(raw=raw), self.assertRaises(ValueError):
                 parse_train_args(["--velocity_loss_mode", raw])
+
+    def test_velocity_mode_result_identity_is_checked_for_every_stage_and_algorithm(self):
+        for algorithm in ("bptt", "shac", "ahac"):
+            for mode, resolved in (("variant_default", "window"), ("per_step", "per_step"),
+                                   ("truncated_window", "truncated_window")):
+                for index, stage in enumerate(STAGES):
+                    parent = Path(f"/runs/new/zhang/{STAGES[index - 1]}/checkpoint_stage.pt") if index else None
+                    with self.subTest(algorithm=algorithm, mode=mode, stage=stage):
+                        result = report_fixture(stage, parent, algorithm, "dcol", mode)
+                        self.assertEqual(result["resolved_velocity_loss_mode"], resolved)
+                        options = dict(method="zhang", stage=stage, num_envs=1024,
+                                       parent_checkpoint=parent, algorithm=algorithm, variant="dcol",
+                                       velocity_loss_mode=mode)
+                        self.assertEqual(validate_stage_result(result, **options), [])
+                        result["velocity_loss_mode"] = "per_step" if mode != "per_step" else "truncated_window"
+                        self.assertTrue(validate_stage_result(result, **options))
+
+    def test_velocity_mode_result_cannot_be_missing_or_report_a_different_resolution(self):
+        original = report_fixture(variant="dcol", velocity_loss_mode="truncated_window")
+        options = dict(method="zhang", stage="pretrain_s0", num_envs=1024,
+                       parent_checkpoint=None, variant="dcol", velocity_loss_mode="truncated_window")
+        for field in ("velocity_loss_mode", "resolved_velocity_loss_mode"):
+            for replacement in (None, "window", "per_step", "variant_default"):
+                with self.subTest(field=field, replacement=replacement):
+                    result = copy.deepcopy(original)
+                    if replacement is None:
+                        result.pop(field)
+                    else:
+                        result[field] = replacement
+                    self.assertTrue(validate_stage_result(result, **options))
+        # Equal resolved behavior does not permit changing the experiment's explicit mode.
+        result = report_fixture(velocity_loss_mode="per_step")
+        self.assertTrue(self.validate(result))
 
     def test_critic_transform_requires_ac_and_is_preserved_across_all_stages(self):
         self.assertEqual(parse_train_args(["--critic_value_transform", "linear"]),
@@ -251,7 +288,9 @@ class AcceptanceProtocolTests(unittest.TestCase):
             self.assertEqual(command[command.index("--algorithm") + 1], "shac")
             self.assertEqual(command[command.index("--observation_normalization") + 1], "0")
             self.assertEqual(command[command.index("--recovery_enabled") + 1], "1")
-            (log_dir / "training_result.json").write_text(json.dumps(report_fixture(stage, parent, "shac", "dcol")), encoding="utf-8")
+            self.assertEqual(command[command.index("--velocity_loss_mode") + 1], "truncated_window")
+            (log_dir / "training_result.json").write_text(
+                json.dumps(report_fixture(stage, parent, "shac", "dcol", "truncated_window")), encoding="utf-8")
             (log_dir / "checkpoint_stage.pt").write_bytes(b"Unit-test checkpoint fixture")
             visited.append(stage)
             return subprocess.CompletedProcess(command, 0)
@@ -264,11 +303,73 @@ class AcceptanceProtocolTests(unittest.TestCase):
             )
             with patch.object(protocol.subprocess, "run", side_effect=unit_process), patch("builtins.print"):
                 self.assertEqual(run_pipeline(args, {"algorithm": "shac", "variant": "dcol", "observation_normalization": False,
-                                                     "lr_schedule": "cosine", "recovery_enabled": True}), 0)
+                                                     "lr_schedule": "cosine", "recovery_enabled": True,
+                                                     "velocity_loss_mode": "truncated_window"}), 0)
             self.assertEqual(visited, list(STAGES))
             summary = json.loads((output / "training_result.json").read_text(encoding="utf-8"))
             for record in summary["methods"]["zhang"]["stages"]:
                 self.assertEqual(Path(record["stdout_log"]), output / "zhang" / f"{record['stage']}.stdout.log")
+
+    def test_child_stop_preserves_checkpoint_without_advancing_or_hiding_failures(self):
+        # Fake subprocess output tests orchestration; these are not training results.
+        cases = (("stopped", 0, True, None, "stopped"),
+                 ("stopped", 1, True, None, "failed"),
+                 ("stopped", 0, False, None, "failed"),
+                 ("stopped", 0, True, "child training failure", "failed"),
+                 ("completed", 0, True, None, "failed"))
+        for status, returncode, write_checkpoint, child_error, expected in cases:
+            with self.subTest(status=status, returncode=returncode,
+                              write_checkpoint=write_checkpoint, child_error=child_error):
+                visited = []
+
+                def unit_process(command, *, status=status, child_error=child_error,
+                                 write_checkpoint=write_checkpoint, visited=visited, returncode=returncode, **kwargs):
+                    stage = command[command.index("--stage") + 1]
+                    log_dir = Path(command[command.index("--log_dir") + 1])
+                    checkpoint = log_dir / "checkpoint_stopped.pt"
+                    result = report_fixture(stage)
+                    result.update(status=status, checkpoint=str(checkpoint), stage_passed=False,
+                                  acceptance_passed=False, error=child_error)
+                    result["curriculum"]["stage_passed"] = False
+                    result["curriculum"]["latest_training_report"]["success_rate"] = 0.12
+                    (log_dir / "training_result.json").write_text(json.dumps(result), encoding="utf-8")
+                    if write_checkpoint:
+                        checkpoint.write_bytes(b"Unit-test stopped checkpoint fixture, not a trained model")
+                    visited.append(stage)
+                    return subprocess.CompletedProcess(command, returncode)
+
+                with tempfile.TemporaryDirectory(prefix="acceptance_stop_unit_") as temporary:
+                    output = Path(temporary) / "unit_run"
+                    args = argparse.Namespace(method="both", output=str(output), num_envs=1024,
+                                              train_seed=0, device="cuda:0", finetune_lr=5e-5)
+                    with patch.object(protocol.subprocess, "run", side_effect=unit_process), \
+                            patch("builtins.print"):
+                        exit_code = run_pipeline(args, {})
+                    self.assertEqual(exit_code, 0 if expected == "stopped" else 1)
+                    summary = json.loads((output / "training_result.json").read_text(encoding="utf-8"))
+                    method = summary["methods"]["zhang"]
+                    self.assertEqual(visited, [STAGES[0]])
+                    self.assertEqual(list(summary["methods"]), ["zhang"])
+                    self.assertEqual(len(method["stages"]), 1)
+                    stage = method["stages"][0]
+                    self.assertFalse(stage["result"]["stage_passed"])
+                    for record in (summary, method, stage):
+                        self.assertEqual(record["status"], expected)
+                    self.assertFalse(summary["acceptance_passed"])
+                    self.assertFalse(method["acceptance_passed"])
+                    if expected == "stopped":
+                        checkpoint = output / "zhang" / STAGES[0] / "checkpoint_stopped.pt"
+                        for record in (summary, method, stage):
+                            self.assertIsNone(record["error"])
+                            self.assertFalse(record["acceptance_passed"])
+                            self.assertEqual(Path(record["checkpoint"]), checkpoint)
+                        self.assertFalse(stage["stage_passed"])
+                        self.assertEqual(stage["validation_errors"], [])
+                        self.assertEqual(Path(stage["result"]["checkpoint"]), checkpoint)
+                        self.assertTrue(checkpoint.is_file())
+                        self.assertFalse((checkpoint.parent / "checkpoint_stage.pt").exists())
+                    else:
+                        self.assertTrue(summary["error"])
 
 
 if __name__ == "__main__":

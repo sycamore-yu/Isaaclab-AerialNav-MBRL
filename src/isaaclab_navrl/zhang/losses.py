@@ -40,6 +40,52 @@ def velocity_step_loss(velocity, target, *, reduction="mean"):
     return F.smooth_l1_loss(delta, torch.zeros_like(delta), reduction=reduction)
 
 
+def _truncated_terminal_samples(velocity, target, episode, window, current_start, full_valid, history):
+    """Complete eligible terminal windows, using their true episode length.
+
+    The returned samples belong only to the current rollout. A left-truncated
+    prefix may begin inside a long episode, but a completed <=W episode must
+    have every one of its samples visible. Targets use the episode's first
+    pre-step reference; velocities include its policy-step terminal state.
+    """
+    names = ("done", "collision", "bounds", "timeout", "invalid", "episode_step")
+    missing = [name for name in names if name not in history]
+    if missing:
+        raise ValueError(f"truncated_window requires terminal history fields: {missing}")
+    fields = {name: torch.stack(history[name]) for name in names}
+    shape = velocity[current_start:].shape[:2]
+    if any(value.shape != shape for value in fields.values()):
+        raise ValueError("truncated_window terminal history must match current [T, N] samples")
+    if (any(fields[name].dtype != torch.bool for name in names[:-1])
+            or fields["episode_step"].dtype not in (torch.int32, torch.int64)):
+        raise ValueError("truncated_window requires boolean events and integer episode_step")
+    time = torch.arange(velocity.shape[0], device=velocity.device)[:, None]
+    changed = torch.cat((torch.ones_like(episode[:1], dtype=torch.bool), episode[1:] != episode[:-1]), dim=0)
+    start = torch.where(changed, time, 0).cummax(dim=0).values[current_start:]
+    visible_length = time[current_start:] - start + 1
+    actual_length = fields["episode_step"]
+    full_padding = torch.zeros(min(window, velocity.shape[0]), velocity.shape[1],
+                               dtype=torch.bool, device=velocity.device)
+    full_scored = torch.cat((full_padding, full_valid), dim=0)[current_start:]
+    eligible = (fields["done"] & (fields["collision"] | fields["bounds"] | fields["timeout"])
+                & ~fields["invalid"])
+    valid = eligible & (actual_length <= window) & ~full_scored
+    # start==0 can be a bounded cache's left edge, not the true episode start.
+    # Known internal episode starts must agree, and terminal completion always
+    # needs all actual samples; fail instead of silently averaging a suffix.
+    inconsistent = ((actual_length < 1) | (actual_length < visible_length)
+                    | ((start > 0) & (actual_length != visible_length))
+                    | (valid & (actual_length != visible_length)))
+    if bool(inconsistent.any()):
+        raise ValueError("truncated_window episode_step disagrees with visible episode samples")
+    gather_start = start[..., None].expand(-1, -1, velocity.shape[-1])
+    cumulative = torch.cat((torch.zeros_like(velocity[:1]), velocity.cumsum(dim=0)), dim=0)
+    average = (cumulative[current_start + 1:] - cumulative.gather(0, gather_start)) / actual_length[..., None]
+    start_target = target.gather(0, gather_start)
+    delta = (average - start_target).norm(dim=-1)
+    return F.smooth_l1_loss(delta, torch.zeros_like(delta), reduction="none"), valid
+
+
 def height_boundary_loss(position, bounds=(0.2, 4.0), margin=0.5, scale=0.5, *, reduction="mean"):
     """C1 near-boundary penalty with a nonzero inward gradient far outside.
 
@@ -66,6 +112,10 @@ def zhang_transition_costs(history, cfg, velocity_history=None):
     The independent per-step velocity mode instead scores every transition,
     including terminal velocities, and needs no window cache or sample scaling.
     It does not change the variant's obstacle geometry or any other cost.
+    Truncated mode adds one eligible <=W terminal window when that endpoint
+    has no full-window score. This includes the fresh episode's exactly-W
+    terminal omitted by the source offset; the original full helper is kept.
+    Full and terminal samples share one denominator and keep their endpoints.
 
     Continuous rollouts also require ``ground_signed_distance`` at the ten
     original pre-step look-ahead queries: query_z minus 0.01, before subtracting
@@ -83,6 +133,7 @@ def zhang_transition_costs(history, cfg, velocity_history=None):
     episode = torch.stack(history["episode_id"])
     timesteps, num_envs = velocity.shape[:2]
     detached_history = None
+    short_samples = velocity.new_zeros(())
     if cfg.resolved_velocity_loss_mode == "per_step":
         velocity_cost = velocity_step_loss(velocity, target, reduction="none")
         valid_samples = velocity.new_tensor(timesteps * num_envs)
@@ -105,6 +156,14 @@ def zhang_transition_costs(history, cfg, velocity_history=None):
         # endpoints instead of spreading their costs over the current rollout.
         padding = values.new_zeros(min(window, all_velocity.shape[0]), num_envs)
         endpoint_cost = torch.cat((padding, values * valid), dim=0)[prefix_length:]
+        if cfg.resolved_velocity_loss_mode == "truncated_window":
+            full_samples = valid_samples
+            short_values, short_valid = _truncated_terminal_samples(
+                all_velocity, all_target, all_episode, window, prefix_length, valid, history,
+            )
+            short_samples = short_valid.sum()
+            valid_samples = valid_samples + short_samples
+            endpoint_cost = endpoint_cost + short_values * short_valid
         velocity_cost = endpoint_cost * (timesteps * num_envs / valid_samples.clamp_min(1))
         detached_history = {
             "velocity": all_velocity[-window:].detach(),
@@ -144,8 +203,10 @@ def zhang_transition_costs(history, cfg, velocity_history=None):
     losses["total"] = cost.mean()
     losses["velocity_valid_samples"] = valid_samples.detach()
     losses["velocity_sample_fraction"] = valid_samples.detach() / (timesteps * num_envs)
-    # Preserve the inert log key for existing readers of the historical runs.
-    losses["velocity_short_terminal_samples"] = velocity.new_zeros(())
+    # Includes an exactly-W terminal completion when the source omitted it.
+    losses["velocity_short_terminal_samples"] = short_samples.detach()
+    if cfg.resolved_velocity_loss_mode == "truncated_window":
+        losses["velocity_full_window_samples"] = full_samples.detach()
     return losses, detached_history, cost
 
 

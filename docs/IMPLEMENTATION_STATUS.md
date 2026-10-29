@@ -1,10 +1,12 @@
 # 实现与验证状态
 
-2026-10-29：两任务已接入共享扰动和五阶段训练；正式训练只推进 Zhang。正式验收要求本轮随机初始化的策略依次通过全部阶段，最终在 400 静态、100 动态障碍、开启扰动的环境中达到至少 80% 训练首次到达率。是否达标以真实运行目录的 `training_result.json` 和 `training_statistics.jsonl` 为准。
+2026-10-29：两任务已接入共享扰动和五阶段训练；Zhang 正式实验继续推进，最新用户要求另开 fresh NavRL/PPO 和 DCOL 下的 truncated 速度监督对照。新两组尚未正式启动，不能由功能接入推断已训练或已验收。正式验收要求本轮随机初始化的策略依次通过全部阶段，最终在 400 静态、100 动态障碍、开启扰动的环境中达到至少 80% 训练首次到达率。是否达标以真实运行目录的 `training_result.json` 和 `training_statistics.jsonl` 为准。
 
 ## 新机制验证（最新）
 
-新机制前基线 f6d5fd4 已冻结；七组旧实验已停止并归档，见 [归档记录](results/zhang_pre_new_mechanisms_archive_20261029.md)。当前代码增加 S0、连续越界不重置、非饱和高度损失、可选运行统计归一化、Plateau、参数监控、稳定模型恢复，以及 SHAC / AHAC-derived DCOL 适配；truncated_window 不再启动。
+新机制前基线 f6d5fd4 已冻结；七组旧实验已停止并归档，见 [归档记录](results/zhang_pre_new_mechanisms_archive_20261029.md)。当前代码增加 S0、连续越界不重置、非饱和高度损失、可选运行统计归一化、Plateau、参数监控、稳定模型恢复，以及 SHAC / AHAC-derived DCOL 适配。旧 `variant=truncated_window` 仍被移除；最新恢复的对照使用 `variant=dcol` 加独立的 `velocity_loss_mode=truncated_window`，约束见 [truncated/PPO 对照](ZHANG_TRUNCATED_PPO_CONTROLS_20261029.md)。
+
+RMS 与 Plateau 已各在 U81／12441600 个环境转移后完整停止并保存检查点，冻结归档已完成。11:13 的 U76 等预算证据与后续停止回执分开记录于 [机制比较](results/zhang_mechanism_comparison_1113_20261029.md)；这些停止不表示训练通过或算法最终无效。
 
 第一轮真实 CPU 回归：131 项测试与102个子测试通过，日志为 logs/new_mechanisms_checks/unit.log 和 unit.xml。四组真实64环境检查各完成2次更新：dcol+RMS+Plateau、continuous 均 H150；SHAC 为 H32；AHAC 实际 H32→36、下一轮计划40。全部执行动作误差0、非有限梯度0。目录为 logs/new_mechanisms_checks/smokes_v1。检查只证明实现运行，不计入正式验收。
 

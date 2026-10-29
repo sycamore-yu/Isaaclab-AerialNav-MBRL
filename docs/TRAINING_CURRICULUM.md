@@ -1,6 +1,6 @@
 # 训练课程与验收
 
-本轮采用五个阶段，在此前四阶段之前增加无动态障碍的预训练 S0；替换旧的 60→80→100→120 动态障碍课程。正式训练只推进 Zhang。
+本轮采用五个阶段，在此前四阶段之前增加无动态障碍的预训练 S0；替换旧的 60→80→100→120 动态障碍课程。最新用户要求重新加入 fresh NavRL/PPO 方法对照，Zhang 的新 truncated 速度模式也沿用同一课程；新运行须由正式启动回执确认。
 
 | 阶段 | 配置名 | 静态障碍 | 动态障碍 | 额外扰动 |
 |---|---|---:|---:|---|
@@ -30,7 +30,7 @@
 
 记录首次到达率、碰撞率、超时率、高度越界率、无效状态率和成功到达时间。平均 return 按完成回合数加权；每策略步平均 reward 等于同批回合总 return 除以总策略步数，包含终止步奖励。
 
-Zhang 使用独立损失优化。NavRL 环境奖励只用于日志对照。Zhang 保留 100 Hz 物理频率、10 Hz 策略频率和 150 策略步展开。默认逐步速度损失；continuous/dcol 的窗口默认为 20 策略步。truncated_window 对照已取消。所有当前 Zhang 配置使用边界 SmoothL1 损失，continuous 的碰撞与高度越界不重置。SHAC/AHAC 的时域及 bootstrap 是明确算法对照，见 [新机制](ZHANG_NEW_MECHANISMS_20261029.md)。余弦调度周期为 400 次更新，微调默认学习率为 `5e-5`。
+Zhang 使用独立损失优化，其 NavRL 环境奖励只用于日志对照；NavRL/PPO 则优化原任务奖励。Zhang 保留 100 Hz 物理频率、10 Hz 策略频率和默认 150 策略步 BPTT 展开。`variant_default` 保留 step 的逐步速度项及 continuous/dcol 的默认 20 策略步窗口；独立的 `velocity_loss_mode=truncated_window` 在 DCOL 几何下补充合格终止短窗，不恢复旧同名几何变体。所有当前 Zhang 配置使用边界 SmoothL1 损失，continuous 的碰撞与高度越界不重置。SHAC/AHAC 的时域及 bootstrap 是明确算法对照，见 [新机制](ZHANG_NEW_MECHANISMS_20261029.md)。余弦调度周期为 400 次更新，微调默认学习率为 `5e-5`。短窗分母、公平因素及与 PPO 的方法差异见 [新对照规范](ZHANG_TRUNCATED_PPO_CONTROLS_20261029.md)。
 
 共享随机化参数、延迟语义、名义动力学读取及动作一致性要求见 [共享扰动说明](SIM_TO_REAL_TRAINING.md)。旧实现与结果由 Git 基线 `2456a5b` 及原日志保存。
 

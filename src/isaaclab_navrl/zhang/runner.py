@@ -469,6 +469,10 @@ class ZhangTrainer:
                     history["bounds"].append(transition["bounds"])
                     history["done"].append(done.clone())
                     history["collision"].append(transition["collision"])
+                    if self.cfg.resolved_velocity_loss_mode == "truncated_window":
+                        history["timeout"].append(transition["timeout"])
+                        history["invalid"].append(transition["invalid"])
+                        history["episode_step"].append(transition["step"])
                     history["executed_command"].append(transition["executed_action"])
                     history["model_velocity_delta"].append(prediction.velocity.detach() - transition["velocity"])
                     terminal_state, state = align_transition(

@@ -44,14 +44,14 @@ velocity_cost[t, n] = H * N / max(K, 1) * valid[t, n] * window_error[t, n]
 
 ## 独立开关的实现合同
 
-配置及 CLI 新增 `velocity_loss_mode` / `--velocity_loss_mode`，取值为 `variant_default` 或 `per_step`。`resolved_velocity_loss_mode` 记录实际解析出的 `window` 或 `per_step`。
+本次逐步对照最初增加 `velocity_loss_mode` / `--velocity_loss_mode` 的 `variant_default` 和 `per_step`。后续按用户新要求增加独立的 `truncated_window` 取值；`resolved_velocity_loss_mode` 记录实际解析出的 `window`、`per_step` 或 `truncated_window`。本节保留逐步模式的原合同，新短窗规则另见 [truncated/PPO 对照](../ZHANG_TRUNCATED_PPO_CONTROLS_20261029.md)。
 
 - **默认不变：** `variant_default` 保留 step 的逐步速度损失及 continuous/DCOL 的原窗口数值、梯度、缓存和样本缩放行为。
 - **逐步监督：** `per_step` 使用每个 transition 的 post-step terminal velocity，对比同一 transition 的 pre-step target velocity，逐步计算 `SmoothL1(norm(error))`。首末步骤、碰撞和越界 terminal 步均计入。
 - **重置隔离：** terminal 状态先与真实 PhysX 测量对齐，再为下一状态截断 reset 图。per_step 不读取旧速度窗口缓存，返回缓存为 `None`；reset 后速度不能替代 terminal velocity。
 - **逐步成本：** 每步速度成本直接进入 `cost[T,N]`，其均值等于标量项；有效样本为 `T*N`、比例为 1，不使用窗口的 `HN/K` 放大。SHAC 仍使用原有折扣和 bootstrap。
 - **其余行为不变：** DCOL 几何、碰撞时刻、终止规则、另外六项成本与系数保持原样；critic 架构、输入维度和窗口历史保持原样，`velocity_window_s=2.0` 仍决定其原 W20 历史尺寸。
-- 用户取消 `truncated_window` 的决定继续有效。本次没有恢复短碰撞窗口补项，也没有恢复该训练变体；历史日志仅用于追溯。
+- 本次逐步实现没有恢复旧 `variant=truncated_window` 或短窗补项。后续用户已重新授权在DCOL几何下单独检验 `velocity_loss_mode=truncated_window`；旧几何变体仍被移除，旧日志仍仅代表其当时配置。
 
 实现位于 `src/isaaclab_navrl/zhang/losses.py`；专门测试位于 `tests/test_zhang_losses.py`。测试覆盖短回合逐步梯度、terminal/reset 隔离、默认窗口固定数值与梯度，以及 DCOL 其他成本及梯度不变。单元测试通过不构成真实训练验收。
 

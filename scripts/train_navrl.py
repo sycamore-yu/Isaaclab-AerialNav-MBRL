@@ -9,6 +9,7 @@ import time
 from dataclasses import asdict
 from itertools import count
 from pathlib import Path
+from types import SimpleNamespace
 
 from isaaclab.app import add_launcher_args, launch_simulation
 
@@ -53,7 +54,11 @@ def main():
         "num_envs": args.num_envs, "completed_updates": 0, "stage_updates": 0,
         "environment_steps": 0, "max_updates": args.max_iterations,
         "stage_passed": False, "acceptance_passed": False,
+        "stop_requested": None,
     }
+
+    def request_stop(signum):
+        result["stop_requested"] = str(signum)
 
     def elapsed_s():
         return previous_elapsed_s + time.perf_counter() - started
@@ -91,7 +96,7 @@ def main():
         from isaaclab_navrl.agents.rsl_rl_cfg import NavRLPpoRunnerCfg
         from isaaclab_navrl.tasks.navigation.config.hummingbird.env_cfg import NavRLEnvCfg
         from isaaclab_navrl.tasks.navigation.curriculum import STAGE_CONFIGS
-        from isaaclab_navrl.training import record_curriculum, write_json
+        from isaaclab_navrl.training import graceful_training_stop, record_curriculum, write_json
 
         random.seed(args.seed)
         np.random.seed(args.seed)
@@ -150,7 +155,7 @@ def main():
             ],
         }
 
-        with launch_simulation(cfg, args):
+        with launch_simulation(cfg, args), graceful_training_stop(SimpleNamespace(request_stop=request_stop)):
             try:
                 env = gym.make(run_config["task"], cfg=cfg).unwrapped
                 write_json(log_dir / "run_config.json", run_config)
@@ -175,15 +180,22 @@ def main():
                 runner.add_git_repo_to_log(__file__)
 
                 def save_checkpoint(path):
-                    runner.save(str(path), infos={
-                        "method": "navrl", "stage": args.stage,
-                        "fresh": parent_checkpoint is None, "parent_checkpoint": parent_checkpoint,
-                        "completed_updates": result["completed_updates"],
-                        "stage_updates": result["stage_updates"],
-                        "environment_steps": result["environment_steps"],
-                        "elapsed_s": elapsed_s(), "curriculum": env.curriculum.state_dict(),
-                        "sim_to_real": sim_to_real_config,
-                    })
+                    path = Path(path)
+                    temporary = path.with_name(f"{path.stem}.tmp{path.suffix}")
+                    try:
+                        runner.save(str(temporary), infos={
+                            "method": "navrl", "stage": args.stage,
+                            "fresh": parent_checkpoint is None, "parent_checkpoint": parent_checkpoint,
+                            "completed_updates": result["completed_updates"],
+                            "stage_updates": result["stage_updates"],
+                            "environment_steps": result["environment_steps"],
+                            "elapsed_s": elapsed_s(), "curriculum": env.curriculum.state_dict(),
+                            "sim_to_real": sim_to_real_config,
+                            "stop_requested": result["stop_requested"],
+                        })
+                        temporary.replace(path)
+                    finally:
+                        temporary.unlink(missing_ok=True)
 
                 write_result()
                 updates = count() if args.max_iterations is None else range(args.max_iterations)
@@ -205,14 +217,23 @@ def main():
                         save_checkpoint(stage_checkpoint)
                         result["stage_checkpoint"] = str(stage_checkpoint)
                     write_result()
+                    if result["stop_requested"] is not None:
+                        break
                     if args.stop_after_acceptance and env.curriculum.stage_passed:
                         break
                 if not all(torch.isfinite(p).all() for p in params):
                     raise FloatingPointError("Training produced non-finite model parameters.")
-                checkpoint = log_dir / "checkpoint_final.pt"
+                stopped = result["stop_requested"] is not None
+                checkpoint = log_dir / ("checkpoint_stopped.pt" if stopped else "checkpoint_final.pt")
                 save_checkpoint(checkpoint)
+                # A stop can also arrive while writing the normal final checkpoint.
+                if not stopped and result["stop_requested"] is not None:
+                    stopped = True
+                    checkpoint = log_dir / "checkpoint_stopped.pt"
+                    save_checkpoint(checkpoint)
                 result.update(
-                    status="completed", checkpoint=str(checkpoint), nonfinite_events=int(env.nonfinite_events),
+                    status="stopped" if stopped else "completed", checkpoint=str(checkpoint),
+                    nonfinite_events=int(env.nonfinite_events),
                 )
             except BaseException as error:
                 result.update(status="failed", error=f"{type(error).__name__}: {error}")

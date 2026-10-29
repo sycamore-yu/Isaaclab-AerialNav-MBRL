@@ -9,7 +9,7 @@
 
 ## 训练与验收
 
-正式训练依次完成预训练 S0、预训练 S1、预训练 S2、微调 S1、微调 S2。当前只推进 Zhang。各阶段训练首次到达率达到 80% 后晋级。最终在开启扰动的 400 静态、100 动态障碍场景完成验收。
+正式训练依次完成预训练 S0、预训练 S1、预训练 S2、微调 S1、微调 S2。当前 Zhang 实验继续推进；最新用户要求另开 fresh NavRL/PPO 方法对照及 DCOL 下的 truncated 速度监督对照，正式启动状态以新回执为准。各阶段训练首次到达率达到 80% 后晋级。最终在开启扰动的 400 静态、100 动态障碍场景完成验收。
 
 | 阶段 | 静态障碍 | 动态障碍 | 额外扰动 |
 |---|---:|---:|---|
@@ -28,7 +28,7 @@ cd /home/tong/tongworkspace/free/isaaclab-navrl
   --train_args --variant dcol --timesteps 150 --max_grad_norm 5 --camera_batch_size 64
 ```
 
-NavRL 入口保留用于代码兼容；本轮不启动 PPO 训练。Zhang 超参数只传给 Zhang 入口。有限步调试使用各训练脚本的 `--max_iterations`，不计入正式验收。
+NavRL/PPO 使用独立的 `--method navrl` 入口；Zhang 超参数只传给 Zhang 入口。PPO 的观测、频率和动作与 Zhang 不同，属于方法对照，不能解释为只换优化器。最新对照规范及尚未启动的状态见 [truncated 与 PPO 对照](docs/ZHANG_TRUNCATED_PPO_CONTROLS_20261029.md)。有限步调试使用各训练脚本的 `--max_iterations`，不计入正式验收。
 
 运行环境由 `.venv`、`pyproject.toml` 和 `uv.lock` 固定：Python 3.12、Isaac Lab 3.0.0、Isaac Sim 6.2、RSL-RL 5.5.1。
 
@@ -45,7 +45,7 @@ NavRL 入口保留用于代码兼容；本轮不启动 PPO 训练。Zhang 超参
 
 两任务保留 Hummingbird USD、Lee 控制律和 RotorGroup 电机响应。两环境的深度相机默认采样 160×120 像素，内参随分辨率缩放以保留原视场，再完成逆深度变换、噪声和 12×16 池化。NavRL 策略仍使用原 LiDAR 特征。动态物体同时进入相机、碰撞检测和损失。
 
-Zhang 保留速度匹配、避障、碰撞、加速度、Jerk 和速度预测辅助损失，并增加仅在上下高度边界附近激活、远越界仍有恢复梯度的 SmoothL1 损失。默认 `step` 使用逐策略步速度项；`continuous` 与 `dcol` 保留20步窗口。truncated_window 已取消。continuous 的碰撞和高度越界均不重置，首次失败仍锁存。当前归一化、Plateau、SHAC/AHAC 对照统一使用 dcol，见 [新机制](docs/ZHANG_NEW_MECHANISMS_20261029.md)。学习率预训练默认为 0.001，微调默认为 0.00005；余弦周期为 400 次更新。全局梯度范数裁剪为 5。网络使用激活检查点减少显存。
+Zhang 保留速度匹配、避障、碰撞、加速度、Jerk 和速度预测辅助损失，并增加仅在上下高度边界附近激活、远越界仍有恢复梯度的 SmoothL1 损失。默认 `step` 使用逐策略步速度项；`continuous` 与 `dcol` 保留20步窗口。可独立选择 `velocity_loss_mode=per_step` 或 `truncated_window`；新 truncated 对照固定 `variant=dcol`，不恢复已取消的旧同名几何变体。continuous 的碰撞和高度越界均不重置，首次失败仍锁存。当前归一化、Plateau、SHAC/AHAC 对照统一使用 dcol，见 [新机制](docs/ZHANG_NEW_MECHANISMS_20261029.md)。学习率预训练默认为 0.001，微调默认为 0.00005；余弦周期为 400 次更新。全局梯度范数裁剪为 5。网络使用激活检查点减少显存。
 
 ## 扰动与日志
 
@@ -63,6 +63,7 @@ Zhang 保留速度匹配、避障、碰撞、加速度、Jerk 和速度预测辅
 - [Zhang 迁移决策](docs/migration/ZHANG_MIGRATION_DECISIONS_1_4.md)
 - [实现与验证状态](docs/IMPLEMENTATION_STATUS.md)
 - [SHAC/AHAC 适配与边界](docs/migration/SHAC_AHAC_ADAPTATION.md)
+- [DCOL 速度监督与 PPO 方法对照](docs/ZHANG_TRUNCATED_PPO_CONTROLS_20261029.md)
 - [相机批量位姿读取经验](docs/migration/CAMERA_POSE_AGGREGATION_EXPERIENCE.md)
 
 最初迁移基线为 `2456a5b`；新机制前冻结基线为 `f6d5fd4`，归档与相机经验提交为 `1597ffe`。历史 NavRL 在 350 静态、60 动态场景的最高训练首次到达率为 49.28%，未通过旧验收。正式结果以本轮真实训练记录为准。
