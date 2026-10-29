@@ -65,7 +65,7 @@ def test_dynamic_interior_centre_axis_and_loss_gradients(size):
     assert (dynamic_min_alpha(q.detach() + dcol_grad * 0.01, 0.3, center, sizes) > alpha.detach()).all()
     history = loss_history(torch.zeros(3, 3, 3, dtype=q.dtype))
     history['obstacle_signed_distance'] = [sdf[:, None].expand(-1, 10)] * 3
-    losses, _ = zhang_losses(history, ZhangTrainCfg())
+    losses, _ = zhang_losses(history, ZhangTrainCfg(physics_dt=0.01, policy_dt=0.1, variant="step", velocity_loss_mode="variant_default"))
     for name in ['obstacle_avoidance', 'collision']:
         descent = -torch.autograd.grad(losses[name], q, retain_graph=True)[0]
         assert (descent * grad).sum(-1).gt(0).all()

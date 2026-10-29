@@ -160,3 +160,17 @@ def test_process_identity_rejects_command_mismatch_and_missing_pid():
     with pytest.raises(ValueError, match='recorded command'):
         ticks(os.getpid(), ['unrelated', 'process'])
     assert ticks(999999999) is None
+
+
+def test_twenty_hz_successor_plan_preserves_baseline_and_five_new_controls(tmp_path):
+    plan = json.loads((ROOT / 'configs/experiments/zhang_20hz_controls.json').read_text())
+    cases = {row['name']: row for row in plan['runs']}
+    assert set(cases) == {'hz50', 'shac', 'ahac', 'plateau', 'navrl_height'}
+    assert plan['retained_baseline'].endswith('zhang_main_20261029/unified_20hz')
+    assert plan['num_envs'] == 256 and plan['report_episodes'] == 1024
+    for name, row in cases.items():
+        values = PROTOCOL['parse_train_args'](QUEUE['train_tokens'](row))
+        assert values['variant'] == 'dcol'
+        assert values['timing'] == ('unified_50hz' if name == 'hz50' else 'unified_20hz')
+        assert values['height_loss_mode'] == ('navrl_range' if name == 'navrl_height' else 'target_exp')
+        assert values['coef_height_boundary'] == 1

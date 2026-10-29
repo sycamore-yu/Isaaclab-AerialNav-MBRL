@@ -493,6 +493,8 @@ class ZhangTrainer:
                     history["margin"].append(parameters["margin"])
                     history["target_velocity"].append(target_velocity)
                     history["height_target"].append(observation["height_target"].detach().clone())
+                    if self.cfg.height_loss_mode == "navrl_range":
+                        history["height_range"].append(observation["height_range"].detach().clone())
                     history["velocity_prediction"].append(velocity_prediction)
                     history["observed_velocity"].append(state.velocity.detach())
                     history["episode_id"].append(observation["episode_id"].clone())

@@ -34,7 +34,7 @@ def main():
     parser.add_argument("--log_dir", type=Path, required=True)
     parser.add_argument("--num_envs", type=int, default=1024)
     parser.add_argument("--report_episodes", type=int, default=None)
-    parser.add_argument("--timing", choices=("baseline", "unified_20hz"), default="baseline")
+    parser.add_argument("--timing", choices=("baseline", "unified_20hz", "unified_50hz"), default="unified_20hz")
     parser.add_argument("--max_iterations", type=int, default=None, help="Optional smoke-run limit; default unlimited")
     parser.add_argument("--stop_after_acceptance", action="store_true", help="Finish when this stage reaches 80%")
     parser.add_argument("--stage", choices=("pretrain_s0", "pretrain_s1", "pretrain_s2", "finetune_s1", "finetune_s2"),
@@ -42,15 +42,15 @@ def main():
     parser.add_argument("--checkpoint", type=Path, help="Previous stage checkpoint from this experiment")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--terrain_seed", type=int, default=0)
-    parser.add_argument("--variant", choices=("step", "continuous", "dcol"), default="step")
+    parser.add_argument("--variant", choices=("step", "continuous", "dcol"), default="dcol")
     parser.add_argument("--algorithm", choices=("bptt", "shac", "ahac"), default="bptt",
                         help="ahac selects AHAC-derived DCOL synchronous adaptation")
     parser.add_argument("--timesteps", type=int, default=150)
     parser.add_argument("--velocity_loss_mode", choices=("variant_default", "per_step", "truncated_window", "full_window"),
-                        default="variant_default", help="Velocity supervision; truncated_window completes unscored "
+                        default="full_window", help="Velocity supervision; truncated_window completes unscored "
                         "short terminal windows; variant_default preserves each variant's current loss")
     parser.add_argument("--velocity_window_s", type=float, default=2.0)
-    parser.add_argument("--camera_batch_size", type=int, default=16,
+    parser.add_argument("--camera_batch_size", type=int, default=64,
                         help="Depth raycast environment batch size; does not change image resolution")
     parser.add_argument("--lr", type=float, default=None, help="Default: 0.001 pretraining, 0.00005 fine-tuning")
     parser.add_argument("--optimizer", choices=("adamw", "adam"), default="adamw")
@@ -83,7 +83,7 @@ def main():
     parser.add_argument("--coef_d_acc", type=float, default=0.01)
     parser.add_argument("--coef_d_jerk", type=float, default=0.001)
     parser.add_argument("--coef_height_boundary", type=float, default=1.0)
-    parser.add_argument("--height_loss_mode", choices=("target_exp", "target_huber", "boundary_huber"),
+    parser.add_argument("--height_loss_mode", choices=("target_exp", "target_huber", "boundary_huber", "navrl_range"),
                         default="target_exp")
     parser.add_argument("--height_target_min", type=float, default=0.5)
     parser.add_argument("--height_target_max", type=float, default=2.5)

@@ -215,8 +215,9 @@ class ZhangEventsCfg(NavigationEventsCfg):
 @configclass
 class ZhangNavRLEnvCfg(NavRLEnvCfg):
     method = "zhang"
-    variant: str = "step"
-    timing: str = "baseline"
+    variant: str = "dcol"
+    timing: str = "unified_20hz"
+    depth_camera_batch_size: int = 64
     height_target_range: tuple[float, float] = (0.5, 2.5)
     decimation = 10
     events = ZhangEventsCfg()
@@ -229,10 +230,10 @@ class ZhangNavRLEnvCfg(NavRLEnvCfg):
     def configure_scene(self):
         if self.variant not in ("step", "continuous", "dcol"):
             raise ValueError(f"Unknown Zhang variant: {self.variant}")
-        if self.timing not in ("baseline", "unified_20hz"):
+        if self.timing not in ("baseline", "unified_20hz", "unified_50hz"):
             raise ValueError(f"Unknown Zhang timing: {self.timing}")
-        self.sim.dt = 0.05 if self.timing == "unified_20hz" else 0.01
-        self.decimation = 1 if self.timing == "unified_20hz" else 10
+        self.sim.dt = {"baseline": 0.01, "unified_20hz": 0.05, "unified_50hz": 0.02}[self.timing]
+        self.decimation = 10 if self.timing == "baseline" else 1
         self.sim.render_interval = self.decimation
         low, high = self.height_target_range
         if not 0.2 < low < high < 4.0:

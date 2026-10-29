@@ -10,14 +10,14 @@ ZHANG_ALGORITHMS = ("bptt", "shac", "ahac")
 
 @dataclass
 class ZhangTrainCfg:
-    variant: Literal["step", "continuous", "dcol"] = "step"
+    variant: Literal["step", "continuous", "dcol"] = "dcol"
     algorithm: Literal["bptt", "shac", "ahac"] = "bptt"
     timesteps: int = 150
     max_iterations: int | None = None
     stop_after_acceptance: bool = False
-    physics_dt: float = 0.01
-    policy_dt: float = 0.1
-    velocity_loss_mode: Literal["variant_default", "per_step", "truncated_window", "full_window"] = "variant_default"
+    physics_dt: float = 0.05
+    policy_dt: float = 0.05
+    velocity_loss_mode: Literal["variant_default", "per_step", "truncated_window", "full_window"] = "full_window"
     velocity_window_s: float = 2.0
     grad_decay: float = 0.4
     lr: float = 0.001
@@ -55,7 +55,7 @@ class ZhangTrainCfg:
     coef_d_acc: float = 0.01
     coef_d_jerk: float = 0.001
     coef_height_boundary: float = 1.0
-    height_loss_mode: Literal["target_exp", "target_huber", "boundary_huber"] = "target_exp"
+    height_loss_mode: Literal["target_exp", "target_huber", "boundary_huber", "navrl_range"] = "target_exp"
     height_target_range: tuple[float, float] = (0.5, 2.5)
     boundary_margin: float = 0.5
     boundary_scale: float = 0.5
@@ -92,8 +92,8 @@ class ZhangTrainCfg:
             raise ValueError("optimizer must be adamw or adam")
         if not math.isfinite(self.weight_decay) or self.weight_decay < 0:
             raise ValueError("weight_decay must be finite and nonnegative")
-        if self.height_loss_mode not in ("target_exp", "target_huber", "boundary_huber"):
-            raise ValueError("height_loss_mode must be target_exp, target_huber, or boundary_huber")
+        if self.height_loss_mode not in ("target_exp", "target_huber", "boundary_huber", "navrl_range"):
+            raise ValueError("height_loss_mode must be target_exp, target_huber, boundary_huber, or navrl_range")
         if (len(self.height_target_range) != 2 or not all(math.isfinite(x) for x in self.height_target_range)
                 or not self.height_bounds[0] < self.height_target_range[0] < self.height_target_range[1] < self.height_bounds[1]):
             raise ValueError("height_target_range must be a finite increasing interval inside the height bounds")
@@ -136,8 +136,8 @@ class ZhangTrainCfg:
             self.ahac_risk_scale, self.ahac_risk_budget, self.ahac_dual_lr
         )) or not math.isfinite(self.ahac_risk_clearance) or self.ahac_risk_clearance < 0:
             raise ValueError("Invalid AHAC DCOL risk parameters")
-        if (self.physics_dt, self.policy_dt) not in ((0.01, 0.1), (0.05, 0.05)):
-            raise ValueError("Supported timing is 100/10 Hz or synchronized 20/20 Hz")
+        if (self.physics_dt, self.policy_dt) not in ((0.01, 0.1), (0.05, 0.05), (0.02, 0.02)):
+            raise ValueError("Supported timing is 100/10 Hz, synchronized 20 Hz, or synchronized 50 Hz")
         if self.timesteps < 2 or (self.max_iterations is not None and self.max_iterations < 1):
             raise ValueError("Training requires at least two rollout steps and one update")
         if self.cosine_period_updates < 1:

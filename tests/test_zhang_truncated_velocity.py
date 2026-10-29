@@ -12,6 +12,7 @@ from isaaclab_navrl.zhang.losses import zhang_transition_costs
 
 def _cfg(window=4, **overrides):
     values = {
+        "physics_dt": 0.01, "policy_dt": 0.1,
         "variant": "dcol", "velocity_loss_mode": "truncated_window", "velocity_window_s": window * 0.1,
         "coef_v_pred": 0.0, "coef_obj_avoidance": 0.0, "coef_collide": 0.0,
         "coef_d_acc": 0.0, "coef_d_jerk": 0.0, "coef_height_boundary": 0.0,
@@ -230,7 +231,7 @@ def test_other_six_costs_and_geometry_gradients_remain_exactly_unchanged():
                            variables, strict=True):
         history[name] = list(value.unbind(0))
     history["obstacle_signed_distance"] = list(vector.norm(dim=-1).unbind(0))
-    cfg = ZhangTrainCfg(variant="dcol", velocity_loss_mode="truncated_window", velocity_window_s=0.4)
+    cfg = ZhangTrainCfg(physics_dt=0.01, policy_dt=0.1, variant="dcol", velocity_loss_mode="truncated_window", velocity_window_s=0.4)
     original, _, original_cost = zhang_transition_costs(history, replace(cfg, velocity_loss_mode="full_window"))
     complete, _, cost = zhang_transition_costs(history, cfg)
     for name in ("velocity_prediction", "obstacle_avoidance", "collision", "acceleration", "jerk", "height_boundary"):

@@ -24,7 +24,7 @@ class ZhangTrainConfigTests(unittest.TestCase):
     def test_default_velocity_mode_uses_terminal_completion_for_continuous_and_dcol(self):
         for variant, expected in (("step", "per_step"), ("continuous", "truncated_window"), ("dcol", "truncated_window")):
             with self.subTest(variant=variant):
-                cfg = ZhangTrainCfg(variant=variant)
+                cfg = ZhangTrainCfg(variant=variant, velocity_loss_mode="variant_default")
                 cfg.validate()
                 self.assertEqual(cfg.velocity_loss_mode, "variant_default")
                 self.assertEqual(cfg.resolved_velocity_loss_mode, expected)
@@ -37,13 +37,13 @@ class ZhangTrainConfigTests(unittest.TestCase):
                                         velocity_window_s=2.0)
                     cfg.validate()
                     self.assertEqual(cfg.resolved_velocity_loss_mode, "window" if mode == "full_window" else mode)
-                    self.assertEqual(cfg.velocity_window_steps, 20)
+                    self.assertEqual(cfg.velocity_window_steps, 40)
                     payload = json.loads(json.dumps(asdict(cfg)))
                     self.assertEqual(payload["velocity_loss_mode"], mode)
                     restored = ZhangTrainCfg(**payload)
                     restored.validate()
                     self.assertEqual(restored.resolved_velocity_loss_mode, "window" if mode == "full_window" else mode)
-                    self.assertEqual(restored.velocity_window_steps, 20)
+                    self.assertEqual(restored.velocity_window_steps, 40)
         for mode in ("per_step", "truncated_window", "full_window"):
             ZhangTrainCfg(variant="continuous", velocity_loss_mode=mode).validate()
 
@@ -57,7 +57,7 @@ class ZhangTrainConfigTests(unittest.TestCase):
                     _ = cfg.resolved_velocity_loss_mode
         for mode in ("per_step", "truncated_window", "full_window"):
             with self.subTest(mode=mode), self.assertRaisesRegex(ValueError, "velocity_window_s"):
-                ZhangTrainCfg(variant="dcol", velocity_loss_mode=mode, velocity_window_s=0.15).validate()
+                ZhangTrainCfg(variant="dcol", velocity_loss_mode=mode, velocity_window_s=0.125).validate()
         with self.assertRaisesRegex(ValueError, "variant"):
             ZhangTrainCfg(variant="truncated_window").validate()
 

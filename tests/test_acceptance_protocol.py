@@ -23,8 +23,8 @@ build_command, parse_train_args = protocol.build_command, protocol.parse_train_a
 run_pipeline, validate_stage_result = protocol.run_pipeline, protocol.validate_stage_result
 
 
-def report_fixture(stage="pretrain_s0", parent=None, algorithm="bptt", variant="step",
-                   velocity_loss_mode="variant_default", num_envs=1024):
+def report_fixture(stage="pretrain_s0", parent=None, algorithm="bptt", variant="dcol",
+                   velocity_loss_mode="full_window", num_envs=1024):
     config = STAGE_CONFIG[stage].copy()
     final = stage == "finetune_s2"
     return {
@@ -235,7 +235,7 @@ class AcceptanceProtocolTests(unittest.TestCase):
             ["--discount", "-1"], ["--td_lambda", "1.1"], ["--critic_iterations", "0"],
             ["--observation_normalization", "true"], ["--recovery_enabled", "false"],
             ["--observation_normalization", "2"], ["--recovery_enabled", ""],
-            ["--algorithm", "shac"], ["--algorithm", "shac", "--variant", "dcol",
+            ["--algorithm", "shac", "--variant", "step"], ["--algorithm", "shac", "--variant", "dcol",
                                          "--gradient_diagnostic_updates", "12"],
             ["--ahac_min_horizon", "33"], ["--ahac_max_horizon", "16"], ["--timesteps", "1"],
             ["--ahac_risk_clearance", "-0.1"], ["--ahac_dual_lr", "0"],

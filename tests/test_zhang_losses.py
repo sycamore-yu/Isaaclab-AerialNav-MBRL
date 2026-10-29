@@ -38,6 +38,7 @@ def _history(velocity, target=None, episode=None, done=None):
 
 def _velocity_only_cfg(**overrides):
     values = {
+        "physics_dt": 0.01, "policy_dt": 0.1,
         "variant": "dcol", "velocity_loss_mode": "full_window", "coef_v_pred": 0.0, "coef_obj_avoidance": 0.0,
         "coef_collide": 0.0, "coef_d_acc": 0.0, "coef_d_jerk": 0.0, "coef_height_boundary": 0.0,
     }
@@ -177,7 +178,7 @@ def _rich_history():
 
 def test_step_variant_default_and_override_are_exactly_identical():
     velocity, history, _ = _rich_history()
-    cfg = ZhangTrainCfg(variant="step")
+    cfg = ZhangTrainCfg(physics_dt=0.01, policy_dt=0.1, velocity_loss_mode="variant_default", variant="step")
     default, default_cache, default_cost = zhang_transition_costs(history, cfg)
     explicit, explicit_cache, explicit_cost = zhang_transition_costs(
         history, replace(cfg, velocity_loss_mode="per_step"),
@@ -193,7 +194,7 @@ def test_step_variant_default_and_override_are_exactly_identical():
 
 def test_dcol_override_preserves_all_six_other_costs_and_their_gradients():
     velocity, history, geometry_and_control = _rich_history()
-    cfg = ZhangTrainCfg(variant="dcol", velocity_loss_mode="full_window")
+    cfg = ZhangTrainCfg(physics_dt=0.01, policy_dt=0.1, variant="dcol", velocity_loss_mode="full_window")
     original, _, original_cost = zhang_transition_costs(history, cfg)
     explicit, cache, explicit_cost = zhang_transition_costs(history, replace(cfg, velocity_loss_mode="per_step"))
     assert original["velocity"] == 0  # Three transitions cannot fill W20.

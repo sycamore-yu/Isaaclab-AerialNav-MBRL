@@ -26,7 +26,7 @@ class _Writer:
 
 
 def _trainer(path, schedule="cosine", stage="pretrain_s0", algorithm="bptt", **cfg_changes):
-    settings = dict(variant="dcol", algorithm=algorithm, observation_normalization=True, lr_schedule=schedule,
+    settings = dict(physics_dt=0.01, policy_dt=0.1, velocity_loss_mode="variant_default", variant="dcol", algorithm=algorithm, observation_normalization=True, lr_schedule=schedule,
                     plateau_patience=2, plateau_cooldown=0)
     settings.update(cfg_changes)
     cfg = ZhangTrainCfg(**settings)

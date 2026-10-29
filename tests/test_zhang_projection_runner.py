@@ -64,7 +64,7 @@ def _trainer(path, cfg):
 
 @pytest.mark.parametrize("projection", ("none", "height_priority"))
 def test_runner_probe_uses_pre_call_state_and_changes_no_training_update(tmp_path, monkeypatch, projection):
-    cfg = ZhangTrainCfg(
+    cfg = ZhangTrainCfg(physics_dt=0.01, policy_dt=0.1, variant="step", velocity_loss_mode="variant_default",
         timesteps=4, max_iterations=2, velocity_window_s=0.2, max_grad_norm=0.05,
         observation_normalization=True, recovery_enabled=False, gradient_projection=projection,
     )

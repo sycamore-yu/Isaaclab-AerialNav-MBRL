@@ -61,7 +61,7 @@ class GradientDiagnosticCliTests(unittest.TestCase):
         self.assertEqual(args.stage, "pretrain_s0")
         self.assertEqual(args.algorithm, "bptt")
         self.assertEqual(args.critic_value_transform, "linear")
-        self.assertEqual(args.velocity_loss_mode, "variant_default")
+        self.assertEqual(args.velocity_loss_mode, "full_window")
         self.assertEqual(args.height_loss_mode, "target_exp")
         self.assertEqual((args.height_target_min, args.height_target_max), (0.5, 2.5))
         self.assertEqual(args.plateau_patience, 2)
@@ -305,7 +305,7 @@ class GradientDiagnosticCliTests(unittest.TestCase):
             acceptance.parse_train_args(["--gradient_diagnostic_updates"])
 
     def test_camera_batch_default_and_positive_integer_validation(self):
-        self.assertEqual(parse_training_cli([]).camera_batch_size, 16)
+        self.assertEqual(parse_training_cli([]).camera_batch_size, 64)
         self.assertEqual(parse_training_cli(["--camera_batch_size", "64"]).camera_batch_size, 64)
         self.assertEqual(acceptance.parse_train_args(["--camera_batch_size", "64"]), {"camera_batch_size": 64})
         for raw in ("0", "-1", "1.5", "nan", ""):

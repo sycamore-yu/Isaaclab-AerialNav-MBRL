@@ -44,13 +44,13 @@ def parse_gradient_diagnostic_updates(raw: str) -> tuple[int, ...]:
 
 TrainArgValue = str | int | float | bool | tuple[int, ...]
 TRAIN_ARG_CHOICES = {
-    "timing": ("baseline", "unified_20hz"),
+    "timing": ("baseline", "unified_20hz", "unified_50hz"),
     "variant": ("step", "continuous", "dcol"),
     "algorithm": ("bptt", "shac", "ahac"),
     "lr_schedule": ("cosine", "plateau", "constant"),
     "critic_value_transform": ("linear", "softplus"),
     "velocity_loss_mode": ("variant_default", "per_step", "truncated_window", "full_window"),
-    "height_loss_mode": ("target_exp", "target_huber", "boundary_huber"),
+    "height_loss_mode": ("target_exp", "target_huber", "boundary_huber", "navrl_range"),
     "optimizer": ("adamw", "adam"),
     "gradient_projection": ("none", "height_priority"),
 }
@@ -147,7 +147,7 @@ def parse_train_args(tokens: list[str]) -> dict[str, TrainArgValue]:
     if values.get("algorithm", "bptt") == "bptt" and values.get("critic_value_transform", "linear") != "linear":
         raise ValueError("--critic_value_transform softplus requires --algorithm shac or ahac")
     if values.get("algorithm", "bptt") != "bptt":
-        if values.get("variant", "step") != "dcol":
+        if values.get("variant", "dcol") != "dcol":
             raise ValueError("SHAC/AHAC comparisons require --variant dcol")
         if values.get("gradient_diagnostic_updates", ()):
             raise ValueError("Seven-term gradient diagnostics require --algorithm bptt")
@@ -212,10 +212,10 @@ def validate_stage_result(
     stage: str,
     num_envs: int,
     parent_checkpoint: Path | None,
-    variant: str = "step",
+    variant: str = "dcol",
     algorithm: str = "bptt",
     report_episodes: int | None = None,
-    velocity_loss_mode: str = "variant_default",
+    velocity_loss_mode: str = "full_window",
     screening: bool = False,
 ) -> list[str]:
     """Validate one real training report against the fixed acceptance protocol."""
@@ -392,10 +392,10 @@ def run_pipeline(args: argparse.Namespace, train_args: dict[str, TrainArgValue])
                     errors += validate_stage_result(
                         current_stage["result"], method=method, stage=stage,
                         num_envs=args.num_envs, parent_checkpoint=parent_checkpoint,
-                        variant=train_args.get("variant", "step"),
+                        variant=train_args.get("variant", "dcol"),
                         algorithm=train_args.get("algorithm", "bptt"),
                         report_episodes=getattr(args, "report_episodes", None),
-                        velocity_loss_mode=train_args.get("velocity_loss_mode", "variant_default"),
+                        velocity_loss_mode=train_args.get("velocity_loss_mode", "full_window"),
                         screening=screening,
                     )
                 checkpoint = log_dir / "checkpoint_stage.pt"

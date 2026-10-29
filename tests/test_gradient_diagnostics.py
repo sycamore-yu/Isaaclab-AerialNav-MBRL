@@ -136,7 +136,7 @@ def _memory_finish(device, allocated_before):
 def run_equivalence(device):
     """N=2/H=4 smoke on CPU or CUDA; no simulator, rollout copy, or alternate losses."""
     torch.manual_seed(63)
-    cfg = ZhangTrainCfg(timesteps=4, max_grad_norm=0.2)
+    cfg = ZhangTrainCfg(physics_dt=0.01, policy_dt=0.1, variant="step", velocity_loss_mode="variant_default", timesteps=4, max_grad_norm=0.2)
     baseline = ZhangPolicy().to(device)
     baseline_optimizer = torch.optim.AdamW(baseline.parameters(), lr=cfg.lr)
     _step(baseline, baseline_optimizer, cfg, diagnose=False)  # Populate AdamW moments.
@@ -200,7 +200,7 @@ def test_diagnostic_preserves_checkpointed_gradients_update_and_nonempty_adamw_s
 
 def test_zero_gradient_cosines_are_null_even_with_adamw_weight_decay():
     torch.manual_seed(91)
-    model, cfg = ZhangPolicy(), ZhangTrainCfg()
+    model, cfg = ZhangPolicy(), ZhangTrainCfg(physics_dt=0.01, policy_dt=0.1, variant="step", velocity_loss_mode="variant_default")
     optimizer = torch.optim.AdamW(model.parameters(), lr=cfg.lr)
     zero = sum(parameter.sum() for parameter in model.parameters()) * 0.0
     losses = {name: zero for name, _ in LOSS_COEFFICIENTS}
@@ -225,11 +225,11 @@ def test_zero_gradient_cosines_are_null_even_with_adamw_weight_decay():
 
 
 def test_diagnostic_update_config_defaults_off_and_rejects_invalid_global_ids():
-    assert ZhangTrainCfg().gradient_diagnostic_updates == ()
-    ZhangTrainCfg(gradient_diagnostic_updates=(20, 22, 24, 26)).validate()
+    assert ZhangTrainCfg(physics_dt=0.01, policy_dt=0.1, variant="step", velocity_loss_mode="variant_default").gradient_diagnostic_updates == ()
+    ZhangTrainCfg(physics_dt=0.01, policy_dt=0.1, variant="step", velocity_loss_mode="variant_default", gradient_diagnostic_updates=(20, 22, 24, 26)).validate()
     for updates in ((0,), (-1,), (1, 1), (1.0,), (True,)):
         with pytest.raises(ValueError, match="gradient_diagnostic_updates"):
-            ZhangTrainCfg(gradient_diagnostic_updates=updates).validate()
+            ZhangTrainCfg(physics_dt=0.01, policy_dt=0.1, variant="step", velocity_loss_mode="variant_default", gradient_diagnostic_updates=updates).validate()
 
 
 def main():

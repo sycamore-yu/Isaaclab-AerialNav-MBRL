@@ -128,6 +128,15 @@ def height_target_loss(position, height_target, mode="target_exp", *, reduction=
     raise ValueError("height_target_loss reduction must be none, mean, or sum")
 
 
+def navrl_height_loss(position, height_range):
+    """Original NavRL C1 height penalty, with a fixed 0.2 m episode-band margin."""
+    if height_range.shape != (*position.shape[:-1], 2):
+        raise ValueError("height_range must match position's leading dimensions with two episode endpoints")
+    low, high = height_range.detach().unbind(-1)
+    z = position[..., 2]
+    return (low - 0.2 - z).relu().square() + (z - high - 0.2).relu().square()
+
+
 def zhang_transition_costs(history, cfg, velocity_history=None):
     """Return scalar losses, detached window history and actual ``cost[T, N]``.
 
@@ -161,10 +170,12 @@ def zhang_transition_costs(history, cfg, velocity_history=None):
         raise ValueError(f"Unsupported Zhang loss variant: {cfg.variant}")
     if "obstacle_signed_distance" not in history:
         raise ValueError("Zhang losses require obstacle_signed_distance from the pre-step look-ahead queries")
-    if cfg.height_loss_mode not in ("target_exp", "target_huber", "boundary_huber"):
-        raise ValueError("height_loss_mode must be target_exp, target_huber, or boundary_huber")
-    if cfg.height_loss_mode != "boundary_huber" and "height_target" not in history:
+    if cfg.height_loss_mode not in ("target_exp", "target_huber", "boundary_huber", "navrl_range"):
+        raise ValueError("height_loss_mode must be target_exp, target_huber, boundary_huber, or navrl_range")
+    if cfg.height_loss_mode in ("target_exp", "target_huber") and "height_target" not in history:
         raise ValueError("target height losses require the pre-step episode height_target")
+    if cfg.height_loss_mode == "navrl_range" and "height_range" not in history:
+        raise ValueError("navrl_range requires the pre-step episode height_range")
     velocity = torch.stack(history["velocity"])
     target = torch.stack(history["target_velocity"])
     episode = torch.stack(history["episode_id"])
@@ -218,7 +229,9 @@ def zhang_transition_costs(history, cfg, velocity_history=None):
     command = torch.stack(history["command"])
     command_previous = torch.stack(history["previous_command"])
     position = torch.stack(history["position"])
-    if cfg.height_loss_mode == "boundary_huber":
+    if cfg.height_loss_mode == "navrl_range":
+        height_cost = navrl_height_loss(position, torch.stack(history["height_range"]))
+    elif cfg.height_loss_mode == "boundary_huber":
         height_cost = height_boundary_loss(
             position, cfg.height_bounds, cfg.boundary_margin, cfg.boundary_scale, reduction="none",
         )
