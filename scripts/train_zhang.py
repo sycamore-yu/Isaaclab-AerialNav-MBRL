@@ -73,6 +73,8 @@ def main():
     parser.add_argument("--critic_lr", type=float, default=0.0005)
     parser.add_argument("--critic_iterations", type=int, default=16)
     parser.add_argument("--critic_max_iterations", type=int, default=64)
+    parser.add_argument("--critic_value_transform", choices=("linear", "softplus"), default="linear",
+                        help="Critic cost output transform; softplus requires SHAC or AHAC")
     parser.add_argument("--discount", type=float, default=0.99)
     parser.add_argument("--td_lambda", type=float, default=0.95)
     parser.add_argument("--ahac_min_horizon", type=int, default=16)
@@ -100,6 +102,8 @@ def main():
         parser.error("num_envs and max_iterations must be positive")
     if args.camera_batch_size < 1:
         parser.error("camera_batch_size must be positive")
+    if args.algorithm == "bptt" and args.critic_value_transform != "linear":
+        parser.error("--critic_value_transform softplus requires --algorithm shac or ahac")
     if args.stage == "pretrain_s0" and args.checkpoint is not None:
         parser.error("Pretraining S0 must start from random initialization")
     if args.stage != "pretrain_s0" and args.checkpoint is None and args.max_iterations is None:
@@ -136,7 +140,7 @@ def main():
               "coef_height_boundary", "boundary_margin", "boundary_scale", "cosine_period_updates", "seed",
               "gradient_diagnostic_updates", "observation_normalization", "lr_schedule", "recovery_enabled",
               "normalization_variance_floor",
-              "critic_lr", "critic_iterations", "critic_max_iterations", "discount", "td_lambda",
+              "critic_lr", "critic_iterations", "critic_max_iterations", "critic_value_transform", "discount", "td_lambda",
               "ahac_min_horizon", "ahac_max_horizon", "ahac_initial_horizon",
               "ahac_risk_clearance", "ahac_risk_scale", "ahac_risk_budget", "ahac_dual_lr")
     train_cfg = ZhangTrainCfg(**{name: getattr(args, name) for name in fields})

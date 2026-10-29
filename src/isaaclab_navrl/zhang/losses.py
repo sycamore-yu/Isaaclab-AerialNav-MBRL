@@ -63,9 +63,18 @@ def zhang_transition_costs(history, cfg, velocity_history=None):
     cost is scaled by ``T*N/valid_count``, preserving the valid-window mean.
     Cached prefix samples may complete a window, but receive neither a new
     score nor a gradient. Windows crossing an episode boundary remain masked.
+
+    Continuous rollouts also require ``ground_signed_distance`` at the ten
+    original pre-step look-ahead queries: query_z minus 0.01, before subtracting
+    the drone margin. Only queries below that plane replace unsigned clearance
+    with signed clearance. This permits ground recovery without changing the
+    above-ground loss or the other variants. General nonconvex static-object
+    penetration still uses the original unsigned nearest-surface geometry.
     """
     if cfg.variant not in ("step", "continuous", "dcol"):
         raise ValueError(f"Unsupported Zhang loss variant: {cfg.variant}")
+    if cfg.variant == "continuous" and "ground_signed_distance" not in history:
+        raise ValueError("continuous requires ground_signed_distance from the pre-step look-ahead queries")
     velocity = torch.stack(history["velocity"])
     target = torch.stack(history["target_velocity"])
     episode = torch.stack(history["episode_id"])
@@ -99,7 +108,13 @@ def zhang_transition_costs(history, cfg, velocity_history=None):
             "target_velocity": all_target[-window:].detach(),
             "episode_id": all_episode[-window:].detach(),
         }
-    distance = torch.stack(history["obstacle_vector"]).norm(dim=-1) - torch.stack(history["margin"])[:, :, None]
+    margin = torch.stack(history["margin"])[:, :, None]
+    distance = torch.stack(history["obstacle_vector"]).norm(dim=-1) - margin
+    if cfg.variant == "continuous":
+        ground = torch.stack(history["ground_signed_distance"])
+        if ground.shape != distance.shape:
+            raise ValueError("ground_signed_distance must match the [T, N, 10] obstacle look-ahead samples")
+        distance = torch.where(ground < 0, ground - margin, distance)
     # Ten source look-ahead points include both endpoints: dt_sample = policy_dt / 9.
     approach = (-distance.diff(dim=2) * ((distance.shape[2] - 1) / cfg.policy_dt)).clamp_min(1).detach()
     collision_gap = torch.stack(history["dcol_gap"]) if cfg.variant == "dcol" else distance[:, :, 1:]

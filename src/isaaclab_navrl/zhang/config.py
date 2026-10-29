@@ -36,6 +36,7 @@ class ZhangTrainCfg:
     critic_lr: float = 0.0005
     critic_iterations: int = 16
     critic_max_iterations: int = 64
+    critic_value_transform: Literal["linear", "softplus"] = "linear"
     ahac_min_horizon: int = 16
     ahac_max_horizon: int = 150
     ahac_initial_horizon: int = 32
@@ -69,6 +70,10 @@ class ZhangTrainCfg:
             raise ValueError(f"variant must be one of {ZHANG_VARIANTS}")
         if self.algorithm not in ZHANG_ALGORITHMS:
             raise ValueError(f"algorithm must be one of {ZHANG_ALGORITHMS}")
+        if self.critic_value_transform not in ("linear", "softplus"):
+            raise ValueError("critic_value_transform must be linear or softplus")
+        if self.algorithm == "bptt" and self.critic_value_transform != "linear":
+            raise ValueError("A non-linear critic_value_transform requires SHAC or AHAC")
         if self.algorithm != "bptt" and self.variant != "dcol":
             raise ValueError("The SHAC/AHAC comparisons require the dcol configuration")
         if self.algorithm != "bptt" and self.gradient_diagnostic_updates:

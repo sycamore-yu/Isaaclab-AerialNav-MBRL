@@ -47,6 +47,7 @@ TRAIN_ARG_CHOICES = {
     "variant": ("step", "continuous", "dcol"),
     "algorithm": ("bptt", "shac", "ahac"),
     "lr_schedule": ("cosine", "plateau", "constant"),
+    "critic_value_transform": ("linear", "softplus"),
 }
 TRAIN_ARG_TYPES = {
     "variant": str,
@@ -72,6 +73,7 @@ TRAIN_ARG_TYPES = {
     "critic_lr": float,
     "critic_iterations": int,
     "critic_max_iterations": int,
+    "critic_value_transform": str,
     "discount": float,
     "td_lambda": float,
     "ahac_min_horizon": int,
@@ -128,6 +130,8 @@ def parse_train_args(tokens: list[str]) -> dict[str, TrainArgValue]:
             raise ValueError(f"{option} must be positive")
         values[key] = value
         index += 1
+    if values.get("algorithm", "bptt") == "bptt" and values.get("critic_value_transform", "linear") != "linear":
+        raise ValueError("--critic_value_transform softplus requires --algorithm shac or ahac")
     if values.get("algorithm", "bptt") != "bptt":
         if values.get("variant", "step") != "dcol":
             raise ValueError("SHAC/AHAC comparisons require --variant dcol")

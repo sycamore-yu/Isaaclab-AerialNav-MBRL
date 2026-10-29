@@ -68,6 +68,9 @@ def loss_history(velocity, target=None, episode=None, done=None, collision=None,
         "episode_id": list(episode.unbind(0)), "done": list(done.unbind(0)),
         "collision": list(collision.unbind(0)), "position": list(position.unbind(0)),
         "obstacle_vector": [vectors] * count, "margin": [torch.full((batch,), 0.3)] * count,
+        # These generic loss fixtures have above-ground pre-step queries.
+        # Dedicated ground-geometry tests cover penetration and recovery.
+        "ground_signed_distance": [velocity.new_full((batch, 10), 1.99)] * count,
         "command": [zeros] * count, "previous_command": [zeros] * count,
         "velocity_prediction": [zeros] * count, "observed_velocity": [zeros] * count,
     }
@@ -586,7 +589,7 @@ def test_stage_handoff_preserves_weights_optimizer_and_counts_actual_transitions
         env = AnalyticEnv()
         env.cfg.training_stage = stage
         env.cfg.sim_to_real.enabled = stage.startswith("finetune")
-        cfg = ZhangTrainCfg(timesteps=4 + index, max_iterations=1, velocity_window_s=0.2)
+        cfg = ZhangTrainCfg(timesteps=4, max_iterations=1, velocity_window_s=0.2)
         trainer = ZhangTrainer(env, cfg, tmp_path / stage)
         if checkpoint is not None:
             trainer.load_stage_checkpoint(checkpoint)
@@ -603,6 +606,20 @@ def test_stage_handoff_preserves_weights_optimizer_and_counts_actual_transitions
         assert all(int(value["step"]) == index + 1 for value in trainer.optimizer.state.values())
         checkpoint = tmp_path / stage / "checkpoint_final.pt"
         previous_weights = {name: value.clone() for name, value in trainer.model.state_dict().items()}
+
+
+def test_stage_handoff_rejects_changed_rollout_length(tmp_path):
+    first_env = AnalyticEnv()
+    first_env.cfg.training_stage = "pretrain_s0"
+    first = ZhangTrainer(first_env, ZhangTrainCfg(timesteps=4, max_iterations=1, velocity_window_s=0.2),
+                         tmp_path / "first")
+    first.run()
+    second_env = AnalyticEnv()
+    second_env.cfg.training_stage = "pretrain_s1"
+    second = ZhangTrainer(second_env, ZhangTrainCfg(timesteps=5, max_iterations=1, velocity_window_s=0.2),
+                          tmp_path / "second")
+    with pytest.raises(ValueError, match="Stage transitions cannot change timesteps"):
+        second.load_stage_checkpoint(tmp_path / "first" / "checkpoint_final.pt")
 
 
 def test_stage_handoff_rejects_another_comparison_variant(tmp_path):

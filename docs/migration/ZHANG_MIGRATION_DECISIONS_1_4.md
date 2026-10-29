@@ -64,6 +64,18 @@ Zhang 的动态物体运动、碰撞和首次到达事件按 100 Hz 物理步检
 
 旧实验冻结点为 f6d5fd4，标签 baseline/zhang-pre-new-mechanisms-20261029；归档见 [记录](../results/zhang_pre_new_mechanisms_archive_20261029.md)。全部新定义见 [新机制](../ZHANG_NEW_MECHANISMS_20261029.md)。
 
+## 连续展开新可达状态的几何修正与成本价值对照
+
+连续模式允许穿过地面后继续运动，原欧氏最近点距离在地面以下会产生错误的避障/碰撞恢复方向。
+仅对continuous的地面以下原10点look-ahead查询使用有符号地面半空间距离；地面以上、step、dcol
+保持原行为，七项损失形式和系数不变。这不声称解决非凸静态障碍内部的穿透梯度。
+证据和修正规则见[地面距离经验](CONTINUOUS_GROUND_SIGN_EXPERIENCE.md)。
+
+SHAC/AHAC可选 `critic_value_transform=softplus`，只约束成本critic最终输出非负，默认仍为linear。
+它不更改Zhang成本、TD目标公式、优化器或H控制，必须新随机初始化对照，不加载已训练的linear
+检查点。新旧代码使用隔离工作树，原活动实验的后续阶段继续读取原源码。完整协议见
+[后续诊断与对照](../ZHANG_DIAGNOSTIC_FOLLOWUPS_20261029.md)。
+
 ## 方法来源
 
 网络、六维输出解码、损失和简化动力学参考作者发布的 [HenryHuYu/DiffPhysDrone](https://github.com/HenryHuYu/DiffPhysDrone/tree/271936190b5c2a5e760230e718fa6b167718a5bf)，对应 `model.py`、`main_cuda.py`、`env_cuda.py` 和 `src/dynamics_kernel.cu`。本次使用的源快照没有附带 `LICENSE` 或 `NOTICE` 文件，项目未为该源代码另行指定许可证；README 要求的论文引用保留如下：

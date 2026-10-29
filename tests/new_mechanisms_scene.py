@@ -64,6 +64,119 @@ def check_perception(env):
     }
 
 
+def below_ground_recovery_gradient(env, action):
+    """Actual PhysX/terrain probe, followed by the ordinary geometric adjoint.
+
+    The pose is set by the test, not reached or recovered by a learned policy.
+    A single transition has no full velocity window; prediction is set to its
+    measured reference and the issued command is zero. Thus the seven-term
+    total isolates the actual obstacle and height recovery terms without
+    changing their configured coefficients. PhysX contacts are not differentiated.
+    """
+    import torch
+
+    from isaaclab_navrl.zhang.config import ZhangTrainCfg
+    from isaaclab_navrl.zhang.dynamics import PointMassState, align_transition, policy_transition
+    from isaaclab_navrl.zhang.losses import zhang_transition_costs
+    from isaaclab_navrl.zhang.model import quaternion_matrix
+
+    assert env.cfg.variant == "continuous"
+    lane = env.num_envs - 1  # The final raw camera batch must include this aircraft.
+    ids = torch.tensor([lane], device=env.device, dtype=torch.int32)
+    env._reset_idx(ids)
+    placement = action.new_tensor([[-5.0, -23.0, -0.5]])
+    initial_velocity = action.new_tensor([[0.5, 0.0, 0.0]])
+    write_pose(env, ids, placement, initial_velocity)
+    env.target_pos[lane] = action.new_tensor((-5.0, 23.0, 2.0))
+    env.target_dir[lane] = env.target_pos[lane] - placement[0]
+    episode = int(env.episode_id[lane])
+    _, _, terminated, timeout, first_info = env.step(action)
+    first = first_info["transition"]
+    assert not bool(terminated[lane] | timeout[lane])
+    assert int(env.episode_id[lane]) == episode and bool(first["bounds"][lane])
+    assert int(first["first_event_code"][lane]) == 3
+    assert float(first["position"][lane, 2]) < 0.0
+    first_time = first["first_event_time_s"][lane].clone()
+
+    measured = env.root_state()[lane:lane + 1].detach().clone()
+    position = measured[:, :3].clone().requires_grad_()
+    velocity = measured[:, 7:10]
+    acceleration = (velocity - initial_velocity) / env.step_dt
+    actuator = env.filtered_command[lane:lane + 1].detach().clone()
+    state = PointMassState(position, velocity, acceleration, actuator)
+    parameters = {name: value[lane:lane + 1].detach().clone() for name, value in env.zhang_parameters.items()}
+    cfg = ZhangTrainCfg(variant="continuous", timesteps=2, max_iterations=1)
+    lookahead = torch.linspace(0, cfg.policy_dt, 10, device=env.device)[None, :, None]
+    query = position[:, None] + velocity[:, None] * lookahead
+    terrain_surface = env.terrain_distance.closest_points(query).detach()
+    assert bool(torch.isfinite(terrain_surface).all())
+    assert bool((terrain_surface[..., 2].abs() < 0.02).all())
+    torch.testing.assert_close(terrain_surface[..., :2], query.detach()[..., :2], rtol=0, atol=1e-4)
+    vector = env.nearest_obstacle_vector(query)
+    ground = query[..., 2] - 0.01
+    assert bool((ground < 0).all()) and bool(torch.isfinite(vector).all())
+    nearest_surface = (query + vector).detach()
+
+    _, _, terminated, timeout, info = env.step(action)
+    transition = info["transition"]
+    assert not bool(terminated[lane] | timeout[lane])
+    assert int(env.episode_id[lane]) == episode and bool(transition["bounds"][lane])
+    assert int(transition["first_event_code"][lane]) == 3
+    torch.testing.assert_close(transition["first_event_time_s"][lane], first_time, rtol=0, atol=0)
+    assert float(transition["position"][lane, 2]) < 0.0
+    displacement = float((transition["position"][lane] - first["position"][lane]).norm())
+    assert displacement > 1e-5
+    assert not bool(transition["reached"][lane]) and int(env.first_reach_step[lane]) == 0
+
+    executed = transition["executed_action"][lane:lane + 1].detach()
+    torch.testing.assert_close(executed, torch.zeros_like(executed), rtol=0, atol=0)
+    prediction = policy_transition(state, executed, quaternion_matrix(measured[:, 3:7]), parameters, cfg)
+    terminal, _ = align_transition(
+        prediction, transition["position"][lane:lane + 1], transition["velocity"][lane:lane + 1], velocity,
+        (terminated | timeout)[lane:lane + 1], env.root_state()[lane:lane + 1, :3],
+        env.root_state()[lane:lane + 1, 7:10], cfg.policy_dt, transition["actuator"][lane:lane + 1],
+    )
+    zero = action[lane:lane + 1]
+    history = {
+        "velocity": [terminal.velocity], "target_velocity": [velocity.detach()],
+        "episode_id": [env.episode_id[lane:lane + 1].clone()], "position": [terminal.position],
+        "obstacle_vector": [vector], "ground_signed_distance": [ground], "margin": [parameters["margin"]],
+        "command": [zero], "previous_command": [zero],
+        "velocity_prediction": [velocity.detach()], "observed_velocity": [velocity.detach()],
+    }
+    losses, _, cost = zhang_transition_costs(history, cfg)
+    torch.testing.assert_close(cost.mean(), losses["total"], rtol=0, atol=0)
+    component_gradients = {}
+    for name, coefficient in (("obstacle_avoidance", cfg.coef_obj_avoidance),
+                              ("collision", cfg.coef_collide), ("height_boundary", cfg.coef_height_boundary)):
+        gradient = torch.autograd.grad(coefficient * losses[name], position, retain_graph=True)[0]
+        assert bool(torch.isfinite(gradient).all()) and float(gradient[0, 2]) < 0.0
+        component_gradients[name] = gradient[0].tolist()
+    total_gradient = torch.autograd.grad(losses["total"], position)[0]
+    assert bool(torch.isfinite(cost).all() & torch.isfinite(total_gradient).all())
+    assert float(total_gradient[0, 2]) < 0.0  # Gradient descent therefore moves upward.
+    perception = check_perception(env)
+    begin, end, raw = env.scene["depth_camera"].last_depth_batch
+    assert begin <= lane < end and bool(torch.isfinite(raw[lane - begin]).all())
+    return {
+        "status": "passed", "manual_pose_probe": True, "policy_success_claimed": False,
+        "synthetic_detector_events": False, "lane": lane, "placement_m": placement[0].tolist(),
+        "episode_id_before": episode, "episode_id_after": int(env.episode_id[lane]),
+        "policy_steps_below_ground": 2, "continued_displacement_m": displacement,
+        "first_event_code": int(transition["first_event_code"][lane]),
+        "first_event_time_s": float(first_time), "query_positions_m": query.detach()[0].tolist(),
+        "actual_terrain_surfaces_m": terrain_surface[0].tolist(),
+        "actual_nearest_surfaces_m": nearest_surface[0].tolist(),
+        "terminal_position_m": transition["position"][lane].tolist(),
+        "losses": {name: float(value.detach()) for name, value in losses.items()},
+        "weighted_component_position_gradients": component_gradients,
+        "total_pre_step_position_gradient": total_gradient[0].tolist(),
+        "descent_recovers_upward": True, "gradient_uses_existing_aligned_point_mass_adjoint": True,
+        "physx_contact_jacobian": False, "depth_camera": perception,
+        "probe_raw_depth_finite": True,
+    }
+
+
 def real_static_collision(env, action):
     """Probe a few actual vertical terrain surfaces; do not invent a collision."""
     import torch
@@ -306,6 +419,9 @@ def main():
                 result["failure_checks"] = check_failures(env, action)
                 progress("real_static_collision")
                 result["real_static_collision"] = real_static_collision(env, action)
+                if args.variant == "continuous":
+                    progress("below_ground_recovery_gradient")
+                    result["below_ground_recovery_gradient"] = below_ground_recovery_gradient(env, action)
                 progress("depth_camera")
                 result["depth_camera"] = check_perception(env)
                 progress("static_only_distance_gradient")

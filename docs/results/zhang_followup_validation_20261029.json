@@ -1,0 +1,1313 @@
+{
+  "captured_at": "2026-10-29T10:34:32.426450+00:00",
+  "source_root": "/home/tong/tongworkspace/free/isaaclab-navrl-followups-20261029",
+  "formal_acceptance": false,
+  "cpu": {
+    "junit_total_including_subtests": 267,
+    "failures_and_errors": 0,
+    "log": "/home/tong/tongworkspace/free/isaaclab-navrl-followups-20261029/logs/followup_checks/unit_v2.log",
+    "junit": "/home/tong/tongworkspace/free/isaaclab-navrl-followups-20261029/logs/followup_checks/unit_v2.xml"
+  },
+  "smokes": {
+    "continuous_signed": {
+      "result": {
+        "method": "zhang",
+        "variant": "continuous",
+        "algorithm": "bptt",
+        "status": "completed",
+        "fresh": true,
+        "stage": "pretrain_s0",
+        "stage_updates": 2,
+        "parent_checkpoint": null,
+        "num_envs": 64,
+        "completed_updates": 2,
+        "max_updates": 2,
+        "rollout_steps": 150,
+        "configured_rollout_steps": 150,
+        "adaptive_horizon": false,
+        "checkpoint": "/home/tong/tongworkspace/free/isaaclab-navrl-followups-20261029/logs/followup_checks/continuous_signed/checkpoint_final.pt",
+        "elapsed_s": 141.8291861009784,
+        "nonfinite_grad_events": 0,
+        "nonfinite_events": 0,
+        "environment_steps": 19200,
+        "torch_peak_allocated_mb": 176.11376953125,
+        "curriculum": {
+          "stages": [
+            "pretrain_s0",
+            "pretrain_s1",
+            "pretrain_s2",
+            "finetune_s1",
+            "finetune_s2"
+          ],
+          "active_dynamic_obstacles": 0,
+          "stage": "pretrain_s0",
+          "stage_passed": false,
+          "stage_config": {
+            "static_obstacles": 300,
+            "dynamic_obstacles": 0,
+            "randomization": false
+          },
+          "promotion_success_rate": 0.8,
+          "episodes_per_report_min": 64,
+          "acceptance_passed": false,
+          "best_by_stage": {},
+          "latest_training_report": null
+        },
+        "acceptance_passed": false,
+        "stage_passed": false,
+        "recovery_restore_count": 0,
+        "stop_requested": null,
+        "error": null
+      },
+      "updates": [
+        {
+          "update": 1,
+          "environment_steps": 9600,
+          "rollout_steps": 150,
+          "total": 5.485507488250732,
+          "actor_objective": 5.485507488250732,
+          "grad_norm": 6.251748561859131,
+          "executed_action_max_error": 0.0,
+          "ActorCritic/critic_target_mean": null,
+          "ActorCritic/critic_next_value_min": null,
+          "ActorCritic/critic_next_value_negative_fraction": null,
+          "ActorCritic/bootstrap_live_endpoint": null,
+          "ActorCritic/bootstrap_reset": null,
+          "Memory/torch_allocated_mb": 67.16162109375,
+          "Memory/torch_reserved_mb": 228.0,
+          "Memory/torch_peak_allocated_mb": 176.11376953125,
+          "Memory/torch_peak_reserved_mb": 244.0
+        },
+        {
+          "update": 2,
+          "environment_steps": 19200,
+          "rollout_steps": 150,
+          "total": 6.625502109527588,
+          "actor_objective": 6.625502109527588,
+          "grad_norm": 3.2044780254364014,
+          "executed_action_max_error": 0.0,
+          "ActorCritic/critic_target_mean": null,
+          "ActorCritic/critic_next_value_min": null,
+          "ActorCritic/critic_next_value_negative_fraction": null,
+          "ActorCritic/bootstrap_live_endpoint": null,
+          "ActorCritic/bootstrap_reset": null,
+          "Memory/torch_allocated_mb": 67.30908203125,
+          "Memory/torch_reserved_mb": 232.0,
+          "Memory/torch_peak_allocated_mb": 176.11376953125,
+          "Memory/torch_peak_reserved_mb": 244.0
+        }
+      ],
+      "config": {
+        "method": "zhang",
+        "variant": "continuous",
+        "algorithm": "bptt",
+        "train": {
+          "variant": "continuous",
+          "algorithm": "bptt",
+          "timesteps": 150,
+          "max_iterations": 2,
+          "stop_after_acceptance": false,
+          "physics_dt": 0.01,
+          "policy_dt": 0.1,
+          "velocity_window_s": 2.0,
+          "grad_decay": 0.4,
+          "lr": 0.001,
+          "cosine_period_updates": 400,
+          "min_lr_ratio": 0.01,
+          "lr_schedule": "cosine",
+          "plateau_factor": 0.5,
+          "plateau_patience": 5,
+          "plateau_threshold": 0.005,
+          "plateau_cooldown": 2,
+          "minimum_lr": 1e-06,
+          "observation_normalization": false,
+          "normalization_variance_floor": 0.0001,
+          "recovery_enabled": true,
+          "discount": 0.99,
+          "td_lambda": 0.95,
+          "critic_lr": 0.0005,
+          "critic_iterations": 16,
+          "critic_max_iterations": 64,
+          "critic_value_transform": "linear",
+          "ahac_min_horizon": 16,
+          "ahac_max_horizon": 150,
+          "ahac_initial_horizon": 32,
+          "ahac_risk_clearance": 0.1,
+          "ahac_risk_scale": 0.05,
+          "ahac_risk_budget": 0.1,
+          "ahac_dual_lr": 0.1,
+          "max_grad_norm": 5.0,
+          "coef_v": 1.0,
+          "coef_v_pred": 2.0,
+          "coef_obj_avoidance": 3.0,
+          "coef_collide": 7.5,
+          "coef_d_acc": 0.01,
+          "coef_d_jerk": 0.001,
+          "coef_height_boundary": 1.0,
+          "boundary_margin": 0.5,
+          "boundary_scale": 0.5,
+          "height_bounds": [
+            0.2,
+            4.0
+          ],
+          "seed": 0,
+          "gradient_diagnostic_updates": [
+            1,
+            2
+          ]
+        },
+        "algorithm_label": "bptt",
+        "height_boundary_loss": "smooth_l1",
+        "environment": {
+          "num_envs": 64,
+          "seed": 0,
+          "terrain_seed": 0,
+          "stage": "pretrain_s0",
+          "static_obstacles": 300,
+          "dynamic_obstacles": 0,
+          "randomization": false,
+          "curriculum": {
+            "pretrain_s0": {
+              "static_obstacles": 300,
+              "dynamic_obstacles": 0,
+              "randomization": false
+            },
+            "pretrain_s1": {
+              "static_obstacles": 300,
+              "dynamic_obstacles": 60,
+              "randomization": false
+            },
+            "pretrain_s2": {
+              "static_obstacles": 400,
+              "dynamic_obstacles": 120,
+              "randomization": false
+            },
+            "finetune_s1": {
+              "static_obstacles": 300,
+              "dynamic_obstacles": 60,
+              "randomization": true
+            },
+            "finetune_s2": {
+              "static_obstacles": 400,
+              "dynamic_obstacles": 100,
+              "randomization": true
+            }
+          },
+          "variant": "continuous",
+          "drone_collision_response": false,
+          "dynamic_obstacle_collision_response": false,
+          "collision_terminates": false,
+          "bounds_terminates": false,
+          "physics_dt": 0.01,
+          "policy_dt": 0.1,
+          "depth_camera": {
+            "width": 160,
+            "height": 120,
+            "batch_size": 64,
+            "policy_shape": [
+              12,
+              16
+            ],
+            "pixel_noise_std": 0.0
+          },
+          "sim_to_real": {
+            "enabled": false,
+            "observation_noise": true,
+            "input_delay": true,
+            "action_delay": true,
+            "control_response": true,
+            "action_difference": true,
+            "mass": true,
+            "inertia": true,
+            "thrust": true,
+            "position_std": 0.02,
+            "velocity_std": 0.05,
+            "attitude_std_deg": 1.0,
+            "lidar_std": 0.02,
+            "depth_std": 0.02,
+            "input_delay_range": [
+              0,
+              5
+            ],
+            "action_delay_range": [
+              0,
+              2
+            ],
+            "control_gain_range": [
+              0.6,
+              1.4
+            ],
+            "mass_scale_range": [
+              0.9,
+              1.1
+            ],
+            "inertia_scale_range": [
+              0.9,
+              1.1
+            ],
+            "thrust_scale_range": [
+              0.9,
+              1.1
+            ],
+            "action_difference_weight": 0.01
+          }
+        },
+        "parent_checkpoint": null,
+        "fresh": true,
+        "independent_evaluation": false
+      },
+      "checkpoint_sha256": "c3b4f8af3a7c113dcd8c1e792021f7907411383363e871d9f70eced06eced1dc",
+      "gradient_diagnostic_updates": [
+        1,
+        2
+      ]
+    },
+    "ahac_softplus": {
+      "result": {
+        "method": "zhang",
+        "variant": "dcol",
+        "algorithm": "ahac",
+        "status": "completed",
+        "fresh": true,
+        "stage": "pretrain_s0",
+        "stage_updates": 2,
+        "parent_checkpoint": null,
+        "num_envs": 64,
+        "completed_updates": 2,
+        "max_updates": 2,
+        "rollout_steps": 36,
+        "configured_rollout_steps": 150,
+        "adaptive_horizon": true,
+        "checkpoint": "/home/tong/tongworkspace/free/isaaclab-navrl-followups-20261029/logs/followup_checks/ahac_softplus/checkpoint_final.pt",
+        "elapsed_s": 28.42247924709227,
+        "nonfinite_grad_events": 0,
+        "nonfinite_events": 0,
+        "environment_steps": 4352,
+        "torch_peak_allocated_mb": 161.54443359375,
+        "curriculum": {
+          "stages": [
+            "pretrain_s0",
+            "pretrain_s1",
+            "pretrain_s2",
+            "finetune_s1",
+            "finetune_s2"
+          ],
+          "active_dynamic_obstacles": 0,
+          "stage": "pretrain_s0",
+          "stage_passed": false,
+          "stage_config": {
+            "static_obstacles": 300,
+            "dynamic_obstacles": 0,
+            "randomization": false
+          },
+          "promotion_success_rate": 0.8,
+          "episodes_per_report_min": 64,
+          "acceptance_passed": false,
+          "best_by_stage": {},
+          "latest_training_report": null
+        },
+        "acceptance_passed": false,
+        "stage_passed": false,
+        "recovery_restore_count": 0,
+        "stop_requested": null,
+        "error": null
+      },
+      "updates": [
+        {
+          "update": 1,
+          "environment_steps": 2048,
+          "rollout_steps": 32,
+          "total": 5.4540228843688965,
+          "actor_objective": 4.2655487060546875,
+          "grad_norm": 2.3547720909118652,
+          "executed_action_max_error": 0.0,
+          "ActorCritic/critic_target_mean": 72.63229370117188,
+          "ActorCritic/critic_next_value_min": 0.6228883266448975,
+          "ActorCritic/critic_next_value_negative_fraction": 0.0,
+          "ActorCritic/bootstrap_live_endpoint": 0.015081284567713737,
+          "ActorCritic/bootstrap_reset": 0.0,
+          "Memory/torch_allocated_mb": 77.95556640625,
+          "Memory/torch_reserved_mb": 158.0,
+          "Memory/torch_peak_allocated_mb": 161.54443359375,
+          "Memory/torch_peak_reserved_mb": 230.0
+        },
+        {
+          "update": 2,
+          "environment_steps": 4352,
+          "rollout_steps": 36,
+          "total": 5.361598491668701,
+          "actor_objective": 6.179887771606445,
+          "grad_norm": 1.901059627532959,
+          "executed_action_max_error": 0.0,
+          "ActorCritic/critic_target_mean": 132.01803588867188,
+          "ActorCritic/critic_next_value_min": 56.074092864990234,
+          "ActorCritic/critic_next_value_negative_fraction": 0.0,
+          "ActorCritic/bootstrap_live_endpoint": 1.6512140035629272,
+          "ActorCritic/bootstrap_reset": 0.0,
+          "Memory/torch_allocated_mb": 78.6943359375,
+          "Memory/torch_reserved_mb": 164.0,
+          "Memory/torch_peak_allocated_mb": 161.54443359375,
+          "Memory/torch_peak_reserved_mb": 230.0
+        }
+      ],
+      "config": {
+        "method": "zhang",
+        "variant": "dcol",
+        "algorithm": "ahac",
+        "train": {
+          "variant": "dcol",
+          "algorithm": "ahac",
+          "timesteps": 150,
+          "max_iterations": 2,
+          "stop_after_acceptance": false,
+          "physics_dt": 0.01,
+          "policy_dt": 0.1,
+          "velocity_window_s": 2.0,
+          "grad_decay": 0.4,
+          "lr": 0.001,
+          "cosine_period_updates": 400,
+          "min_lr_ratio": 0.01,
+          "lr_schedule": "cosine",
+          "plateau_factor": 0.5,
+          "plateau_patience": 5,
+          "plateau_threshold": 0.005,
+          "plateau_cooldown": 2,
+          "minimum_lr": 1e-06,
+          "observation_normalization": false,
+          "normalization_variance_floor": 0.0001,
+          "recovery_enabled": true,
+          "discount": 0.99,
+          "td_lambda": 0.95,
+          "critic_lr": 0.0005,
+          "critic_iterations": 16,
+          "critic_max_iterations": 64,
+          "critic_value_transform": "softplus",
+          "ahac_min_horizon": 16,
+          "ahac_max_horizon": 150,
+          "ahac_initial_horizon": 32,
+          "ahac_risk_clearance": 0.1,
+          "ahac_risk_scale": 0.05,
+          "ahac_risk_budget": 0.1,
+          "ahac_dual_lr": 0.1,
+          "max_grad_norm": 5.0,
+          "coef_v": 1.0,
+          "coef_v_pred": 2.0,
+          "coef_obj_avoidance": 3.0,
+          "coef_collide": 7.5,
+          "coef_d_acc": 0.01,
+          "coef_d_jerk": 0.001,
+          "coef_height_boundary": 1.0,
+          "boundary_margin": 0.5,
+          "boundary_scale": 0.5,
+          "height_bounds": [
+            0.2,
+            4.0
+          ],
+          "seed": 0,
+          "gradient_diagnostic_updates": []
+        },
+        "algorithm_label": "AHAC-derived DCOL synchronous adaptation",
+        "height_boundary_loss": "smooth_l1",
+        "environment": {
+          "num_envs": 64,
+          "seed": 0,
+          "terrain_seed": 0,
+          "stage": "pretrain_s0",
+          "static_obstacles": 300,
+          "dynamic_obstacles": 0,
+          "randomization": false,
+          "curriculum": {
+            "pretrain_s0": {
+              "static_obstacles": 300,
+              "dynamic_obstacles": 0,
+              "randomization": false
+            },
+            "pretrain_s1": {
+              "static_obstacles": 300,
+              "dynamic_obstacles": 60,
+              "randomization": false
+            },
+            "pretrain_s2": {
+              "static_obstacles": 400,
+              "dynamic_obstacles": 120,
+              "randomization": false
+            },
+            "finetune_s1": {
+              "static_obstacles": 300,
+              "dynamic_obstacles": 60,
+              "randomization": true
+            },
+            "finetune_s2": {
+              "static_obstacles": 400,
+              "dynamic_obstacles": 100,
+              "randomization": true
+            }
+          },
+          "variant": "dcol",
+          "drone_collision_response": true,
+          "dynamic_obstacle_collision_response": false,
+          "collision_terminates": true,
+          "bounds_terminates": true,
+          "physics_dt": 0.01,
+          "policy_dt": 0.1,
+          "depth_camera": {
+            "width": 160,
+            "height": 120,
+            "batch_size": 64,
+            "policy_shape": [
+              12,
+              16
+            ],
+            "pixel_noise_std": 0.0
+          },
+          "sim_to_real": {
+            "enabled": false,
+            "observation_noise": true,
+            "input_delay": true,
+            "action_delay": true,
+            "control_response": true,
+            "action_difference": true,
+            "mass": true,
+            "inertia": true,
+            "thrust": true,
+            "position_std": 0.02,
+            "velocity_std": 0.05,
+            "attitude_std_deg": 1.0,
+            "lidar_std": 0.02,
+            "depth_std": 0.02,
+            "input_delay_range": [
+              0,
+              5
+            ],
+            "action_delay_range": [
+              0,
+              2
+            ],
+            "control_gain_range": [
+              0.6,
+              1.4
+            ],
+            "mass_scale_range": [
+              0.9,
+              1.1
+            ],
+            "inertia_scale_range": [
+              0.9,
+              1.1
+            ],
+            "thrust_scale_range": [
+              0.9,
+              1.1
+            ],
+            "action_difference_weight": 0.01
+          }
+        },
+        "parent_checkpoint": null,
+        "fresh": true,
+        "independent_evaluation": false
+      },
+      "checkpoint_sha256": "4a9b8e942b684337e7a5f9fac0da56e9bd028b842d05863959845abe47ce2ffa"
+    }
+  },
+  "scene": {
+    "test": "new_mechanisms_scene",
+    "variant": "continuous",
+    "stage": "pretrain_s0",
+    "num_envs": 64,
+    "static_obstacles": 300,
+    "dynamic_obstacles": 0,
+    "randomization": false,
+    "policy_acceptance_test": false,
+    "training_success_statistics": false,
+    "status": "passed",
+    "current_check": "complete",
+    "drone_collision_attributes": {
+      "/World/envs/env_0/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_0/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_0/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_0/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_0/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_1/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_1/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_1/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_1/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_1/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_2/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_2/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_2/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_2/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_2/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_3/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_3/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_3/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_3/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_3/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_4/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_4/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_4/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_4/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_4/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_5/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_5/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_5/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_5/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_5/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_6/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_6/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_6/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_6/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_6/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_7/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_7/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_7/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_7/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_7/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_8/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_8/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_8/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_8/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_8/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_9/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_9/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_9/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_9/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_9/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_10/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_10/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_10/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_10/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_10/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_11/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_11/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_11/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_11/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_11/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_12/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_12/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_12/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_12/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_12/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_13/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_13/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_13/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_13/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_13/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_14/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_14/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_14/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_14/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_14/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_15/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_15/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_15/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_15/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_15/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_16/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_16/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_16/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_16/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_16/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_17/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_17/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_17/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_17/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_17/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_18/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_18/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_18/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_18/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_18/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_19/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_19/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_19/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_19/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_19/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_20/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_20/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_20/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_20/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_20/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_21/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_21/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_21/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_21/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_21/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_22/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_22/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_22/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_22/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_22/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_23/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_23/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_23/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_23/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_23/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_24/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_24/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_24/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_24/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_24/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_25/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_25/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_25/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_25/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_25/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_26/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_26/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_26/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_26/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_26/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_27/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_27/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_27/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_27/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_27/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_28/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_28/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_28/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_28/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_28/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_29/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_29/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_29/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_29/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_29/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_30/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_30/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_30/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_30/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_30/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_31/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_31/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_31/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_31/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_31/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_32/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_32/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_32/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_32/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_32/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_33/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_33/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_33/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_33/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_33/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_34/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_34/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_34/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_34/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_34/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_35/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_35/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_35/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_35/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_35/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_36/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_36/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_36/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_36/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_36/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_37/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_37/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_37/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_37/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_37/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_38/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_38/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_38/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_38/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_38/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_39/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_39/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_39/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_39/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_39/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_40/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_40/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_40/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_40/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_40/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_41/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_41/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_41/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_41/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_41/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_42/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_42/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_42/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_42/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_42/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_43/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_43/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_43/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_43/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_43/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_44/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_44/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_44/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_44/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_44/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_45/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_45/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_45/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_45/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_45/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_46/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_46/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_46/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_46/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_46/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_47/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_47/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_47/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_47/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_47/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_48/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_48/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_48/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_48/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_48/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_49/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_49/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_49/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_49/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_49/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_50/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_50/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_50/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_50/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_50/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_51/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_51/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_51/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_51/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_51/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_52/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_52/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_52/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_52/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_52/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_53/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_53/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_53/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_53/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_53/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_54/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_54/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_54/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_54/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_54/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_55/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_55/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_55/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_55/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_55/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_56/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_56/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_56/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_56/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_56/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_57/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_57/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_57/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_57/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_57/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_58/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_58/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_58/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_58/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_58/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_59/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_59/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_59/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_59/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_59/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_60/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_60/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_60/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_60/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_60/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_61/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_61/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_61/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_61/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_61/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_62/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_62/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_62/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_62/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_62/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_63/Hummingbird/base_link/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_63/Hummingbird/rotor_0/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_63/Hummingbird/rotor_1/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_63/Hummingbird/rotor_2/collisions.physics:collisionEnabled": false,
+      "/World/envs/env_63/Hummingbird/rotor_3/collisions.physics:collisionEnabled": false
+    },
+    "physx_drone_contacts_disabled": true,
+    "failure_checks": {
+      "synthetic_detector_events": {
+        "collision": [
+          2
+        ],
+        "invalid": [
+          3
+        ]
+      },
+      "real_pose_bounds": {
+        "lower_lane": 0,
+        "lower_z_m": 0.15,
+        "upper_lane": 1,
+        "upper_z_m": 4.3
+      },
+      "first_failure": {
+        "episode_id_before": [
+          0,
+          0,
+          0
+        ],
+        "episode_id_after": [
+          0,
+          0,
+          0
+        ],
+        "first_event_codes": [
+          3,
+          3,
+          2
+        ],
+        "first_event_times_s": [
+          0.009999999776482582,
+          0.009999999776482582,
+          0.009999999776482582
+        ],
+        "forward_displacement_m": [
+          0.0749979019165039,
+          0.0749959945678711,
+          0.0749959945678711
+        ],
+        "terminated": [
+          false,
+          false,
+          false
+        ]
+      },
+      "recovery": {
+        "actual_reached": true,
+        "episode_id_unchanged": true,
+        "first_event_codes": [
+          3,
+          3,
+          2
+        ],
+        "prior_failure_not_overwritten": true
+      },
+      "reset_checks": {
+        "invalid_resets": true,
+        "timeout_resets": true,
+        "unaffected_lane_keeps_episode": true,
+        "first_outcome_survives_to_timeout": true,
+        "reset_clears_first_event": true,
+        "old_snapshot_immutable": true
+      }
+    },
+    "real_static_collision": {
+      "status": "observed",
+      "attempts": [
+        {
+          "position_m": [
+            -19.799999237060547,
+            -19.0,
+            2.0
+          ],
+          "nearest_surface_m": [
+            -19.799999237060547,
+            -19.200000762939453,
+            2.0
+          ],
+          "distance_m": 0.20000076293945312,
+          "collision": true,
+          "bounds": false,
+          "terminated": false,
+          "timeout": false,
+          "first_event_code": 2,
+          "continued_displacement_m": 0.04999732971191406
+        }
+      ],
+      "synthetic_detector_events": false
+    },
+    "below_ground_recovery_gradient": {
+      "status": "passed",
+      "manual_pose_probe": true,
+      "policy_success_claimed": false,
+      "synthetic_detector_events": false,
+      "lane": 63,
+      "placement_m": [
+        -5.0,
+        -23.0,
+        -0.5
+      ],
+      "episode_id_before": 1,
+      "episode_id_after": 1,
+      "policy_steps_below_ground": 2,
+      "continued_displacement_m": 0.05000162124633789,
+      "first_event_code": 3,
+      "first_event_time_s": 0.009999999776482582,
+      "query_positions_m": [
+        [
+          -4.94999885559082,
+          -23.0,
+          -0.5000004768371582
+        ],
+        [
+          -4.944443225860596,
+          -23.0,
+          -0.500000536441803
+        ],
+        [
+          -4.938887596130371,
+          -23.0,
+          -0.5000006556510925
+        ],
+        [
+          -4.9333319664001465,
+          -23.0,
+          -0.5000007152557373
+        ],
+        [
+          -4.92777681350708,
+          -23.0,
+          -0.5000008344650269
+        ],
+        [
+          -4.9222211837768555,
+          -23.0,
+          -0.5000008940696716
+        ],
+        [
+          -4.916665554046631,
+          -23.0,
+          -0.5000009536743164
+        ],
+        [
+          -4.911109924316406,
+          -23.0,
+          -0.500001072883606
+        ],
+        [
+          -4.905554294586182,
+          -23.0,
+          -0.5000011324882507
+        ],
+        [
+          -4.899998664855957,
+          -23.0,
+          -0.5000011920928955
+        ]
+      ],
+      "actual_terrain_surfaces_m": [
+        [
+          -4.949997901916504,
+          -23.0,
+          0.0
+        ],
+        [
+          -4.944443225860596,
+          -23.0,
+          0.0
+        ],
+        [
+          -4.938887596130371,
+          -23.0,
+          0.0
+        ],
+        [
+          -4.933332920074463,
+          -23.0,
+          0.0
+        ],
+        [
+          -4.92777156829834,
+          -23.0,
+          0.0
+        ],
+        [
+          -4.92222261428833,
+          -23.0,
+          0.0
+        ],
+        [
+          -4.916661262512207,
+          -23.0,
+          0.0
+        ],
+        [
+          -4.911112308502197,
+          -23.0,
+          0.0
+        ],
+        [
+          -4.905550956726074,
+          -23.0,
+          0.0
+        ],
+        [
+          -4.899996280670166,
+          -23.0,
+          0.0
+        ]
+      ],
+      "actual_nearest_surfaces_m": [
+        [
+          -4.949997901916504,
+          -23.0,
+          0.0
+        ],
+        [
+          -4.944443225860596,
+          -23.0,
+          0.0
+        ],
+        [
+          -4.938887596130371,
+          -23.0,
+          0.0
+        ],
+        [
+          -4.933332920074463,
+          -23.0,
+          0.0
+        ],
+        [
+          -4.92777156829834,
+          -23.0,
+          0.0
+        ],
+        [
+          -4.92222261428833,
+          -23.0,
+          0.0
+        ],
+        [
+          -4.916661262512207,
+          -23.0,
+          0.0
+        ],
+        [
+          -4.911112308502197,
+          -23.0,
+          0.0
+        ],
+        [
+          -4.905550956726074,
+          -23.0,
+          0.0
+        ],
+        [
+          -4.899996280670166,
+          -23.0,
+          0.0
+        ]
+      ],
+      "terminal_position_m": [
+        -4.899997234344482,
+        -23.0000057220459,
+        -0.5000015497207642
+      ],
+      "losses": {
+        "velocity": 0.0,
+        "velocity_prediction": 0.0,
+        "obstacle_avoidance": 3.2761032581329346,
+        "collision": 25.920028686523438,
+        "acceleration": 0.0,
+        "jerk": 0.0,
+        "height_boundary": 1.9000029563903809,
+        "total": 206.12852478027344,
+        "velocity_valid_samples": 0.0,
+        "velocity_sample_fraction": 0.0,
+        "velocity_short_terminal_samples": 0.0
+      },
+      "weighted_component_position_gradients": {
+        "obstacle_avoidance": [
+          0.0,
+          0.0,
+          -10.860005378723145
+        ],
+        "collision": [
+          0.0,
+          0.0,
+          -239.99998474121094
+        ],
+        "height_boundary": [
+          0.0,
+          0.0,
+          -1.8248870372772217
+        ]
+      },
+      "total_pre_step_position_gradient": [
+        0.0,
+        0.0,
+        -252.68490600585938
+      ],
+      "descent_recovers_upward": true,
+      "gradient_uses_existing_aligned_point_mass_adjoint": true,
+      "physx_contact_jacobian": false,
+      "depth_camera": {
+        "source_resolution_hw": [
+          120,
+          160
+        ],
+        "policy_shape": [
+          64,
+          1,
+          12,
+          16
+        ],
+        "last_raw_batch_shape": [
+          16,
+          1,
+          120,
+          160
+        ],
+        "finite": true,
+        "tracked_dynamic_bodies": 0,
+        "mesh_transform_info": {
+          "mode": "aggregate_physx_view",
+          "body_count": 0,
+          "mesh_order_body_paths": [],
+          "aggregate_body_paths": [],
+          "identity_row_order": true,
+          "mapping": []
+        }
+      },
+      "probe_raw_depth_finite": true
+    },
+    "depth_camera": {
+      "source_resolution_hw": [
+        120,
+        160
+      ],
+      "policy_shape": [
+        64,
+        1,
+        12,
+        16
+      ],
+      "last_raw_batch_shape": [
+        16,
+        1,
+        120,
+        160
+      ],
+      "finite": true,
+      "tracked_dynamic_bodies": 0,
+      "mesh_transform_info": {
+        "mode": "aggregate_physx_view",
+        "body_count": 0,
+        "mesh_order_body_paths": [],
+        "aggregate_body_paths": [],
+        "identity_row_order": true,
+        "mapping": []
+      }
+    },
+    "static_only_distance_gradient_finite": true,
+    "nonfinite_event_count_includes_injection": 1,
+    "nominal_dynamics": {
+      "source": "loaded PhysX asset before randomization",
+      "body_names": [
+        "base_link",
+        "rotor_0",
+        "rotor_1",
+        "rotor_2",
+        "rotor_3"
+      ],
+      "body_mass_kg": [
+        0.6800000071525574,
+        0.008999999612569809,
+        0.008999999612569809,
+        0.008999999612569809,
+        0.008999999612569809
+      ],
+      "body_inertia_kg_m2": [
+        [
+          0.007000000681728125,
+          0.0,
+          0.0,
+          0.0,
+          0.007000000681728125,
+          0.0,
+          0.0,
+          0.0,
+          0.011999999172985554
+        ],
+        [
+          1.7549992890053545e-06,
+          0.0,
+          0.0,
+          0.0,
+          7.506747351726517e-05,
+          0.0,
+          0.0,
+          0.0,
+          7.668747275602072e-05
+        ],
+        [
+          1.7549992890053545e-06,
+          0.0,
+          0.0,
+          0.0,
+          7.506747351726517e-05,
+          0.0,
+          0.0,
+          0.0,
+          7.668747275602072e-05
+        ],
+        [
+          1.7549992890053545e-06,
+          0.0,
+          0.0,
+          0.0,
+          7.506747351726517e-05,
+          0.0,
+          0.0,
+          0.0,
+          7.668747275602072e-05
+        ],
+        [
+          1.7549992890053545e-06,
+          0.0,
+          0.0,
+          0.0,
+          7.506747351726517e-05,
+          0.0,
+          0.0,
+          0.0,
+          7.668747275602072e-05
+        ]
+      ],
+      "total_mass_kg": 0.7160000205039978
+    },
+    "policy_steps": 8,
+    "physics_steps": 80
+  },
+  "source_sha256": {
+    "src/isaaclab_navrl/zhang/__init__.py": "ff366d97a248f20d0a6d65bc0ba52f3dd72961c9684ec22d1ba759188e75cb0b",
+    "src/isaaclab_navrl/zhang/actor_critic.py": "01a2371009a5988e02ade5544859a609b2e0bba8a76b16a8e117dadf3c3a9cb2",
+    "src/isaaclab_navrl/zhang/config.py": "d99628a6539f32813d8b125aed8d8accf1d9d08395ee74ef011087f037bb2c84",
+    "src/isaaclab_navrl/zhang/controller.py": "765de81b3dc1c7a8d53d7fc3a6d8fccb4174c1592c8be9a254531f936fa9bccd",
+    "src/isaaclab_navrl/zhang/critic_state.py": "f91339402d4dbe0a664838440e101a9e2a510faa5684053b282b0441791b99e8",
+    "src/isaaclab_navrl/zhang/dcol.py": "765d74a4728579e09078c6d05b3ba8bbbb8f2255358fad66b5417dad2602e21e",
+    "src/isaaclab_navrl/zhang/diagnostics.py": "af6def2811b820b9adba4fe4d352b8747d1e7c48e11e91cce9ea346472bbd7c4",
+    "src/isaaclab_navrl/zhang/dynamics.py": "6f8e7dea4813e412b416337a642f49c959b54c7b92f4b0f7776e95c9979f7aeb",
+    "src/isaaclab_navrl/zhang/events.py": "c0919b5dd6521a59ca099647268128d329c8716c56e11381487db16a5b49bc03",
+    "src/isaaclab_navrl/zhang/inference.py": "46a0725e186ecdb5427644cbe08501922612f68ffa0f458fd2568dd178a2ef3e",
+    "src/isaaclab_navrl/zhang/losses.py": "5a956d38673f9a96b4aca4005a21d780aba2de0c586490090e3016472e12cf5d",
+    "src/isaaclab_navrl/zhang/model.py": "16370abb6d1be4c8c5c1a4a1526ff4d4c8e68b06ba1470f163858377dbc8e6d9",
+    "src/isaaclab_navrl/zhang/normalization.py": "d830b5640cea58351900e35ffdca279c700533a77a06ebeee9e4baef8aac9822",
+    "src/isaaclab_navrl/zhang/optimization.py": "3ea635bc9a8f3a584fe7d07df08e8cd30f29df9c33ea29ba2c102cc9c53d94ab",
+    "src/isaaclab_navrl/zhang/runner.py": "116be33ef78de99469b05d4924f37344e9c557a7af60b36a845c5b4903d1f2f3",
+    "src/isaaclab_navrl/zhang/termination.py": "fc90142c90101acd8ecffd3fde99468913bb8613cbbfd99cdd100397d7334d69",
+    "scripts/train_zhang.py": "90a17aeb5a93ab3a15e167c48b4b1208bd2aaa6715ac6e6bead68c3d0d7bd179",
+    "scripts/run_acceptance.py": "c89c50b6e6bd52f9502c00e9160ba5b8327799aa15b85b2a051766a01a56388b",
+    "tests/new_mechanisms_scene.py": "f4b8c174c3aa9cd1885c9d7cd3ed2a7d07663876c6f21d74247b94b9f6bead5a"
+  }
+}

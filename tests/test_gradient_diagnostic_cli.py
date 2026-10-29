@@ -57,6 +57,7 @@ class GradientDiagnosticCliTests(unittest.TestCase):
         args = parse_training_cli([])
         self.assertEqual(args.stage, "pretrain_s0")
         self.assertEqual(args.algorithm, "bptt")
+        self.assertEqual(args.critic_value_transform, "linear")
         self.assertEqual(args.lr_schedule, "cosine")
         self.assertIs(args.observation_normalization, False)
         self.assertIs(args.recovery_enabled, True)
@@ -71,6 +72,22 @@ class GradientDiagnosticCliTests(unittest.TestCase):
         self.assertEqual((ahac.ahac_min_horizon, ahac.ahac_initial_horizon, ahac.ahac_max_horizon), (16, 32, 150))
         self.assertEqual((ahac.ahac_risk_clearance, ahac.ahac_risk_scale, ahac.ahac_risk_budget, ahac.ahac_dual_lr),
                          (0.1, 0.05, 0.1, 0.1))
+
+    def test_critic_value_transform_choices_and_bptt_rejection_before_imports(self):
+        for algorithm in ("shac", "ahac"):
+            for transform in ("linear", "softplus"):
+                with self.subTest(algorithm=algorithm, transform=transform):
+                    args = parse_training_cli(["--algorithm", algorithm, "--variant", "dcol",
+                                               "--critic_value_transform", transform])
+                    self.assertEqual(args.critic_value_transform, transform)
+        for tokens in (["--critic_value_transform", "softplus"],
+                       ["--algorithm", "bptt", "--critic_value_transform", "softplus"],
+                       ["--algorithm", "shac", "--variant", "dcol", "--critic_value_transform", "relu"]):
+            with self.subTest(tokens=tokens):
+                with patch.object(sys, "argv", ["train_zhang.py", "--log_dir", "/unused/unit-test", *tokens]):
+                    with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as error:
+                        trainer.main()
+                    self.assertEqual(error.exception.code, 2)
 
     def test_stop_signals_only_request_a_boundary_stop_and_restore_original_handlers(self):
         first, second = object(), object()

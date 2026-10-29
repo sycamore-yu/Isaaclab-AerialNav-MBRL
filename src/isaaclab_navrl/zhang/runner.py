@@ -145,6 +145,7 @@ class ZhangTrainer:
             critic_lr=self.cfg.critic_lr, critic_iterations=self.cfg.critic_iterations,
             critic_max_iterations=self.cfg.critic_max_iterations, seed=self.cfg.seed + 2718,
             critic_min_iterations=min(6, self.cfg.critic_max_iterations),
+            value_transform=self.cfg.critic_value_transform,
         )
         self.actor_critic = CostActorCritic(example.shape[-1], settings, device=self.env.device)
         self.critic_monitor = OptimizerStepMonitor(self.actor_critic.critics)
@@ -354,6 +355,16 @@ class ZhangTrainer:
             ))
         lookahead = torch.linspace(0, self.cfg.policy_dt, 10, device=self.env.device)[None, :, None]
         writer = SummaryWriter(str(self.log_dir / "tensorboard"))
+        if self.cfg.variant == "continuous":
+            write_json(self.log_dir / "continuous_geometry.json", {
+                "ground_plane_z_m": 0.01,
+                "ground_clearance_below_plane": "query_height_minus_ground_plane_minus_radius",
+                "ground_clearance_above_plane": "original_nearest_surface_distance_unchanged",
+                "applies_to": ["obstacle_avoidance", "collision"],
+                "query_timing": "pre_policy_step_position_plus_velocity_lookahead",
+                "static_deep_penetration_gradient_solved": False,
+                "collision_or_bounds_reset": False,
+            })
         if self.cfg.variant == "dcol":
             write_json(self.log_dir / "dcol_geometry.json", {
                 "scope": "hybrid_dynamic_dcol",
@@ -421,6 +432,11 @@ class ZhangTrainer:
                     # Source main_cuda records p + v * sub_div before env.run, including terminating steps.
                     query = state.position[:, None] + state.velocity[:, None] * lookahead
                     history["obstacle_vector"].append(self.env.nearest_obstacle_vector(query))
+                    if self.cfg.variant == "continuous":
+                        # Ground is a half-space. Its unsigned surface distance
+                        # points away from the plane after pass-through, so keep
+                        # the signed query graph for both near-ground costs.
+                        history["ground_signed_distance"].append(query[..., 2] - 0.01)
                     if self.cfg.variant == "dcol":
                         dcol_lookahead = self._dcol_gap(query[:, 1:-1], parameters["margin"])
                     history["margin"].append(parameters["margin"])
@@ -571,6 +587,14 @@ class ZhangTrainer:
                                completed_episodes=int(terminated_count),
                                rollout_steps=rollout_steps, environment_steps=self.environment_steps,
                                executed_action_max_error=float(execution_error))
+                if torch.device(self.env.device).type == "cuda":
+                    for name, read_value in (
+                        ("allocated", torch.cuda.memory_allocated),
+                        ("reserved", torch.cuda.memory_reserved),
+                        ("peak_allocated", torch.cuda.max_memory_allocated),
+                        ("peak_reserved", torch.cuda.max_memory_reserved),
+                    ):
+                        metrics[f"Memory/torch_{name}_mb"] = read_value(self.env.device) / 2**20
                 if gradient_record is not None:
                     heights = torch.stack(history["position"]).detach()[..., 2]
                     gradient_record.update(

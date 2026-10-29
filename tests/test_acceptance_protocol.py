@@ -81,6 +81,26 @@ class AcceptanceProtocolTests(unittest.TestCase):
             {"timesteps": 150, "lr": 0.001, "coef_d_jerk": 0.0},
         )
 
+    def test_critic_transform_requires_ac_and_is_preserved_across_all_stages(self):
+        self.assertEqual(parse_train_args(["--critic_value_transform", "linear"]),
+                         {"critic_value_transform": "linear"})
+        for algorithm in ("shac", "ahac"):
+            for transform in ("linear", "softplus"):
+                values = parse_train_args(["--algorithm", algorithm, "--variant", "dcol",
+                                           "--critic_value_transform", transform])
+                for stage in STAGES:
+                    with self.subTest(algorithm=algorithm, transform=transform, stage=stage):
+                        command = self.command(stage=stage, train_args=values)
+                        self.assertEqual(command.count("--critic_value_transform"), 1)
+                        self.assertEqual(command[command.index("--critic_value_transform") + 1], transform)
+                        self.assertNotIn("--critic_value_transform",
+                                         self.command(method="navrl", stage=stage, train_args=values))
+        for tokens in (["--critic_value_transform", "softplus"],
+                       ["--algorithm", "bptt", "--critic_value_transform", "softplus"],
+                       ["--algorithm", "shac", "--variant", "dcol", "--critic_value_transform", "relu"]):
+            with self.subTest(tokens=tokens), self.assertRaises(ValueError):
+                parse_train_args(tokens)
+
     def test_variant_and_boundary_arguments_remain_fixed_across_stages(self):
         values = parse_train_args(["--variant", "dcol", "--coef_height_boundary", "1",
                                    "--boundary_margin", "0.5", "--boundary_scale", "0.5"])

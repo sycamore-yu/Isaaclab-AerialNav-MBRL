@@ -10,6 +10,8 @@ SHAC uses one critic and an exponential-moving-average target. AHAC uses two
 critics with a frozen per-rollout copy, not a delayed EMA target. Cost values
 reverse the sign of reward values: the maximum twin value is the pessimistic
 bootstrap for both actor and TD targets, matching the reward-min convention.
+An optional softplus value output supplies a nonnegative cost-value prior. The
+default linear output and the actor/TD objectives remain unchanged.
 """
 
 from __future__ import annotations
@@ -84,11 +86,22 @@ def short_horizon_cost_objective(costs, next_values, trace_cut, *, discount=0.99
         boundary = torch.ones_like(trace_cut[step]) if step == costs.shape[0] - 1 else trace_cut[step]
         endpoint_value = torch.where(boundary, next_values[step], torch.zeros_like(next_values[step]))
         bootstrap_sum = bootstrap_sum + (weight * discount * endpoint_value).sum()
+        if step == costs.shape[0] - 1:
+            last_weight = weight
         weight = torch.where(boundary, torch.ones_like(weight), weight * discount)
     divisor = costs.numel()
     direct = cost_sum / divisor
     bootstrap = bootstrap_sum / divisor
-    return {"objective": direct + bootstrap, "discounted_cost": direct, "bootstrap": bootstrap}
+    # Diagnostics only: retain the exact existing objective accumulation above.
+    # All earlier endpoints are reset boundaries. Only a non-reset final state
+    # supplies a live bootstrap derivative in the runner's rollout contract.
+    with torch.no_grad():
+        live_endpoint = (last_weight * discount * torch.where(
+            trace_cut[-1], torch.zeros_like(next_values[-1]), next_values[-1].detach()
+        )).sum() / divisor
+        reset_bootstrap = bootstrap.detach() - live_endpoint
+    return {"objective": direct + bootstrap, "discounted_cost": direct, "bootstrap": bootstrap,
+            "bootstrap_reset": reset_bootstrap, "bootstrap_live_endpoint": live_endpoint}
 
 
 @dataclass
@@ -268,10 +281,13 @@ class ActorCriticSettings:
     critic_max_grad_norm: float = 5.0
     target_tau: float = 0.6
     seed: int = 0
+    value_transform: Literal["linear", "softplus"] = "linear"
 
     def validate(self):
         if self.algorithm not in ("shac", "ahac"):
             raise ValueError("algorithm must be shac or ahac")
+        if self.value_transform not in ("linear", "softplus"):
+            raise ValueError("value_transform must be linear or softplus")
         _check_discount(self.discount, self.td_lambda)
         if self.discount == 1:
             raise ValueError("continuing positive-cost learning requires discount < 1")
@@ -295,8 +311,11 @@ class ActorCriticSettings:
 class CostValueNetwork(nn.Module):
     """An independent scalar value function over the runner's augmented state."""
 
-    def __init__(self, input_dim, hidden_sizes=(256, 256)):
+    def __init__(self, input_dim, hidden_sizes=(256, 256), *, value_transform="linear"):
         super().__init__()
+        if value_transform not in ("linear", "softplus"):
+            raise ValueError("value_transform must be linear or softplus")
+        self.value_transform = value_transform
         layers = []
         previous = input_dim
         for width in hidden_sizes:
@@ -306,7 +325,8 @@ class CostValueNetwork(nn.Module):
         self.network = nn.Sequential(*layers)
 
     def forward(self, observation):
-        return self.network(observation).squeeze(-1)
+        raw = self.network(observation).squeeze(-1)
+        return F.softplus(raw, beta=1, threshold=20) if self.value_transform == "softplus" else raw
 
 
 class CostActorCritic:
@@ -331,7 +351,8 @@ class CostActorCritic:
         with torch.random.fork_rng(devices=[]):
             torch.set_rng_state(initialization_rng.get_state())
             self.critics = nn.ModuleList([
-                CostValueNetwork(input_dim, self.settings.hidden_sizes) for _ in range(count)
+                CostValueNetwork(input_dim, self.settings.hidden_sizes, value_transform=self.settings.value_transform)
+                for _ in range(count)
             ]).to(self.device)
         self.device = next(self.critics.parameters()).device
         self.frozen_critics = copy.deepcopy(self.critics).requires_grad_(False).eval()
@@ -411,11 +432,20 @@ class CostActorCritic:
                     break
         self.update_frozen_critics()
         self.completed_fits += 1
+        # These are the frozen next values supplied by this rollout, before the
+        # fit above. Reductions are detached and transferred together once.
+        next_detached = next_values.detach()
+        next_minimum, next_mean, next_negative_fraction = torch.stack((
+            next_detached.amin(), next_detached.mean(),
+            (next_detached < 0).to(next_detached.dtype).mean(),
+        )).cpu().tolist()
         return {
             "critic_loss": losses[-1], "critic_first_pass_loss": losses[0],
             "critic_iterations": len(losses), "critic_max_grad_norm_observed": float(grad_norm),
             "critic_target_mean": float(targets.mean()), "critic_target_std": float(targets.std(unbiased=False)),
             "critic_completed_fits": self.completed_fits,
+            "critic_next_value_min": next_minimum, "critic_next_value_mean": next_mean,
+            "critic_next_value_negative_fraction": next_negative_fraction,
         }
 
     def state_dict(self):
@@ -431,6 +461,8 @@ class CostActorCritic:
                 or state["settings"]["algorithm"] != self.settings.algorithm
                 or tuple(state["settings"]["hidden_sizes"]) != tuple(self.settings.hidden_sizes)):
             raise ValueError("incompatible actor-critic checkpoint")
+        if state["settings"].get("value_transform", "linear") != self.settings.value_transform:
+            raise ValueError("incompatible critic value_transform in checkpoint")
         self.critics.load_state_dict(state["critics"], strict=True)
         self.frozen_critics.load_state_dict(state["frozen_critics"], strict=True)
         self.optimizer.load_state_dict(state["optimizer"])

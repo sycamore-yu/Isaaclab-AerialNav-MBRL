@@ -188,3 +188,10 @@ H*N/valid_count缩放，以使cost.mean()等于原scalar total。
 场景证据为continuous_scene_v2.json和dcol_scene_v2.json；初版只有退出码而无JSON的运行
 不算通过。Isaac Sim关闭可能提前结束脚本，必须在关闭前保存成功/失败断言结果。
 详细可复核索引见 [验证记录](results/zhang_new_mechanisms_validation_20261029.json)。
+
+## 后续诊断修正
+
+上述六组的冻结代码为50766ec。连续无接触/无越界重置使地面以下状态变为可达，
+随后确认原无符号地面距离会产生反向恢复梯度；该组已在完整更新后保存停止。
+AHAC线性成本critic的负外推也已保存为独立诊断，增加可选非负输出fresh对照。
+修正不热更新原活动实验，详见[隔离修正、归档及新对照](ZHANG_DIAGNOSTIC_FOLLOWUPS_20261029.md)。
