@@ -59,12 +59,13 @@ def main():
     parser.add_argument("--num_envs", type=int, default=16)
     parser.add_argument("--warmup", type=int, default=5)
     parser.add_argument("--measured", type=int, default=10)
+    parser.add_argument("--camera_batch_size", type=int, default=16)
     parser.add_argument("--output", type=Path, default=Path("logs/profile/step.json"))
     add_launcher_args(parser)
     parser.set_defaults(visualizer=["none"])
     args = parser.parse_args()
-    if args.num_envs < 1 or args.warmup < 0 or args.measured < 1:
-        parser.error("num_envs and measured must be positive; warmup must be nonnegative")
+    if args.num_envs < 1 or args.warmup < 0 or args.measured < 1 or args.camera_batch_size < 1:
+        parser.error("num_envs, measured and camera_batch_size must be positive; warmup must be nonnegative")
 
     import gymnasium as gym
     import torch
@@ -78,6 +79,8 @@ def main():
     cfg.scene.num_envs = args.num_envs
     cfg.sim.device = args.device
     cfg.configure_scene()
+    if args.method == "zhang":
+        cfg.scene.depth_camera.batch_size = args.camera_batch_size
     task = "Isaac-NavRL-Zhang-Hummingbird-Direct-v0" if args.method == "zhang" else "Isaac-NavRL-Hummingbird-Direct-v0"
     with launch_simulation(cfg, args):
         env = gym.make(task, cfg=cfg).unwrapped
@@ -133,6 +136,7 @@ def main():
                 "method": args.method, "num_envs": args.num_envs, "device": str(env.device),
                 "warmup_policy_steps": args.warmup, "measured_policy_steps_per_run": args.measured,
                 "physics_dt": env.physics_dt, "policy_dt": env.step_dt, "decimation": cfg.decimation,
+                "camera_batch_size": args.camera_batch_size if args.method == "zhang" else None,
                 "controller_capture_setup_wall_s": getattr(env.controller, "capture_setup_wall_s", 0.0),
                 "static_obstacles": cfg.num_static_obstacles, "dynamic_obstacles": cfg.num_dynamic_obstacles,
                 "workload": "zero command environment steps, including depth sampling for Zhang; no policy or BPTT",
