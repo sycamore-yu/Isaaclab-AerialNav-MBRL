@@ -1,4 +1,4 @@
-"""Continuous ground recovery changes geometry only below the ground plane."""
+"""Shared signed ground geometry preserves exterior values for every variant."""
 
 import pytest
 import torch
@@ -22,11 +22,16 @@ def ground_history(query_height, terminal_height=None):
         "velocity": list(zero.unbind(0)), "target_velocity": list(zero.unbind(0)),
         "episode_id": [torch.zeros(batch, dtype=torch.long)] * count,
         "position": list(position.unbind(0)), "obstacle_vector": list(vectors.unbind(0)),
-        "ground_signed_distance": list(signed.unbind(0)),
+        "obstacle_signed_distance": list(signed.unbind(0)),
+        "height_target": [query_height.new_full((batch,), 2.0)] * count,
         "margin": [query_height.new_full((batch,), 0.3)] * count,
         "command": list(zero.unbind(0)), "previous_command": list(zero.unbind(0)),
         "velocity_prediction": list(zero.unbind(0)), "observed_velocity": list(zero.unbind(0)),
         "dcol_gap": list((signed[..., 1:] - 0.3).unbind(0)),
+        **{name: [torch.zeros(batch, dtype=torch.bool, device=query_height.device) for _ in range(count)]
+           for name in ("done", "collision", "bounds", "timeout", "invalid")},
+        "episode_step": [torch.full((batch,), step + 1, dtype=torch.long, device=query_height.device)
+                         for step in range(count)],
     }
 
 
@@ -34,19 +39,23 @@ def original_obstacle_terms(history, cfg):
     """Original unsigned distance and detached approach, without any correction."""
     distance = torch.stack(history["obstacle_vector"]).norm(dim=-1) - torch.stack(history["margin"])[..., None]
     approach = (-distance.diff(dim=-1) * (9 / cfg.policy_dt)).clamp_min(1).detach()
-    gap = torch.stack(history["dcol_gap"]) if cfg.variant == "dcol" else distance[..., 1:]
+    # In this static-only exterior fixture the old DCOL ground/mesh minimum
+    # also equals the unsigned-vector distance.  Derive it independently of
+    # the new signed field rather than comparing the implementation to itself.
+    gap = distance[..., 1:]
     avoidance = (approach * (1 - distance[..., 1:]).relu().square()).mean(dim=-1)
     collision = (F.softplus(-32 * gap) * approach).mean(dim=-1)
     return avoidance, collision
 
 
 @pytest.mark.parametrize("dtype", (torch.float32, torch.float64))
-def test_all_above_ground_values_and_gradients_are_exactly_unchanged(dtype):
+@pytest.mark.parametrize("variant", ("step", "continuous", "dcol"))
+def test_all_above_ground_values_and_gradients_are_exactly_unchanged(dtype, variant):
     base = torch.tensor([[0.5, 1.6], [0.8, 2.0], [1.0, 2.5]], dtype=dtype)
     # Descending look-ahead values exercise an approach weight greater than one.
     query = (base[..., None] + torch.linspace(0.1, -0.1, 10, dtype=dtype)).requires_grad_()
     history = ground_history(query, torch.full_like(base, 2.0))
-    cfg = ZhangTrainCfg(variant="continuous")
+    cfg = ZhangTrainCfg(variant=variant)
     avoidance, collision = original_obstacle_terms(history, cfg)
     expected = cfg.coef_obj_avoidance * avoidance + cfg.coef_collide * collision
     losses, _, cost = zhang_transition_costs(history, cfg)
@@ -58,11 +67,14 @@ def test_all_above_ground_values_and_gradients_are_exactly_unchanged(dtype):
     torch.testing.assert_close(actual_gradient, expected_gradient, rtol=0, atol=0)
 
 
-def test_below_ground_both_obstacle_terms_and_height_restore_upward():
+@pytest.mark.parametrize("variant", ("step", "continuous", "dcol"))
+def test_below_ground_both_obstacle_terms_and_legacy_boundary_height_restore_upward(variant):
     height = torch.tensor([-0.1, -0.5, -1.5, -2.0], dtype=torch.float64, requires_grad=True)
     query = height[None, :, None].expand(3, -1, 10)
     history = ground_history(query)
-    cfg = ZhangTrainCfg(variant="continuous")
+    # Preserve this historical boundary-gradient contract explicitly; the
+    # newly selected target-height modes have their own formula tests.
+    cfg = ZhangTrainCfg(variant=variant, height_loss_mode="boundary_huber")
     losses, _, cost = zhang_transition_costs(history, cfg)
     batch = len(height)
     avoidance_gradient = torch.autograd.grad(losses["obstacle_avoidance"], height, retain_graph=True)[0] * batch
@@ -83,11 +95,12 @@ def test_below_ground_both_obstacle_terms_and_height_restore_upward():
     torch.testing.assert_close(losses["total"], cost.mean(), rtol=0, atol=0)
 
 
-def test_lookahead_crossing_ground_keeps_the_original_detached_approach_formula():
+@pytest.mark.parametrize("variant", ("step", "continuous", "dcol"))
+def test_lookahead_crossing_ground_keeps_the_original_detached_approach_formula(variant):
     query = torch.tensor([[[0.2, 0.15, 0.1, 0.05, 0.02, -0.02, -0.1, -0.2, -0.3, -0.4]]],
                          dtype=torch.float64, requires_grad=True)
     history = ground_history(query, torch.full((1, 1), 2.0, dtype=torch.float64))
-    cfg = ZhangTrainCfg(variant="continuous")
+    cfg = ZhangTrainCfg(variant=variant)
     losses, _, cost = zhang_transition_costs(history, cfg)
     # This descent crosses the plane inside the ten-query trace. Each ground
     # clearance, on either side, should be z-.01-margin with d(clearance)/dz=1.
@@ -105,10 +118,13 @@ def test_lookahead_crossing_ground_keeps_the_original_detached_approach_formula(
 
 
 @pytest.mark.parametrize("query_z,terminal_z,should_penalize", [(2.0, -2.0, False), (-0.5, 2.0, True)])
-def test_ground_geometry_uses_pre_step_queries_not_post_step_or_reset_height(query_z, terminal_z, should_penalize):
+@pytest.mark.parametrize("variant", ("step", "continuous", "dcol"))
+def test_ground_geometry_uses_pre_step_queries_not_post_step_or_reset_height(
+    query_z, terminal_z, should_penalize, variant,
+):
     query = torch.full((3, 1, 10), query_z, dtype=torch.float64, requires_grad=True)
     terminal = torch.full((3, 1), terminal_z, dtype=torch.float64, requires_grad=True)
-    cfg = ZhangTrainCfg(variant="continuous", coef_height_boundary=0)
+    cfg = ZhangTrainCfg(variant=variant, coef_height_boundary=0)
     losses, _, _ = zhang_transition_costs(ground_history(query, terminal), cfg)
     assert bool(losses["obstacle_avoidance"] > 0) is should_penalize
     assert bool(losses["collision"] > 1) is should_penalize
@@ -118,38 +134,39 @@ def test_ground_geometry_uses_pre_step_queries_not_post_step_or_reset_height(que
         assert bool((query_gradient[..., 1:] < 0).all())
 
 
-@pytest.mark.parametrize("variant", ("step", "dcol"))
-def test_step_and_dcol_ignore_new_ground_field_and_preserve_original_geometry(variant):
+@pytest.mark.parametrize("variant", ("step", "continuous", "dcol"))
+def test_every_variant_uses_signed_ground_for_both_obstacle_terms(variant):
     height = torch.tensor([-0.1, -0.5, 0.5, 2.0], dtype=torch.float64, requires_grad=True)
     query = height[None, :, None].expand(3, -1, 10)
     history = ground_history(query, height.new_full((3, len(height)), 2.0))
     cfg = ZhangTrainCfg(variant=variant)
-    avoidance, collision = original_obstacle_terms(history, cfg)
+    clearance = (query - 0.01) - 0.3
+    approach = (-clearance.diff(dim=-1) * (9 / cfg.policy_dt)).clamp_min(1).detach()
+    avoidance = (approach * (1 - clearance[..., 1:]).relu().square()).mean(dim=-1)
+    collision = (approach * F.softplus(-32 * clearance[..., 1:])).mean(dim=-1)
     expected = cfg.coef_obj_avoidance * avoidance + cfg.coef_collide * collision
     losses, _, cost = zhang_transition_costs(history, cfg)
     torch.testing.assert_close(cost, expected, rtol=0, atol=0)
-    without = dict(history)
-    del without["ground_signed_distance"]
-    no_field_losses, _, no_field_cost = zhang_transition_costs(without, cfg)
-    torch.testing.assert_close(cost, no_field_cost, rtol=0, atol=0)
-    for key in losses:
-        torch.testing.assert_close(losses[key], no_field_losses[key], rtol=0, atol=0)
     gradient = torch.autograd.grad(losses["total"], height, retain_graph=True)[0]
-    old_gradient = torch.autograd.grad(expected.mean(), height, retain_graph=True)[0]
-    torch.testing.assert_close(gradient, old_gradient, rtol=0, atol=0)
-    # Document the deliberately unchanged unsigned avoidance component in dcol.
+    expected_gradient = torch.autograd.grad(expected.mean(), height, retain_graph=True)[0]
+    torch.testing.assert_close(gradient, expected_gradient, rtol=0, atol=0)
     avoidance_gradient = torch.autograd.grad(losses["obstacle_avoidance"], height)[0]
-    assert bool((avoidance_gradient[:2] > 0).all())
+    assert bool((avoidance_gradient[:2] < 0).all())
 
 
-def test_continuous_requires_ground_queries_and_rejects_misaligned_samples():
+@pytest.mark.parametrize("variant", ("step", "continuous", "dcol"))
+def test_every_variant_requires_signed_queries_and_rejects_misaligned_samples(variant):
     query = torch.full((3, 1, 10), 2.0)
     history = ground_history(query)
-    cfg = ZhangTrainCfg(variant="continuous")
+    cfg = ZhangTrainCfg(variant=variant)
     missing = dict(history)
-    del missing["ground_signed_distance"]
-    with pytest.raises(ValueError, match="requires ground_signed_distance"):
+    del missing["obstacle_signed_distance"]
+    with pytest.raises(ValueError, match="require obstacle_signed_distance"):
         zhang_transition_costs(missing, cfg)
-    wrong_shape = dict(history, ground_signed_distance=[torch.ones(1, 9)] * 3)
+    wrong_shape = dict(history, obstacle_signed_distance=[torch.ones(1, 9)] * 3)
     with pytest.raises(ValueError, match="must match"):
         zhang_transition_costs(wrong_shape, cfg)
+    missing_target = dict(history)
+    del missing_target["height_target"]
+    with pytest.raises(ValueError, match="height_target"):
+        zhang_transition_costs(missing_target, cfg)

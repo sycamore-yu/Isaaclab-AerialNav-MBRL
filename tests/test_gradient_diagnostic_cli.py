@@ -12,6 +12,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from isaaclab_navrl import training
+from isaaclab_navrl.zhang.config import ZhangTrainCfg
 
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 
@@ -61,6 +62,11 @@ class GradientDiagnosticCliTests(unittest.TestCase):
         self.assertEqual(args.algorithm, "bptt")
         self.assertEqual(args.critic_value_transform, "linear")
         self.assertEqual(args.velocity_loss_mode, "variant_default")
+        self.assertEqual(args.height_loss_mode, "target_exp")
+        self.assertEqual((args.height_target_min, args.height_target_max), (0.5, 2.5))
+        self.assertEqual(args.plateau_patience, 2)
+        self.assertEqual((args.optimizer, args.weight_decay), ("adamw", 0.01))
+        self.assertEqual(args.gradient_projection, "none")
         self.assertEqual(args.lr_schedule, "cosine")
         self.assertIs(args.observation_normalization, False)
         self.assertIs(args.recovery_enabled, True)
@@ -72,7 +78,7 @@ class GradientDiagnosticCliTests(unittest.TestCase):
         self.assertIs(ahac.recovery_enabled, False)
         self.assertEqual((ahac.critic_lr, ahac.critic_iterations, ahac.critic_max_iterations), (0.0005, 16, 64))
         self.assertEqual((ahac.discount, ahac.td_lambda), (0.99, 0.95))
-        self.assertEqual((ahac.ahac_min_horizon, ahac.ahac_initial_horizon, ahac.ahac_max_horizon), (16, 32, 150))
+        self.assertEqual((ahac.ahac_min_horizon, ahac.ahac_initial_horizon, ahac.ahac_max_horizon), (16, 32, 300))
         self.assertEqual((ahac.ahac_risk_clearance, ahac.ahac_risk_scale, ahac.ahac_risk_budget, ahac.ahac_dual_lr),
                          (0.1, 0.05, 0.1, 0.1))
 
@@ -93,7 +99,7 @@ class GradientDiagnosticCliTests(unittest.TestCase):
                     self.assertEqual(error.exception.code, 2)
 
     def test_velocity_loss_cli_choices_are_explicit_and_reject_unknown_values(self):
-        for mode in ("variant_default", "per_step", "truncated_window"):
+        for mode in ("variant_default", "per_step", "truncated_window", "full_window"):
             with self.subTest(mode=mode):
                 args = parse_training_cli(["--variant", "dcol", "--velocity_loss_mode", mode])
                 self.assertEqual(args.velocity_loss_mode, mode)
@@ -103,6 +109,36 @@ class GradientDiagnosticCliTests(unittest.TestCase):
                 with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as error:
                     parse_training_cli(["--velocity_loss_mode", raw])
                 self.assertEqual(error.exception.code, 2)
+
+    def test_restart_mode_choices_match_config_and_accept_zero_plateau_patience(self):
+        for variant in ("step", "continuous", "dcol"):
+            for mode in ("variant_default", "full_window", "truncated_window", "per_step"):
+                with self.subTest(variant=variant, mode=mode):
+                    args = parse_training_cli(["--variant", variant, "--velocity_loss_mode", mode])
+                    cfg = ZhangTrainCfg(variant=args.variant, velocity_loss_mode=args.velocity_loss_mode)
+                    cfg.validate()
+                    expected = ("per_step" if variant == "step" else "truncated_window") if mode == "variant_default" else (
+                        "window" if mode == "full_window" else mode)
+                    self.assertEqual(cfg.resolved_velocity_loss_mode, expected)
+        for height in ("target_exp", "target_huber", "boundary_huber"):
+            for patience in (0, 2):
+                for optimizer in ("adam", "adamw"):
+                    tokens = ["--height_loss_mode", height, "--height_target_min", "0.6", "--height_target_max", "2.4",
+                              "--plateau_patience", str(patience), "--optimizer", optimizer, "--weight_decay", "0",
+                              "--gradient_projection", "height_priority"]
+                    with self.subTest(height=height, patience=patience, optimizer=optimizer):
+                        args = parse_training_cli(tokens)
+                        values = acceptance.parse_train_args(tokens)
+                        for key, value in values.items():
+                            self.assertEqual(getattr(args, key), value)
+                        cfg = ZhangTrainCfg(height_loss_mode=args.height_loss_mode,
+                                            height_target_range=(args.height_target_min, args.height_target_max),
+                                            plateau_patience=args.plateau_patience, optimizer=args.optimizer,
+                                            weight_decay=args.weight_decay, gradient_projection=args.gradient_projection)
+                        cfg.validate()
+        for flag, value in (("height_loss_mode", "huber"), ("optimizer", "sgd"), ("gradient_projection", "pcgrad")):
+            with self.subTest(flag=flag), contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+                parse_training_cli([f"--{flag}", value])
 
     def test_velocity_loss_reaches_the_training_configuration_without_changing_window(self):
         class CapturedConfiguration(Exception):
@@ -131,7 +167,7 @@ class GradientDiagnosticCliTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory(prefix="velocity_mode_cli_unit_") as temporary:
             for algorithm in ("bptt", "shac", "ahac"):
-                for mode in ("variant_default", "per_step", "truncated_window"):
+                for mode in ("variant_default", "per_step", "truncated_window", "full_window"):
                     tokens = ["train_zhang.py", "--log_dir", str(Path(temporary) / "stage"),
                               "--variant", "dcol", "--algorithm", algorithm,
                               "--velocity_loss_mode", mode, "--velocity_window_s", "2"]
@@ -142,6 +178,30 @@ class GradientDiagnosticCliTests(unittest.TestCase):
                         self.assertEqual(captured.exception.values["velocity_loss_mode"], mode)
                         self.assertEqual(captured.exception.values["velocity_window_s"], 2.0)
                         self.assertEqual(captured.exception.values["algorithm"], algorithm)
+                        config = ZhangTrainCfg(**captured.exception.values)
+                        config.validate()
+                        expected = "truncated_window" if mode == "variant_default" else "window" if mode == "full_window" else mode
+                        self.assertEqual(config.resolved_velocity_loss_mode, expected)
+
+            for height in ("target_exp", "target_huber", "boundary_huber"):
+                for patience in (0, 2):
+                    tokens = ["train_zhang.py", "--log_dir", str(Path(temporary) / "stage"),
+                              "--variant", "continuous", "--height_loss_mode", height,
+                              "--height_target_min", "0.6", "--height_target_max", "2.4",
+                              "--optimizer", "adam", "--weight_decay", "0", "--plateau_patience", str(patience),
+                              "--gradient_projection", "height_priority"]
+                    with self.subTest(height=height, patience=patience):
+                        with patch.object(sys, "argv", tokens), patch("builtins.__import__", side_effect=intercept):
+                            with self.assertRaises(CapturedConfiguration) as captured:
+                                trainer.main()
+                        values = captured.exception.values
+                        self.assertEqual(values["height_loss_mode"], height)
+                        self.assertEqual(values["height_target_range"], (0.6, 2.4))
+                        self.assertEqual(environment.height_target_range, (0.6, 2.4))
+                        self.assertEqual((values["optimizer"], values["weight_decay"]), ("adam", 0.0))
+                        self.assertEqual(values["plateau_patience"], patience)
+                        self.assertEqual(values["gradient_projection"], "height_priority")
+                        ZhangTrainCfg(**values).validate()
 
     def test_stop_signals_only_request_a_boundary_stop_and_restore_original_handlers(self):
         first, second = object(), object()

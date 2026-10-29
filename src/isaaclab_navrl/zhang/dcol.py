@@ -187,17 +187,23 @@ def dynamic_min_alpha(query, radius, positions, sizes, *, obstacle_chunk_size=32
     return _dynamic_pair_alpha(point, radii, selected_position, selected_size).reshape(shape)
 
 
-def hybrid_collision_gap(query, radius, static_closest, positions, sizes, ground_z=0.01):
-    """Keep actual-mesh clearance and use DCOL for the convex dynamic bodies.
+def hybrid_collision_gap(query, radius, static_signed_distance, positions, sizes, ground_z=0.01):
+    """Combine the verified-exit static clearance proxy with dynamic-body DCOL.
 
-    Static terrain is nonconvex. Its original unsigned surface clearance is
-    retained; this function does not claim a static penetration-depth gradient.
+    ``static_signed_distance`` is the live differentiable metre distance from
+    ``TerrainDistance.signed_distance``: positive outside and negative inside.
+    Its inside derivative follows the selected original-mesh escape direction;
+    it is not claimed to be the exact SDF of a self-intersecting terrain mesh.
+    It is deliberately required instead of accepting old closest-point vectors,
+    which would silently restore inward penetration gradients.
     Dynamic ``radius * (alpha - 1)`` is a metre-scaled DCOL proxy, not an SDF.
     The static query must exclude dynamic bodies, otherwise their old distance
     would also enter this minimum and mask the intended DCOL comparison.
     """
+    if static_signed_distance.shape != query.shape[:-1]:
+        raise ValueError("static_signed_distance must have shape query.shape[:-1], not closest-point vectors.")
     radii = _radius_like(radius, query.shape[:-1], query)
-    static_gap = (query - static_closest.detach()).norm(dim=-1) - radii
+    static_gap = static_signed_distance - radii
     ground_gap = query[..., 2] - ground_z - radii
     dynamic_gap = radii * (dynamic_min_alpha(query, radii, positions, sizes) - 1)
     return torch.minimum(torch.minimum(static_gap, ground_gap), dynamic_gap)

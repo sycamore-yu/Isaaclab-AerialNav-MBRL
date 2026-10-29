@@ -103,7 +103,10 @@ def test_empty_dynamic_geometry_keeps_ground_and_static_gradients(snapshots):
     static_closest = query.detach().clone()
     static_closest[..., 0] = torch.tensor([[10.0, 0.1], [10.0, 0.1]])
     positions = torch.empty(2, 1, 0, 3) if snapshots else torch.empty(0, 3)
-    gap = hybrid_collision_gap(query, 0.3, static_closest, positions, torch.empty(0, 3))
+    # Every synthetic point is outside its nearest vertical static surface,
+    # so the explicit old vector norm equals the positive signed distance.
+    static_signed_distance = (query - static_closest).norm(dim=-1)
+    gap = hybrid_collision_gap(query, 0.3, static_signed_distance, positions, torch.empty(0, 3))
     torch.testing.assert_close(gap, torch.tensor([[0.29, -0.2], [0.39, -0.2]]))
     gap.sum().backward()
     torch.testing.assert_close(query.grad, torch.tensor([[[0.0, 0.0, 1.0], [-1.0, 0.0, 0.0]],

@@ -64,6 +64,36 @@ def check_perception(env):
     }
 
 
+def check_episode_height_target(env):
+    """Verify sampled targets and partial-reset ownership in the real scene."""
+    import torch
+
+    observation = env.get_zhang_observation()
+    before = env.target_pos[:, 2].detach().clone()
+    snapshot = observation["height_target"].clone()
+    low, high = env.cfg.height_target_range
+    assert bool(((before >= low) & (before <= high)).all())
+    torch.testing.assert_close(snapshot, before, rtol=0, atol=0)
+    ids = torch.tensor([0, 5, env.num_envs - 1], device=env.device, dtype=torch.int32)
+    kept = torch.ones(env.num_envs, device=env.device, dtype=torch.bool)
+    kept[ids.long()] = False
+    before_episodes = env.episode_id.clone()
+    env._reset_idx(ids)
+    after = env.target_pos[:, 2].detach().clone()
+    assert bool(((after >= low) & (after <= high)).all())
+    assert bool((after[ids.long()] != before[ids.long()]).all())
+    torch.testing.assert_close(after[kept], before[kept], rtol=0, atol=0)
+    torch.testing.assert_close(env.episode_id[kept], before_episodes[kept], rtol=0, atol=0)
+    torch.testing.assert_close(env.episode_id[ids.long()], before_episodes[ids.long()] + 1, rtol=0, atol=0)
+    torch.testing.assert_close(observation["height_target"], snapshot, rtol=0, atol=0)
+    return {
+        "range_m": [low, high], "sample_min_m": float(after.min()), "sample_max_m": float(after.max()),
+        "reset_lanes": ids.tolist(), "before_m": before[ids.long()].tolist(),
+        "after_m": after[ids.long()].tolist(), "unselected_targets_unchanged": True,
+        "pre_reset_observation_immutable": True,
+    }
+
+
 def below_ground_recovery_gradient(env, action):
     """Actual PhysX/terrain probe, followed by the ordinary geometric adjoint.
 
@@ -112,10 +142,9 @@ def below_ground_recovery_gradient(env, action):
     assert bool(torch.isfinite(terrain_surface).all())
     assert bool((terrain_surface[..., 2].abs() < 0.02).all())
     torch.testing.assert_close(terrain_surface[..., :2], query.detach()[..., :2], rtol=0, atol=1e-4)
-    vector = env.nearest_obstacle_vector(query)
-    ground = query[..., 2] - 0.01
-    assert bool((ground < 0).all()) and bool(torch.isfinite(vector).all())
-    nearest_surface = (query + vector).detach()
+    signed_distance = env.nearest_obstacle_signed_distance(query)
+    assert bool((signed_distance < 0).all()) and bool(torch.isfinite(signed_distance).all())
+    height_target = env.target_pos[lane:lane + 1, 2].detach().clone()
 
     _, _, terminated, timeout, info = env.step(action)
     transition = info["transition"]
@@ -140,7 +169,14 @@ def below_ground_recovery_gradient(env, action):
     history = {
         "velocity": [terminal.velocity], "target_velocity": [velocity.detach()],
         "episode_id": [env.episode_id[lane:lane + 1].clone()], "position": [terminal.position],
-        "obstacle_vector": [vector], "ground_signed_distance": [ground], "margin": [parameters["margin"]],
+        "obstacle_signed_distance": [signed_distance], "height_target": [height_target],
+        "margin": [parameters["margin"]],
+        "done": [(terminated | timeout)[lane:lane + 1].clone()],
+        "collision": [transition["collision"][lane:lane + 1]],
+        "bounds": [transition["bounds"][lane:lane + 1]],
+        "timeout": [transition["timeout"][lane:lane + 1]],
+        "invalid": [transition["invalid"][lane:lane + 1]],
+        "episode_step": [transition["step"][lane:lane + 1]],
         "command": [zero], "previous_command": [zero],
         "velocity_prediction": [velocity.detach()], "observed_velocity": [velocity.detach()],
     }
@@ -166,7 +202,8 @@ def below_ground_recovery_gradient(env, action):
         "first_event_code": int(transition["first_event_code"][lane]),
         "first_event_time_s": float(first_time), "query_positions_m": query.detach()[0].tolist(),
         "actual_terrain_surfaces_m": terrain_surface[0].tolist(),
-        "actual_nearest_surfaces_m": nearest_surface[0].tolist(),
+        "combined_signed_distance_m": signed_distance.detach()[0].tolist(),
+        "height_target_m": float(height_target[0]), "height_loss_mode": cfg.height_loss_mode,
         "terminal_position_m": transition["position"][lane].tolist(),
         "losses": {name: float(value.detach()) for name, value in losses.items()},
         "weighted_component_position_gradients": component_gradients,
@@ -409,6 +446,8 @@ def main():
                 assert env.curriculum.active_obstacles == 0
                 assert not env.sim.stage.GetPrimAtPath("/World/Dynamic/obstacle_000").IsValid()
                 env.set_active_obstacles(0)  # Also exercise the previously unsafe missing-pose-buffer branch.
+                progress("episode_height_target")
+                result["episode_height_target"] = check_episode_height_target(env)
                 progress("usd_collision_attributes")
                 collision_attributes = drone_collision_attributes(env)
                 result["drone_collision_attributes"] = collision_attributes
@@ -426,9 +465,9 @@ def main():
                 result["depth_camera"] = check_perception(env)
                 progress("static_only_distance_gradient")
                 query = env.root_state()[:, None, :3].detach().requires_grad_()
-                vectors = env.nearest_obstacle_vector(query)
-                vectors.square().sum().backward()
-                assert bool(torch.isfinite(vectors).all() & torch.isfinite(query.grad).all())
+                distance = env.nearest_obstacle_signed_distance(query)
+                distance.square().sum().backward()
+                assert bool(torch.isfinite(distance).all() & torch.isfinite(query.grad).all())
                 result["static_only_distance_gradient_finite"] = True
                 result["nonfinite_event_count_includes_injection"] = int(env.nonfinite_events)
                 result["nominal_dynamics"] = env.nominal_dynamics

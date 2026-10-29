@@ -1,7 +1,10 @@
 """Restore learned state without rewinding the experiment's observed history."""
 
 import copy
+import hashlib
+import json
 from dataclasses import dataclass
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -27,10 +30,12 @@ def _trainer(path, schedule="cosine", stage="pretrain_s0", algorithm="bptt", **c
                     plateau_patience=2, plateau_cooldown=0)
     settings.update(cfg_changes)
     cfg = ZhangTrainCfg(**settings)
+    path.mkdir(parents=True, exist_ok=True)
     env = SimpleNamespace(
         physics_dt=0.01, step_dt=0.1, device="cpu", num_envs=2, nonfinite_events=0,
         cfg=SimpleNamespace(variant="dcol", training_stage=stage, seed=0, terrain_seed=0,
-                            num_static_obstacles=300, num_dynamic_obstacles=0, sim_to_real=_Randomization()),
+                            num_static_obstacles=300, num_dynamic_obstacles=0, sim_to_real=_Randomization(),
+                            height_target_range=cfg.height_target_range),
         curriculum=TrainingCurriculum(2, "cpu", stage),
     )
     return ZhangTrainer(env, cfg, path)
@@ -54,7 +59,109 @@ def _assert_state_equal(actual, expected):
 def _report(trainer, update, rate):
     trainer.completed_updates = update
     trainer.environment_steps = update * 300
-    return {"stage": "pretrain_s0", "update": update, "episodes": 1024, "success_rate": rate}
+    return {"stage": trainer.env.cfg.training_stage, "update": update,
+            "episodes": 1024, "success_rate": rate}
+
+
+@pytest.mark.parametrize(("name", "optimizer_type", "decay"), (
+    ("adamw", torch.optim.AdamW, 0.01), ("adamw", torch.optim.AdamW, 0.0),
+    ("adam", torch.optim.Adam, 0.0), ("adam", torch.optim.Adam, 0.01),
+))
+def test_runner_constructs_the_requested_optimizer_without_changing_its_weight_decay(
+    tmp_path, name, optimizer_type, decay
+):
+    trainer = _trainer(tmp_path, optimizer=name, weight_decay=decay)
+    assert type(trainer.optimizer) is optimizer_type
+    assert all(group["weight_decay"] == decay for group in trainer.optimizer.param_groups)
+    assert trainer.cfg.height_loss_mode == "target_exp"
+    assert trainer.cfg.resolved_velocity_loss_mode == "truncated_window"
+
+
+def test_runner_uses_current_height_identity_and_ahac_limit(tmp_path):
+    trainer = _trainer(tmp_path, algorithm="ahac")
+    assert trainer.horizon_controller.settings.max_horizon == 300
+    assert trainer.horizon_controller.horizon == 32
+    trainer.env.cfg.height_target_range = (0.6, 2.4)
+    before = torch.get_rng_state().clone()
+    with pytest.raises(ValueError, match="height"):
+        ZhangTrainer(trainer.env, trainer.cfg, tmp_path / "wrong_height")
+    torch.testing.assert_close(torch.get_rng_state(), before, rtol=0, atol=0)
+
+
+def test_recovery_keeps_each_level_file_immutable_and_restores_the_highest_same_stage_state(tmp_path):
+    trainer = _trainer(tmp_path)
+    for update, success in enumerate((0.06, 0.065, 0.07), 1):
+        assert not trainer._report_controls(_report(trainer, update, success), _Writer())
+    assert set(trainer.recovery.stable_checkpoints) == {0.05}
+    first = Path(trainer.recovery.stable_checkpoint)
+    first_digest = hashlib.sha256(first.read_bytes()).hexdigest()
+    assert first.name == "checkpoint_stable_pretrain_s0_05.pt"
+    assert trainer.recovery.reference_success == 0.06
+    first_record = copy.deepcopy(trainer.recovery.stable_checkpoints[0.05])
+
+    with torch.no_grad():
+        for parameter in trainer.model.parameters():
+            parameter.add_(0.1)
+    high_state = copy.deepcopy(trainer.model.state_dict())
+    for update, success in enumerate((0.16, 0.17, 0.18), 4):
+        assert not trainer._report_controls(_report(trainer, update, success), _Writer())
+    assert set(trainer.recovery.stable_checkpoints) == {0.05, 0.10, 0.15}
+    assert trainer.recovery.stable_checkpoints[0.05] == first_record
+    assert hashlib.sha256(first.read_bytes()).hexdigest() == first_digest
+    assert trainer.recovery.reference_success == 0.16
+    for level in (0.10, 0.15):
+        record = trainer.recovery.stable_checkpoints[level]
+        path = Path(record["checkpoint"])
+        assert path.parent == tmp_path.resolve()
+        assert path.name == f"checkpoint_stable_pretrain_s0_{round(level * 100):02d}.pt"
+        assert record["stage"] == "pretrain_s0" and record["update"] == 6
+        assert record["reference_success"] == 0.16
+        payload = torch.load(path, map_location="cpu", weights_only=True)
+        _assert_state_equal(payload["model_state_dict"], high_state)
+        assert tuple(payload["environment"]["height_target_range"]) == (0.5, 2.5)
+    highest_path = trainer.recovery.stable_checkpoint
+    high_digest = hashlib.sha256(Path(highest_path).read_bytes()).hexdigest()
+
+    # Further improvement within an existing level cannot replace that file
+    # or change the reference used by subsequent degradation decisions.
+    assert not trainer._report_controls(_report(trainer, 7, 0.19), _Writer())
+    assert trainer.recovery.reference_success == 0.16
+    assert hashlib.sha256(Path(highest_path).read_bytes()).hexdigest() == high_digest
+    with torch.no_grad():
+        for parameter in trainer.model.parameters():
+            parameter.add_(0.4)
+    for update in range(8, 11):
+        assert not trainer._report_controls(_report(trainer, update, 0.08), _Writer())
+    assert trainer.recovery.state == "observing"
+    for update in range(11, 14):
+        restored = trainer._report_controls(_report(trainer, update, 0.08), _Writer())
+        assert restored is (update == 13)
+    _assert_state_equal(trainer.model.state_dict(), high_state)
+    assert trainer.recovery.stable_checkpoint == highest_path
+    assert trainer.recovery.last_report_update == 13
+    assert trainer.completed_updates == 13 and trainer.environment_steps == 3900
+    assert hashlib.sha256(first.read_bytes()).hexdigest() == first_digest
+    assert hashlib.sha256(Path(highest_path).read_bytes()).hexdigest() == high_digest
+    records = [json.loads(line) for line in (tmp_path / "optimization_events.jsonl").read_text().splitlines()]
+    assert records[-1]["action"] == "restore" and records[-1]["checkpoint"] == highest_path
+    assert records[-1]["reference_success"] == 0.16
+
+
+def test_recovery_refuses_to_overwrite_an_existing_level_file_before_acknowledging(tmp_path):
+    trainer = _trainer(tmp_path)
+    path = tmp_path / "checkpoint_stable_pretrain_s0_05.pt"
+    original = b"Synthetic pre-existing history; not a trained policy checkpoint"
+    path.write_bytes(original)
+    for update in (1, 2):
+        assert not trainer._report_controls(_report(trainer, update, 0.10), _Writer())
+    with pytest.raises(FileExistsError, match="immutable"):
+        trainer._report_controls(_report(trainer, 3, 0.10), _Writer())
+    assert path.read_bytes() == original
+    assert not (tmp_path / "checkpoint_stable_pretrain_s0_10.pt").exists()
+    assert trainer.recovery.stable_checkpoints == {}
+    assert trainer.recovery.stable_checkpoint is None
+    assert trainer.recovery.pending.action == "save_stable"
+    assert trainer.recovery.pending.levels == (0.05, 0.10)
 
 
 def test_actual_restore_keeps_counters_rng_and_reduced_cosine_lr(tmp_path):
@@ -136,7 +243,11 @@ def test_accepted_stage_checkpoint_keeps_normalization_and_resets_report_history
     next_stage.load_stage_checkpoint(checkpoint)
     assert next_stage.completed_updates == 12 and next_stage.schedule_updates == 12
     assert next_stage.recovery.stable_checkpoint is None
+    assert next_stage.recovery.stable_checkpoints == {}
     assert next_stage.recovery.stage == "pretrain_s1"
+    # Passing a stage without three stable 80% reports does not manufacture
+    # a stable80 checkpoint in either stage's immutable history.
+    assert not list(tmp_path.glob("checkpoint_stable_*_80.pt"))
     torch.testing.assert_close(next_stage.normalizer.state_moments.mean, torch.full((10,), 2.0, dtype=torch.float64))
 
 
@@ -145,6 +256,14 @@ def test_accepted_stage_checkpoint_keeps_normalization_and_resets_report_history
     ("shac", "discount", 0.95),
     ("shac", "td_lambda", 0.8),
     ("ahac", "ahac_risk_budget", 0.2),
+    ("ahac", "ahac_max_horizon", 150),
+    ("bptt", "velocity_loss_mode", "full_window"),
+    ("bptt", "height_loss_mode", "boundary_huber"),
+    ("bptt", "height_target_range", (0.6, 2.4)),
+    ("bptt", "optimizer", "adam"),
+    ("bptt", "weight_decay", 0.0),
+    ("bptt", "plateau_patience", 0),
+    ("bptt", "gradient_projection", "height_priority"),
 ])
 def test_stage_load_rejects_changed_learning_configuration_before_mutating_state(
     tmp_path, algorithm, changed_field, changed_value

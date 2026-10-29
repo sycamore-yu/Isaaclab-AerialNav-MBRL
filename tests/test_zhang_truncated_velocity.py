@@ -33,9 +33,10 @@ def _history(velocity, episode_step, *, target=None, episode=None, **events):
     history = {
         "velocity": list(velocity.unbind(0)), "target_velocity": list(target.unbind(0)),
         "episode_id": list(episode.unbind(0)), "episode_step": list(step.unbind(0)),
-        "position": list(position.unbind(0)), "obstacle_vector": list(vector.unbind(0)),
+        "position": list(position.unbind(0)),
+        "obstacle_signed_distance": list(vector.norm(dim=-1).unbind(0)),
         "dcol_gap": [velocity.new_full((batch, 9), 9.7)] * count,
-        "ground_signed_distance": [velocity.new_full((batch, 10), 1.99)] * count,
+        "height_target": [velocity.new_full((batch,), 2.0)] * count,
         "margin": [velocity.new_full((batch,), 0.3)] * count,
         "command": list(zero.unbind(0)), "previous_command": list(zero.unbind(0)),
         "velocity_prediction": list(zero.unbind(0)), "observed_velocity": list(zero.unbind(0)),
@@ -132,7 +133,7 @@ def test_exact_first_window_terminal_completes_once_without_changing_source_offs
     terminal = [[False], [False], [True]]
     history = _history(velocity, [[1], [2], [3]], done=terminal, collision=terminal)
     cfg = _cfg(window=3)
-    original, _, _ = zhang_transition_costs(history, replace(cfg, velocity_loss_mode="variant_default"))
+    original, _, _ = zhang_transition_costs(history, replace(cfg, velocity_loss_mode="full_window"))
     complete, _, cost = zhang_transition_costs(history, cfg)
     assert original["velocity_valid_samples"] == 0  # Original offset is retained.
     assert complete["velocity_full_window_samples"] == 0 and complete["velocity_short_terminal_samples"] == 1
@@ -148,7 +149,7 @@ def test_exact_first_window_terminal_completes_once_without_changing_source_offs
                        done=[[True], [False], [False], [True]],
                        invalid=[[True], [False], [False], [False]],
                        bounds=[[False], [False], [False], [True]])
-    original, _, original_cost = zhang_transition_costs(history, replace(cfg, velocity_loss_mode="variant_default"))
+    original, _, original_cost = zhang_transition_costs(history, replace(cfg, velocity_loss_mode="full_window"))
     complete, _, cost = zhang_transition_costs(history, cfg)
     assert complete["velocity_full_window_samples"] == 1 and complete["velocity_short_terminal_samples"] == 0
     torch.testing.assert_close(cost, original_cost, rtol=0, atol=0)
@@ -165,7 +166,7 @@ def test_long_episode_with_bounded_prefix_is_not_misclassified_as_short():
         terminal = [[False], [start == 9]]
         history = _history(velocity, [[start], [start + 1]], done=terminal, timeout=terminal)
         original, _, original_cost = zhang_transition_costs(
-            history, replace(cfg, velocity_loss_mode="variant_default"), cache,
+            history, replace(cfg, velocity_loss_mode="full_window"), cache,
         )
         complete, cache, cost = zhang_transition_costs(history, cfg, cache)
         assert complete["velocity_short_terminal_samples"] == 0
@@ -192,7 +193,7 @@ def test_truncated_requires_terminal_metadata_only_for_its_own_mode():
     del history["timeout"]
     with pytest.raises(ValueError, match="requires terminal history"):
         zhang_transition_costs(history, _cfg())
-    zhang_transition_costs(history, _cfg(velocity_loss_mode="variant_default"))
+    zhang_transition_costs(history, _cfg(velocity_loss_mode="full_window"))
     zhang_transition_costs(history, _cfg(velocity_loss_mode="per_step"))
 
 
@@ -228,8 +229,9 @@ def test_other_six_costs_and_geometry_gradients_remain_exactly_unchanged():
     for name, value in zip(("obstacle_vector", "dcol_gap", "command", "velocity_prediction", "position"),
                            variables, strict=True):
         history[name] = list(value.unbind(0))
+    history["obstacle_signed_distance"] = list(vector.norm(dim=-1).unbind(0))
     cfg = ZhangTrainCfg(variant="dcol", velocity_loss_mode="truncated_window", velocity_window_s=0.4)
-    original, _, original_cost = zhang_transition_costs(history, replace(cfg, velocity_loss_mode="variant_default"))
+    original, _, original_cost = zhang_transition_costs(history, replace(cfg, velocity_loss_mode="full_window"))
     complete, _, cost = zhang_transition_costs(history, cfg)
     for name in ("velocity_prediction", "obstacle_avoidance", "collision", "acceleration", "jerk", "height_boundary"):
         torch.testing.assert_close(complete[name], original[name], rtol=0, atol=0)

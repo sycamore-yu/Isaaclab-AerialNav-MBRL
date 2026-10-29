@@ -29,7 +29,7 @@ x_{\mathrm{aligned}}=x_{\mathrm{pred}}+\operatorname{detach}(x_{\mathrm{PhysX}}-
 - **策略网络原始输出：**六维，由三维加速度相关量和三维速度预测量组成，而不是直接输出六维物理控制命令。
 - **动作解码：**按照 Zhang 的原始输出排列、航向坐标变换和速度补偿规则，生成**世界坐标系三维加速度**指令 \(a_{\mathrm{cmd}}\in\mathbb{R}^{3}\)。速度估计分支同时参与原始辅助损失。由 PhysX 更新无人机；不把质点模型的预测位置直接写回仿真。
 
-13. 保留速度匹配、避障、碰撞、加速度、Jerk 和速度预测辅助损失。按用户 2026-10-29 的追加决定，新增仅在上下边界附近激活的 C1 平滑高度损失，并按最新决定替换为非饱和 SmoothL1；不恢复原代码的全域目标高度惩罚。默认逐策略步速度匹配，当前对照见 [新机制](../ZHANG_NEW_MECHANISMS_20261029.md)，旧四方案文档仅作为历史记录。这项追加决定替代此前“无额外高度损失”和默认 60 步速度窗口的约束。
+13. 保留速度匹配、避障、碰撞、加速度、Jerk和速度预测辅助项。2026-10-29先前引入的边界SmoothL1保留为显式`height_loss_mode=boundary_huber`；用户最新重启要求默认改为当前回合导航目标z的`target_exp`，精确公式为`1-exp(-abs(z-target_z))`，另可选`target_huber`。目标区间默认0.5–2.5 m，回合内固定，terminal转移使用本回合目标。新默认指数项会饱和，其误差零点有尖点，不沿用旧“边界非饱和”描述。接口、风险和历史条件见[新机制](../ZHANG_NEW_MECHANISMS_20261029.md)，旧梯度诊断不直接证明新目标项效果。
 
 14. 碰撞半径与 无人机仿真中的真实几何对齐。同时用于策略半径输入和避障损失，并此次基础上合理调整原 Zhang 的 0.1–0.3 m 随机机体半径。
 
@@ -38,9 +38,9 @@ x_{\mathrm{aligned}}=x_{\mathrm{pred}}+\operatorname{detach}(x_{\mathrm{PhysX}}-
 
 9. 物理步长为 0.01 秒，策略步长为 0.1 秒，相机与策略同步。此项按 2026-10-29 的本轮请求更新。
 
-10. 默认 `variant=step`，每个策略步计算自身速度与本步执行前目标速度的 SmoothL1 误差，150 步末统一反传。`continuous`、`dcol` 保留窗口速度损失，默认窗口为 20 个策略步（`velocity_window_s=2.0`）；原 60 步可显式配置。窗口不得跨回合，跨更新的窗口前缀停止梯度。旧 `variant=truncated_window` 已取消并移除几何配置，其结果保持归档；最新用户重启的是 `variant=dcol` 下独立的 `velocity_loss_mode=truncated_window` 对照，默认映射不变。BPTT 默认 H=150；SHAC 固定短展开、AHAC 同步自适应展开是单独算法对照，定义见 [SHAC/AHAC 适配](SHAC_AHAC_ADAPTATION.md)。
+10. 默认`variant=step`逐策略步比较速度与本步执行前目标，BPTT默认150步统一反传。新`variant_default`令continuous/dcol使用`truncated_window`：默认20策略步窗口，并补充真实终止的合格短窗；显式`velocity_loss_mode=full_window`保留旧完整窗口并解析为`window`，`per_step`可独立选择。所有窗口不得跨回合，跨更新前缀停止梯度。旧`variant=truncated_window`仍不属于几何配置，历史结果不回写。SHAC固定短展开，AHAC同步H默认初始32、范围16–300，见[算法适配](SHAC_AHAC_ADAPTATION.md)。
 
-12. 保留 AdamW。预训练学习率默认 \(10^{-3}\)，微调默认 \(5\times10^{-5}\)。余弦调度每 400 次更新循环一次，对应初始 2000 次更新内 5 个周期。训练不设置更新上限。阶段边界加载本次实验的前序检查点，保留网络与优化器。默认全局梯度范数裁剪为 5.0，候选值为 1、3、5。记录裁剪前梯度范数与非有限梯度事件。另记录实际参数范数、AdamW 更新范数及其比值，覆盖全网络、每层和六维输出行。ReduceLROnPlateau 与余弦调度互斥，先作为对照，未证明更好前不替换默认。
+12. 默认保留AdamW及weight_decay=.01；用户授权`optimizer=adam`及独立非负`weight_decay`对照，不在已有运行中切换。预训练学习率默认 \(10^{-3}\)，微调默认 \(5\times10^{-5}\)。余弦调度每 400 次更新循环一次，对应初始 2000 次更新内 5 个周期。训练不设置更新上限。阶段边界加载本次实验的前序检查点，保留网络与优化器。默认全局梯度范数裁剪为 5.0，候选值为 1、3、5。记录裁剪前梯度范数与非有限梯度事件。另记录实际参数范数、AdamW 更新范数及其比值，覆盖全网络、每层和六维输出行。ReduceLROnPlateau与余弦调度互斥，仍不替换cosine默认；patience默认2，可显式配置0等非负整数。稳定模型从5%起每5个百分点保留同阶段历史，规则见[分档恢复](RECOVERY_LADDER_20261029.md)。
 保留 Zhang 原始网络。 使用 CNN + GRU，GRU 隐状态为 192 维。即使有速度观测，仍保留网络的速度预测辅助输出。
 两环境共用 NavRL 的相机安装角度和视场参数，原始深度分辨率默认 **160×120**；相对原 640×480 标定，像素焦距和主点均除以 4，保持物理焦距与视场。处理顺序仍为原始射线深度、逆深度变换、像素噪声、池化得到 12×16 深度图。Zhang 另外输入 10 维状态特征，包括自身速度、目标速度、机体朝上方向和碰撞半径。每个输出格包含 10×10 个原始像素，网络结构不变；NavRL 原策略仍使用 LiDAR，不改变 202 维策略接口。新训练从随机初始化使用此分辨率，历史实验保留原配置。
 
@@ -64,12 +64,12 @@ Zhang 的动态物体运动、碰撞和首次到达事件按 100 Hz 物理步检
 
 旧实验冻结点为 f6d5fd4，标签 baseline/zhang-pre-new-mechanisms-20261029；归档见 [记录](../results/zhang_pre_new_mechanisms_archive_20261029.md)。全部新定义见 [新机制](../ZHANG_NEW_MECHANISMS_20261029.md)。
 
-## 连续展开新可达状态的几何修正与成本价值对照
+## 先前连续展开地面修正与成本价值对照（历史条件）
 
 连续模式允许穿过地面后继续运动，原欧氏最近点距离在地面以下会产生错误的避障/碰撞恢复方向。
 仅对continuous的地面以下原10点look-ahead查询使用有符号地面半空间距离；地面以上、step、dcol
 保持原行为，七项损失形式和系数不变。这不声称解决非凸静态障碍内部的穿透梯度。
-证据和修正规则见[地面距离经验](CONTINUOUS_GROUND_SIGN_EXPERIENCE.md)。
+该旧轮次的证据和修正规则见[地面距离经验](CONTINUOUS_GROUND_SIGN_EXPERIENCE.md)。最新用户要求进一步处理静态障碍内部梯度；新重启接口由所有Zhang variant消费同一静态占据/出口有符号代理和地面距离，并替代上述continuous专用地面分支。原PhysX和深度地图保持。实际地形包含自交面，`signed_heightfield_occupancy_exit_proxy` 不宣称精确SDF或任意区域连续性；具体查询语义、限制和真实场景检查见[静态几何审计](SIGNED_STATIC_GEOMETRY_AUDIT_20261029.md)，不能把旧无符号行为作为新默认。
 
 SHAC/AHAC可选 `critic_value_transform=softplus`，只约束成本critic最终输出非负，默认仍为linear。
 它不更改Zhang成本、TD目标公式、优化器或H控制，必须新随机初始化对照，不加载已训练的linear
@@ -78,11 +78,11 @@ SHAC/AHAC可选 `critic_value_transform=softplus`，只约束成本critic最终�
 
 ## 速度监督与碰撞几何的独立对照
 
-`velocity_loss_mode=variant_default` 保留上文第10项的默认映射：step逐步，continuous/dcol窗口。
+`velocity_loss_mode=variant_default`按最新第10项映射：step逐步，continuous/dcol窗口加合格终止补项；`full_window`用于显式旧完整窗口控制。
 可显式使用 `--velocity_loss_mode per_step`，在保留DCOL几何与原重置规则的同时，
 对每个策略步的终止前速度计算本步目标误差。该开关适用于BPTT、SHAC与AHAC；
 它不改变critic的窗口历史维度、其他六项成本、控制器或课程。该逐步对照没有恢复旧truncated几何变体。
-正式新对照从随机初始化开始，按相同环境策略步比较，未取得更好结果前不替换默认。
+正式新对照从随机初始化开始，按相同环境策略步比较。新默认来自用户指定，不代表已有证据证明它优于旧完整窗口。
 机制诊断、停止的窗口SHAC证据及对照协议见[逐步速度经验](DCOL_STEP_VELOCITY_EXPERIENCE.md)。
 
 最新用户要求恢复短窗速度监督的独立检验，新增 `--velocity_loss_mode truncated_window`。

@@ -44,18 +44,22 @@ def main():
     parser.add_argument("--algorithm", choices=("bptt", "shac", "ahac"), default="bptt",
                         help="ahac selects AHAC-derived DCOL synchronous adaptation")
     parser.add_argument("--timesteps", type=int, default=150)
-    parser.add_argument("--velocity_loss_mode", choices=("variant_default", "per_step", "truncated_window"),
+    parser.add_argument("--velocity_loss_mode", choices=("variant_default", "per_step", "truncated_window", "full_window"),
                         default="variant_default", help="Velocity supervision; truncated_window completes unscored "
                         "short terminal windows; variant_default preserves each variant's current loss")
     parser.add_argument("--velocity_window_s", type=float, default=2.0)
     parser.add_argument("--camera_batch_size", type=int, default=16,
                         help="Depth raycast environment batch size; does not change image resolution")
     parser.add_argument("--lr", type=float, default=None, help="Default: 0.001 pretraining, 0.00005 fine-tuning")
+    parser.add_argument("--optimizer", choices=("adamw", "adam"), default="adamw")
+    parser.add_argument("--weight_decay", type=float, default=0.01)
     parser.add_argument("--lr_schedule", choices=("cosine", "plateau", "constant"), default="cosine")
     parser.add_argument("--observation_normalization", type=parse_binary_flag, default=False, metavar="{0,1}")
     parser.add_argument("--normalization_variance_floor", type=float, default=1e-4)
     parser.add_argument("--recovery_enabled", type=parse_binary_flag, default=True, metavar="{0,1}")
     parser.add_argument("--cosine_period_updates", type=int, default=400)
+    parser.add_argument("--plateau_patience", type=int, default=2,
+                        help="Number of tolerated non-improving natural reports in ReduceLROnPlateau")
     parser.add_argument("--critic_lr", type=float, default=0.0005)
     parser.add_argument("--critic_iterations", type=int, default=16)
     parser.add_argument("--critic_max_iterations", type=int, default=64)
@@ -64,7 +68,7 @@ def main():
     parser.add_argument("--discount", type=float, default=0.99)
     parser.add_argument("--td_lambda", type=float, default=0.95)
     parser.add_argument("--ahac_min_horizon", type=int, default=16)
-    parser.add_argument("--ahac_max_horizon", type=int, default=150)
+    parser.add_argument("--ahac_max_horizon", type=int, default=300)
     parser.add_argument("--ahac_initial_horizon", type=int, default=32)
     parser.add_argument("--ahac_risk_clearance", type=float, default=0.1)
     parser.add_argument("--ahac_risk_scale", type=float, default=0.05)
@@ -77,10 +81,16 @@ def main():
     parser.add_argument("--coef_d_acc", type=float, default=0.01)
     parser.add_argument("--coef_d_jerk", type=float, default=0.001)
     parser.add_argument("--coef_height_boundary", type=float, default=1.0)
+    parser.add_argument("--height_loss_mode", choices=("target_exp", "target_huber", "boundary_huber"),
+                        default="target_exp")
+    parser.add_argument("--height_target_min", type=float, default=0.5)
+    parser.add_argument("--height_target_max", type=float, default=2.5)
     parser.add_argument("--boundary_margin", type=float, default=0.5)
     parser.add_argument("--boundary_scale", type=float, default=0.5)
     parser.add_argument("--gradient_diagnostic_updates", type=parse_gradient_diagnostic_updates, default=(),
                         help="Optional unique global completed-update numbers, e.g. 20,22,24,26; empty disables")
+    parser.add_argument("--gradient_projection", choices=("none", "height_priority"), default="none",
+                        help="Optional BPTT parameter-gradient projection; Adam/AdamW can alter the final step direction")
     add_launcher_args(parser)
     parser.set_defaults(visualizer=["none"])
     args = parser.parse_args()
@@ -111,6 +121,7 @@ def main():
     stage = STAGE_CONFIGS[args.stage]
     cfg = ZhangNavRLEnvCfg()
     cfg.variant = args.variant
+    cfg.height_target_range = (args.height_target_min, args.height_target_max)
     cfg.scene.num_envs = args.num_envs
     cfg.seed, cfg.terrain_seed = args.seed, args.terrain_seed
     cfg.num_static_obstacles = stage["static_obstacles"]
@@ -122,15 +133,17 @@ def main():
     cfg.depth_camera_batch_size = args.camera_batch_size
     cfg.configure_scene()
     fields = ("variant", "algorithm", "timesteps", "max_iterations", "stop_after_acceptance", "velocity_loss_mode",
-              "velocity_window_s", "lr", "max_grad_norm",
+              "velocity_window_s", "lr", "optimizer", "weight_decay", "max_grad_norm",
               "grad_decay", "coef_obj_avoidance", "coef_collide", "coef_d_acc", "coef_d_jerk",
-              "coef_height_boundary", "boundary_margin", "boundary_scale", "cosine_period_updates", "seed",
-              "gradient_diagnostic_updates", "observation_normalization", "lr_schedule", "recovery_enabled",
+              "coef_height_boundary", "height_loss_mode", "boundary_margin", "boundary_scale", "cosine_period_updates", "seed",
+              "gradient_diagnostic_updates", "gradient_projection", "observation_normalization", "lr_schedule", "recovery_enabled",
+              "plateau_patience",
               "normalization_variance_floor",
               "critic_lr", "critic_iterations", "critic_max_iterations", "critic_value_transform", "discount", "td_lambda",
               "ahac_min_horizon", "ahac_max_horizon", "ahac_initial_horizon",
               "ahac_risk_clearance", "ahac_risk_scale", "ahac_risk_budget", "ahac_dual_lr")
-    train_cfg = ZhangTrainCfg(**{name: getattr(args, name) for name in fields})
+    train_cfg = ZhangTrainCfg(**{name: getattr(args, name) for name in fields},
+                             height_target_range=cfg.height_target_range)
     train_cfg.validate()
     torch.manual_seed(args.seed)
     args.log_dir.mkdir(parents=True, exist_ok=True)
@@ -138,10 +151,14 @@ def main():
         "method": "zhang", "variant": args.variant, "algorithm": args.algorithm, "train": asdict(train_cfg),
         "resolved_velocity_loss_mode": train_cfg.resolved_velocity_loss_mode,
         "algorithm_label": "AHAC-derived DCOL synchronous adaptation" if args.algorithm == "ahac" else args.algorithm,
-        "height_boundary_loss": "smooth_l1",
+        "height_loss_mode": train_cfg.height_loss_mode,
+        "static_obstacle_distance": "signed_heightfield_occupancy_exit_proxy",
+        "static_projection": "float64_selected_face_refinement_float32_storage",
         "environment": {"num_envs": args.num_envs, "seed": args.seed, "terrain_seed": args.terrain_seed,
                         "stage": args.stage, **stage, "curriculum": STAGE_CONFIGS,
                         "variant": args.variant, "drone_collision_response": args.variant != "continuous",
+                        "height_target_range": list(cfg.height_target_range),
+                        "height_target_source": "current_episode_navigation_goal_z",
                         "dynamic_obstacle_collision_response": False,
                         "collision_terminates": args.variant != "continuous",
                         "bounds_terminates": args.variant != "continuous",

@@ -1,0 +1,538 @@
+{
+  "method": "NumPy float64 plane projection, dominant-axis barycentrics and edge projections",
+  "source": "/home/tong/tongworkspace/free/.worktrees/isaaclab-navrl/restart-controls-20261029/logs/restart_checks/geometry_proxy_diagnostic_v3/anchor_cases.json",
+  "training_acceptance": false,
+  "scope": "The exported nearby actual triangles; this script does not prove global BVH face selection.",
+  "results": [
+    {
+      "query_index": 28471,
+      "anchor_actual_mesh_residual_m": 0.0,
+      "requery_actual_mesh_residual_m": 0.0,
+      "true_closest_point_m": [
+        -15.833333015441895,
+        -15.100000381469727,
+        3.933333396911621
+      ],
+      "true_distance_m": 9.918212890625e-05,
+      "distance_relative_inflation": 0.17433731372539807,
+      "anchor_tangent_error_m": [
+        -1.9073486328125e-06,
+        0.0,
+        6.103515625e-05
+      ],
+      "true_escape_direction": [
+        0.0,
+        -1.0,
+        0.0
+      ],
+      "direction_angle_error_deg": 31.61998397451966,
+      "probe": {
+        "origin_query_index": 28471,
+        "inside_batch_index": 2771,
+        "source_face_index": 32579,
+        "query_position_m": [
+          -15.833333015441895,
+          -15.09990119934082,
+          3.933333396911621
+        ],
+        "signed_proxy_distance_m": -0.00011647327482933179,
+        "selected_anchor_m": [
+          -15.833334922790527,
+          -15.100000381469727,
+          3.933394432067871
+        ],
+        "anchor_requery_closest_m": [
+          -15.833337783813477,
+          -15.100000381469727,
+          3.933250904083252
+        ],
+        "anchor_requery_residual_m": 0.000143556491821073,
+        "original_query_mesh_closest_m": [
+          -15.833334922790527,
+          -15.100000381469727,
+          3.933394432067871
+        ],
+        "used_exit_search": false,
+        "exit_valid": true,
+        "selected_anchor_xy_equals_query": false,
+        "highest_projected_height_m": 5.900000095367432,
+        "escape_direction": [
+          -0.016375847160816193,
+          -0.8515440821647644,
+          0.5240271091461182
+        ],
+        "nearby_triangle_aabb_radius_m": 0.002,
+        "nearby_triangle_count": 2,
+        "nearby_triangles_truncated": false,
+        "nearby_triangles": [
+          {
+            "face_index": 31799,
+            "vertices_m": [
+              [
+                -15.899999618530273,
+                -15.100000381469727,
+                0
+              ],
+              [
+                -15.800000190734863,
+                -15.100000381469727,
+                0
+              ],
+              [
+                -15.899999618530273,
+                -15.100000381469727,
+                5.900000095367432
+              ]
+            ],
+            "bbox_distance_m": 0
+          },
+          {
+            "face_index": 32579,
+            "vertices_m": [
+              [
+                -15.800000190734863,
+                -15.100000381469727,
+                0
+              ],
+              [
+                -15.800000190734863,
+                -15.100000381469727,
+                5.900000095367432
+              ],
+              [
+                -15.899999618530273,
+                -15.100000381469727,
+                5.900000095367432
+              ]
+            ],
+            "bbox_distance_m": 0
+          }
+        ]
+      }
+    },
+    {
+      "query_index": 28524,
+      "anchor_actual_mesh_residual_m": 0.0,
+      "requery_actual_mesh_residual_m": 0.0,
+      "true_closest_point_m": [
+        -15.733333587646484,
+        -15.100000381469727,
+        3.933333396911621
+      ],
+      "true_distance_m": 9.918212890625e-05,
+      "distance_relative_inflation": 0.17421920482928943,
+      "anchor_tangent_error_m": [
+        -9.5367431640625e-07,
+        0.0,
+        6.103515625e-05
+      ],
+      "true_escape_direction": [
+        0.0,
+        -1.0,
+        0.0
+      ],
+      "direction_angle_error_deg": 31.610624905981236,
+      "probe": {
+        "origin_query_index": 28524,
+        "inside_batch_index": 2824,
+        "source_face_index": 33370,
+        "query_position_m": [
+          -15.733333587646484,
+          -15.09990119934082,
+          3.933333396911621
+        ],
+        "signed_proxy_distance_m": -0.00011646156053757295,
+        "selected_anchor_m": [
+          -15.7333345413208,
+          -15.100000381469727,
+          3.933394432067871
+        ],
+        "anchor_requery_closest_m": [
+          -15.73333740234375,
+          -15.100000381469727,
+          3.933250904083252
+        ],
+        "anchor_requery_residual_m": 0.000143556491821073,
+        "original_query_mesh_closest_m": [
+          -15.7333345413208,
+          -15.100000381469727,
+          3.933394432067871
+        ],
+        "used_exit_search": false,
+        "exit_valid": true,
+        "selected_anchor_xy_equals_query": false,
+        "highest_projected_height_m": 5.900000095367432,
+        "escape_direction": [
+          -0.008188747800886631,
+          -0.8516297340393066,
+          0.5240798592567444
+        ],
+        "nearby_triangle_aabb_radius_m": 0.002,
+        "nearby_triangle_count": 2,
+        "nearby_triangles_truncated": false,
+        "nearby_triangles": [
+          {
+            "face_index": 32580,
+            "vertices_m": [
+              [
+                -15.800000190734863,
+                -15.100000381469727,
+                0
+              ],
+              [
+                -15.699999809265137,
+                -15.100000381469727,
+                0
+              ],
+              [
+                -15.800000190734863,
+                -15.100000381469727,
+                5.900000095367432
+              ]
+            ],
+            "bbox_distance_m": 0
+          },
+          {
+            "face_index": 33370,
+            "vertices_m": [
+              [
+                -15.699999809265137,
+                -15.100000381469727,
+                0
+              ],
+              [
+                -15.699999809265137,
+                -15.100000381469727,
+                5.900000095367432
+              ],
+              [
+                -15.800000190734863,
+                -15.100000381469727,
+                5.900000095367432
+              ]
+            ],
+            "bbox_distance_m": 0
+          }
+        ]
+      }
+    },
+    {
+      "query_index": 35824,
+      "anchor_actual_mesh_residual_m": 0.0,
+      "requery_actual_mesh_residual_m": 0.0,
+      "true_closest_point_m": [
+        -4.633333683013916,
+        -18.299999237060547,
+        3.933333396911621
+      ],
+      "true_distance_m": 9.918212890625e-05,
+      "distance_relative_inflation": 0.1742683557363658,
+      "anchor_tangent_error_m": [
+        -1.430511474609375e-06,
+        0.0,
+        6.103515625e-05
+      ],
+      "true_escape_direction": [
+        0.0,
+        -1.0,
+        0.0
+      ],
+      "direction_angle_error_deg": 31.61452600183501,
+      "probe": {
+        "origin_query_index": 35824,
+        "inside_batch_index": 10105,
+        "source_face_index": 121244,
+        "query_position_m": [
+          -4.633333683013916,
+          -18.29990005493164,
+          3.933333396911621
+        ],
+        "signed_proxy_distance_m": -0.00011646643542917445,
+        "selected_anchor_m": [
+          -4.633335113525391,
+          -18.299999237060547,
+          3.933394432067871
+        ],
+        "anchor_requery_closest_m": [
+          -4.633337497711182,
+          -18.299999237060547,
+          3.933250904083252
+        ],
+        "anchor_requery_residual_m": 0.00014354778977576643,
+        "original_query_mesh_closest_m": [
+          -4.633335113525391,
+          -18.299999237060547,
+          3.933394432067871
+        ],
+        "used_exit_search": false,
+        "exit_valid": true,
+        "selected_anchor_xy_equals_query": false,
+        "highest_projected_height_m": 5.900000095367432,
+        "escape_direction": [
+          -0.012282607145607471,
+          -0.851594090461731,
+          0.524057924747467
+        ],
+        "nearby_triangle_aabb_radius_m": 0.002,
+        "nearby_triangle_count": 2,
+        "nearby_triangles_truncated": false,
+        "nearby_triangles": [
+          {
+            "face_index": 120466,
+            "vertices_m": [
+              [
+                -4.699999809265137,
+                -18.299999237060547,
+                0
+              ],
+              [
+                -4.600000381469727,
+                -18.299999237060547,
+                0
+              ],
+              [
+                -4.699999809265137,
+                -18.299999237060547,
+                5.900000095367432
+              ]
+            ],
+            "bbox_distance_m": 0
+          },
+          {
+            "face_index": 121244,
+            "vertices_m": [
+              [
+                -4.600000381469727,
+                -18.299999237060547,
+                0
+              ],
+              [
+                -4.600000381469727,
+                -18.299999237060547,
+                5.900000095367432
+              ],
+              [
+                -4.699999809265137,
+                -18.299999237060547,
+                5.900000095367432
+              ]
+            ],
+            "bbox_distance_m": 0
+          }
+        ]
+      }
+    },
+    {
+      "query_index": 37412,
+      "anchor_actual_mesh_residual_m": 0.0,
+      "requery_actual_mesh_residual_m": 0.0,
+      "true_closest_point_m": [
+        -1.4333330392837524,
+        8.899999618530273,
+        3.933333396911621
+      ],
+      "true_distance_m": 0.00010013580322265625,
+      "distance_relative_inflation": 0.17123740059988846,
+      "anchor_tangent_error_m": [
+        -1.6689300537109375e-06,
+        0.0,
+        6.103515625e-05
+      ],
+      "true_escape_direction": [
+        0.0,
+        -1.0,
+        0.0
+      ],
+      "direction_angle_error_deg": 31.372818636099396,
+      "probe": {
+        "origin_query_index": 37412,
+        "inside_batch_index": 11689,
+        "source_face_index": 147167,
+        "query_position_m": [
+          -1.4333330392837524,
+          8.900099754333496,
+          3.933333396911621
+        ],
+        "signed_proxy_distance_m": -0.00011728279787348583,
+        "selected_anchor_m": [
+          -1.4333347082138062,
+          8.899999618530273,
+          3.933394432067871
+        ],
+        "anchor_requery_closest_m": [
+          -1.433336853981018,
+          8.899999618530273,
+          3.933250904083252
+        ],
+        "anchor_requery_residual_m": 0.00014354402082972229,
+        "original_query_mesh_closest_m": [
+          -1.4333347082138062,
+          8.899999618530273,
+          3.933394432067871
+        ],
+        "used_exit_search": false,
+        "exit_valid": true,
+        "selected_anchor_xy_equals_query": false,
+        "highest_projected_height_m": 5.900000095367432,
+        "escape_direction": [
+          -0.014229964464902878,
+          -0.8537978529930115,
+          0.5204101204872131
+        ],
+        "nearby_triangle_aabb_radius_m": 0.002,
+        "nearby_triangle_count": 2,
+        "nearby_triangles_truncated": false,
+        "nearby_triangles": [
+          {
+            "face_index": 146377,
+            "vertices_m": [
+              [
+                -1.5,
+                8.899999618530273,
+                0
+              ],
+              [
+                -1.3999996185302734,
+                8.899999618530273,
+                0
+              ],
+              [
+                -1.5,
+                8.899999618530273,
+                5.900000095367432
+              ]
+            ],
+            "bbox_distance_m": 0
+          },
+          {
+            "face_index": 147167,
+            "vertices_m": [
+              [
+                -1.3999996185302734,
+                8.899999618530273,
+                0
+              ],
+              [
+                -1.3999996185302734,
+                8.899999618530273,
+                5.900000095367432
+              ],
+              [
+                -1.5,
+                8.899999618530273,
+                5.900000095367432
+              ]
+            ],
+            "bbox_distance_m": 0
+          }
+        ]
+      }
+    },
+    {
+      "query_index": 46650,
+      "anchor_actual_mesh_residual_m": 0.0,
+      "requery_actual_mesh_residual_m": 9.5367431640625e-07,
+      "true_closest_point_m": [
+        11.866665840148926,
+        -15.5,
+        3.933333396911621
+      ],
+      "true_distance_m": 0.00010013580322265625,
+      "distance_relative_inflation": 0.1711575462704613,
+      "anchor_tangent_error_m": [
+        -9.5367431640625e-07,
+        0.0,
+        6.103515625e-05
+      ],
+      "true_escape_direction": [
+        0.0,
+        -1.0,
+        0.0
+      ],
+      "direction_angle_error_deg": 31.366411682963225,
+      "probe": {
+        "origin_query_index": 46650,
+        "inside_batch_index": 20919,
+        "source_face_index": 252008,
+        "query_position_m": [
+          11.866665840148926,
+          -15.499899864196777,
+          3.933333396911621
+        ],
+        "signed_proxy_distance_m": -0.00011727480159606785,
+        "selected_anchor_m": [
+          11.86666488647461,
+          -15.5,
+          3.933394432067871
+        ],
+        "anchor_requery_closest_m": [
+          11.866662979125977,
+          -15.500000953674316,
+          3.933250904083252
+        ],
+        "anchor_requery_residual_m": 0.00014354383165482432,
+        "original_query_mesh_closest_m": [
+          11.86666488647461,
+          -15.5,
+          3.933394432067871
+        ],
+        "used_exit_search": false,
+        "exit_valid": true,
+        "selected_anchor_xy_equals_query": false,
+        "highest_projected_height_m": 5.900000095367432,
+        "escape_direction": [
+          -0.008131963200867176,
+          -0.853856086730957,
+          0.5204456448554993
+        ],
+        "nearby_triangle_aabb_radius_m": 0.002,
+        "nearby_triangle_count": 2,
+        "nearby_triangles_truncated": false,
+        "nearby_triangles": [
+          {
+            "face_index": 251218,
+            "vertices_m": [
+              [
+                11.799999237060547,
+                -15.5,
+                0
+              ],
+              [
+                11.899999618530273,
+                -15.5,
+                0
+              ],
+              [
+                11.799999237060547,
+                -15.5,
+                5.900000095367432
+              ]
+            ],
+            "bbox_distance_m": 0
+          },
+          {
+            "face_index": 252008,
+            "vertices_m": [
+              [
+                11.899999618530273,
+                -15.5,
+                0
+              ],
+              [
+                11.899999618530273,
+                -15.5,
+                5.900000095367432
+              ],
+              [
+                11.799999237060547,
+                -15.5,
+                5.900000095367432
+              ]
+            ],
+            "bbox_distance_m": 0
+          }
+        ]
+      }
+    }
+  ]
+}

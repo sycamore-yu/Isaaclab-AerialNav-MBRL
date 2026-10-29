@@ -1,12 +1,12 @@
 # DCOL 速度监督与 NavRL/PPO 方法对照
 
-日期：2026-10-29。本文落实最新用户要求：重新检验短回合窗口速度监督，并另起 fresh NavRL/PPO 方法对照。**PPO 与新 truncated 组在本文编写时尚未正式启动，尚无新训练验收结果。** 实现检查、有限步仿真与正式运行分别记录；正式提交、启动时间、命令和结果由后续真实回执补充。
+日期：2026-10-29。本文最初记录重新检验短回合窗口速度监督及fresh NavRL/PPO的协议，编写时两组尚未启动。后续源码775dc6已冻结，PPO launcher于11:40 UTC启动；最新用户又要求替换当前实验并全部fresh重跑，主代理已请求六个训练子进程在完整更新后停止。本文当前接口按这次重启更新，历史运行的参数与结果不回写。新轮次启动和验收必须另有真实回执，功能接入与合成测试不能代替。
 
 ## 1. 旧 variant 与新速度模式的边界
 
 旧 `variant=truncated_window` 已取消，其公式、几何条件和实验结果保留在 [四方案历史记录](ZHANG_FOUR_VARIANTS.md) 与 [旧实验归档](results/zhang_pre_new_mechanisms_archive_20261029.md)。旧50更新中的单报告最好值不能作为新组结果，也不证明短窗方法已被充分否定。
 
-最新恢复的是 **`variant=dcol` 下独立的 `velocity_loss_mode=truncated_window`**。几何 variant 仍只有 `step / continuous / dcol`；不重新注册旧同名 variant。新组沿用 DCOL 的终止、首次碰撞位置及几何计算，仅改变速度监督模式。
+最新恢复的是 **`variant=dcol` 下独立的 `velocity_loss_mode=truncated_window`**。几何 variant 仍只有 `step / continuous / dcol`；不重新注册旧同名 variant。比较速度模式时必须固定同一版DCOL终止、首次碰撞位置及几何计算。最新重启另有静态signed距离与高度项变化，因此不能把新旧代码的整体差异归因于短窗一个因素。
 
 配置来源：[config.py](../src/isaaclab_navrl/zhang/config.py)、[losses.py](../src/isaaclab_navrl/zhang/losses.py)、[runner.py](../src/isaaclab_navrl/zhang/runner.py)。
 
@@ -14,7 +14,7 @@
 
 | 对照名称 | 显式参数 | DCOL 下 resolved mode | 速度监督 |
 | --- | --- | --- | --- |
-| 原 window 控制 | `velocity_loss_mode=variant_default` | `window` | 保留原完整窗口及源实现的初始样本偏移 |
+| 原 window 控制 | `velocity_loss_mode=full_window` | `window` | 保留原完整窗口及源实现的初始样本偏移 |
 | per-step | `velocity_loss_mode=per_step` | `per_step` | 每个 transition 的 post-step 速度对比同一步 pre-step 目标速度 |
 | 新 truncated | `velocity_loss_mode=truncated_window` | `truncated_window` | 原完整窗口加符合条件、尚未被完整窗口计分的终止短窗 |
 
@@ -22,7 +22,7 @@
 
 BPTT 控制固定 H150；若另做 SHAC/AHAC 对照，必须分别固定其匹配控制的 critic、value transform、bootstrap 与 H 规则。不能同时改变速度模式、critic head、展开长度或高度系数后仍称单因素。`per_step` 不需要速度损失缓存，但 critic 的历史输入维度保持原样，不能借此同步简化 critic。
 
-默认 `velocity_loss_mode=variant_default` 不变：`step` 默认逐步，`continuous/dcol` 默认窗口。`window` 是 resolved 名称，不是另一个 CLI 取值。新短窗配置允许合法的 BPTT/SHAC/AHAC 与 DCOL 组合，但正式启动哪一种以该组回执为准。
+最新默认仍以`velocity_loss_mode=variant_default`表示，但映射已按用户重启要求改变：step为`per_step`，continuous/dcol为`truncated_window`。显式`full_window`解析为旧`window`；`window`本身仍不是CLI取值。此前775dc6及更早实验的默认完整窗口语义保持历史记录，不能用新映射重解释旧日志。合法BPTT/SHAC/AHAC均可与DCOL及显式速度模式组合。
 
 ## 3. 短窗、共同分母与终止图
 
@@ -60,7 +60,7 @@ velocity_cost[t,n] = H*N/max(K,1) * 当前endpoint上的有效速度误差
 
 terminal 位置、速度先与真实 PhysX 测量对齐并保留旧回合的可微图；下一回合状态、GRU及延迟历史再按reset规则隔离。窗口不得跨episode；跨优化更新的旧速度窗口前缀detach，仅为当前endpoint提供历史数值。所需真实长度或可见样本不一致时应报错，不能静默平均后缀。
 
-DCOL碰撞项沿用首次碰撞物理子步的实际位置与同一时刻动态障碍位置；静态分支仍为真实mesh的原unsigned clearance，动态分支为凸体DCOL代理，不是通用静态SDF，也不是可微接触动力学。速度模式不修正这些已知几何边界，不修改碰撞、bounds、invalid、timeout的终止规则或另外六项成本。
+DCOL碰撞项使用首次碰撞物理子步的实际位置与同一时刻动态障碍位置。最新重启将静态项改为实际高度场的signed距离；动态分支仍是凸体DCOL代理，不是可微接触动力学。旧unsigned结果保持原样。单独比较速度模式时必须固定静态实现、所选高度项与另外各项系数，不改变碰撞、bounds、invalid、timeout终止规则。
 
 ## 4. NavRL/PPO 是方法对照
 
@@ -111,6 +111,10 @@ PPO 使用独立 `--method navrl` 运行，不接收 Zhang 的 `--train_args`；
 - Plateau停止检查点SHA-256：`3a61edd5dd19047641af3fc92518cf50a23733353b045f1cfc21e9eadcfd6a33`。
 
 SHAC per-step按本轮决定继续观察更长预算，已经观察到的负critic问题如实保留。PPO/truncated的正式启动、实际配置、任何首达率或验收结论均待真实运行回执；此文不生成或推测它们。
+
+## 7. 小规模筛选与正式验收的标记
+
+`run_acceptance.py --screening --num_envs N`允许小规模fresh比较，仍要求五阶段同一障碍课程、自然报告80%门槛和本实验内部检查点继承。全部完成时标记`purpose=training_comparison`与`stage_thresholds_passed=true`，父级`acceptance_passed`始终为false；1024环境显式screening也不能冒作正式验收。正式运行必须不设screening且至少1024环境。新高度/优化器/投影接口见[新机制](ZHANG_NEW_MECHANISMS_20261029.md)，稳定检查点与stage80区分见[恢复协议](migration/RECOVERY_LADDER_20261029.md)。
 
 ## 7. 提交前验证
 

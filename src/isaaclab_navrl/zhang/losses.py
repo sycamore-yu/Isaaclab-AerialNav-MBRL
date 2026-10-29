@@ -1,4 +1,4 @@
-"""Zhang losses with the approved velocity variants and altitude boundary term."""
+"""Zhang transition costs with explicit velocity, height and signed-geometry inputs."""
 
 import torch
 from torch.nn import functional as F
@@ -99,6 +99,35 @@ def height_boundary_loss(position, bounds=(0.2, 4.0), margin=0.5, scale=0.5, *, 
     return F.smooth_l1_loss(scaled, torch.zeros_like(scaled), reduction=reduction)
 
 
+def height_target_loss(position, height_target, mode="target_exp", *, reduction="mean"):
+    """Track the current episode's fixed target, with all distances in meters.
+
+    ``target_exp`` is exactly ``1 - exp(-abs(z - target))``, with a 1 m
+    exponential scale. Its loss saturates and its restoring gradient decays
+    far from the target; no extra boundary or linear term is added.
+    ``target_huber`` uses SmoothL1
+    with beta=1 m. Targets are nonlearnable episode data. At zero error, abs
+    uses PyTorch's zero subgradient; the exponential loss has a cusp there.
+    """
+    height = position[..., 2]
+    if height_target.shape != height.shape:
+        raise ValueError("height_target must match the position's leading sample dimensions")
+    error = height - height_target.detach()
+    if mode == "target_exp":
+        values = -torch.expm1(-error.abs())
+    elif mode == "target_huber":
+        values = F.smooth_l1_loss(error, torch.zeros_like(error), beta=1.0, reduction="none")
+    else:
+        raise ValueError("height_target_loss mode must be target_exp or target_huber")
+    if reduction == "none":
+        return values
+    if reduction == "mean":
+        return values.mean()
+    if reduction == "sum":
+        return values.sum()
+    raise ValueError("height_target_loss reduction must be none, mean, or sum")
+
+
 def zhang_transition_costs(history, cfg, velocity_history=None):
     """Return scalar losses, detached window history and actual ``cost[T, N]``.
 
@@ -117,17 +146,25 @@ def zhang_transition_costs(history, cfg, velocity_history=None):
     terminal omitted by the source offset; the original full helper is kept.
     Full and terminal samples share one denominator and keep their endpoints.
 
-    Continuous rollouts also require ``ground_signed_distance`` at the ten
-    original pre-step look-ahead queries: query_z minus 0.01, before subtracting
-    the drone margin. Only queries below that plane replace unsigned clearance
-    with signed clearance. This permits ground recovery without changing the
-    above-ground loss or the other variants. General nonconvex static-object
-    penetration still uses the original unsigned nearest-surface geometry.
+    Every variant requires ``obstacle_signed_distance[T, N, 10]`` at the ten
+    original pre-step look-ahead queries, before subtracting the drone margin.
+    The geometry producer combines signed static/ground distance and the
+    dynamic-body distance. No unsigned-vector fallback is used.
+
+    Target height modes pair each post-step position, including the terminal
+    position, with its pre-step cloned ``height_target[T, N]``. A reset target
+    belongs only to the following transition. The historical ``height_boundary``
+    metric and coefficient name now denote the selected height term. The
+    explicit ``boundary_huber`` mode retains the previous boundary penalty.
     """
     if cfg.variant not in ("step", "continuous", "dcol"):
         raise ValueError(f"Unsupported Zhang loss variant: {cfg.variant}")
-    if cfg.variant == "continuous" and "ground_signed_distance" not in history:
-        raise ValueError("continuous requires ground_signed_distance from the pre-step look-ahead queries")
+    if "obstacle_signed_distance" not in history:
+        raise ValueError("Zhang losses require obstacle_signed_distance from the pre-step look-ahead queries")
+    if cfg.height_loss_mode not in ("target_exp", "target_huber", "boundary_huber"):
+        raise ValueError("height_loss_mode must be target_exp, target_huber, or boundary_huber")
+    if cfg.height_loss_mode != "boundary_huber" and "height_target" not in history:
+        raise ValueError("target height losses require the pre-step episode height_target")
     velocity = torch.stack(history["velocity"])
     target = torch.stack(history["target_velocity"])
     episode = torch.stack(history["episode_id"])
@@ -171,17 +208,24 @@ def zhang_transition_costs(history, cfg, velocity_history=None):
             "episode_id": all_episode[-window:].detach(),
         }
     margin = torch.stack(history["margin"])[:, :, None]
-    distance = torch.stack(history["obstacle_vector"]).norm(dim=-1) - margin
-    if cfg.variant == "continuous":
-        ground = torch.stack(history["ground_signed_distance"])
-        if ground.shape != distance.shape:
-            raise ValueError("ground_signed_distance must match the [T, N, 10] obstacle look-ahead samples")
-        distance = torch.where(ground < 0, ground - margin, distance)
+    obstacle_distance = torch.stack(history["obstacle_signed_distance"])
+    if obstacle_distance.shape != (timesteps, num_envs, 10):
+        raise ValueError("obstacle_signed_distance must match the [T, N, 10] obstacle look-ahead samples")
+    distance = obstacle_distance - margin
     # Ten source look-ahead points include both endpoints: dt_sample = policy_dt / 9.
     approach = (-distance.diff(dim=2) * ((distance.shape[2] - 1) / cfg.policy_dt)).clamp_min(1).detach()
     collision_gap = torch.stack(history["dcol_gap"]) if cfg.variant == "dcol" else distance[:, :, 1:]
     command = torch.stack(history["command"])
     command_previous = torch.stack(history["previous_command"])
+    position = torch.stack(history["position"])
+    if cfg.height_loss_mode == "boundary_huber":
+        height_cost = height_boundary_loss(
+            position, cfg.height_bounds, cfg.boundary_margin, cfg.boundary_scale, reduction="none",
+        )
+    else:
+        height_cost = height_target_loss(
+            position, torch.stack(history["height_target"]), cfg.height_loss_mode, reduction="none",
+        )
     terms = {
         "velocity": velocity_cost,
         "velocity_prediction": F.mse_loss(torch.stack(history["velocity_prediction"]),
@@ -190,10 +234,7 @@ def zhang_transition_costs(history, cfg, velocity_history=None):
         "collision": (F.softplus(-32 * collision_gap) * approach).mean(dim=-1),
         "acceleration": command.square().sum(dim=-1),
         "jerk": ((command - command_previous) / cfg.policy_dt).square().sum(dim=-1),
-        "height_boundary": height_boundary_loss(
-            torch.stack(history["position"]), cfg.height_bounds, cfg.boundary_margin, cfg.boundary_scale,
-            reduction="none",
-        ),
+        "height_boundary": height_cost,
     }
     cost = (cfg.coef_v * terms["velocity"] + cfg.coef_v_pred * terms["velocity_prediction"]
             + cfg.coef_obj_avoidance * terms["obstacle_avoidance"] + cfg.coef_collide * terms["collision"]

@@ -109,9 +109,29 @@ def test_plateau_is_off_by_default_uses_success_max_and_resumes_official_state()
     _compare_tree(restored.state_dict(), scheduler.state_dict())
 
 
+def test_plateau_default_patience_is_two_fresh_bad_reports_before_third_reduces():
+    optimizer = torch.optim.SGD([nn.Parameter(torch.ones(1))], lr=0.01)
+    scheduler = make_plateau_scheduler(optimizer, "plateau")
+    assert scheduler.patience == 2
+    for success in (0.1, 0.1, 0.1):
+        scheduler.step(success)
+        assert optimizer.param_groups[0]["lr"] == 0.01
+    scheduler.step(0.1)
+    assert optimizer.param_groups[0]["lr"] == pytest.approx(0.005)
+
+
 def _report(update, success, stage="pretrain_s1"):
     return {"update": update, "stage": stage, "episodes": 1024, "success_rate": success,
             "stage_passed": success >= 0.8}
+
+
+def _save_requested(controller, decision, suffix=""):
+    checkpoints = {
+        level: f"/run/{decision.stage}/stable_{level:.2f}_u{decision.update}{suffix}.pt"
+        for level in decision.levels
+    }
+    controller.acknowledge("save_stable", checkpoints=checkpoints)
+    return checkpoints
 
 
 def _armed_controller():
@@ -119,7 +139,7 @@ def _armed_controller():
     for update, success in enumerate((0.50, 0.53, 0.52), 1):
         decision = controller.observe(_report(update, success))
     assert decision.action == "save_stable" and decision.reference_success == 0.5
-    controller.acknowledge("save_stable", checkpoint="/run/pretrain_s1/stable_u3.pt")
+    _save_requested(controller, decision)
     return controller
 
 
@@ -136,9 +156,12 @@ def test_recovery_requests_lr_then_restore_with_ack_and_never_rewinds_report_upd
     controller.acknowledge("reduce_lr")
     for update in range(7, 10):
         decision = controller.observe(_report(update, 0.2))
-    assert decision.action == "restore" and decision.checkpoint.endswith("stable_u3.pt")
+    assert decision.action == "restore" and decision.checkpoint.endswith("stable_0.50_u3.pt")
+    catalogue = copy.deepcopy(controller.stable_checkpoints)
     controller.acknowledge("restore")
     assert controller.last_report_update == 9 and controller.restore_count == 1
+    assert not controller.window and controller.bad_reports == controller.observed_reports == 0
+    assert controller.stable_checkpoints == catalogue
     for update in range(10, 13):
         assert controller.observe(_report(update, 0.1)).action == "none"
     assert controller.state == "armed" and controller.last_report_update == 12
@@ -149,7 +172,7 @@ def test_recovery_requests_lr_then_restore_with_ack_and_never_rewinds_report_upd
 def test_recovery_ignores_early_hover_and_abandons_restore_if_reduction_recovers():
     warming = RecoveryController("pretrain_s1", RecoveryConfig(enabled=True))
     for update in range(1, 8):
-        assert warming.observe(_report(update, 0.05)).action == "none"
+        assert warming.observe(_report(update, 0.049)).action == "none"
     assert warming.stable_checkpoint is None
     controller = _armed_controller()
     for update in range(4, 7):
@@ -173,6 +196,7 @@ def test_recovery_state_roundtrip_stage_isolation_and_disabled_behavior():
     restored.acknowledge("reduce_lr")
     restored.reset_stage("pretrain_s2")
     assert restored.stable_checkpoint is None and restored.reference_success is None
+    assert restored.stable_checkpoints == {}
     assert restored.last_report_update == 6
     with pytest.raises(ValueError, match="same stage"):
         restored.observe(_report(7, 0.2))
@@ -182,3 +206,125 @@ def test_recovery_state_roundtrip_stage_isolation_and_disabled_behavior():
     for update, success in enumerate((0.8, 0.8, 0.8, 0.0, 0.0, 0.0), 1):
         assert disabled.observe(_report(update, success)).action == "none"
     assert disabled.stable_checkpoint is None
+
+
+@pytest.mark.parametrize("reference,threshold", ((0.05, 0.03), (0.10, 0.07), (0.15, 0.105), (0.20, 0.15), (0.80, 0.75)))
+def test_recovery_strict_degradation_uses_relative_margin_with_two_and_five_pp_bounds(reference, threshold):
+    controller = RecoveryController("pretrain_s1", RecoveryConfig(enabled=True))
+    for update in range(1, 4):
+        decision = controller.observe(_report(update, reference))
+    _save_requested(controller, decision)
+    assert controller.degradation_threshold == threshold
+    for update in range(4, 7):
+        assert controller.observe(_report(update, threshold)).action == "none"
+    assert controller.bad_reports == 0
+    for update in range(7, 10):
+        decision = controller.observe(_report(update, threshold - 0.001))
+    assert decision.action == "reduce_lr"
+
+
+def test_recovery_levels_are_exact_grid_cross_multiple_levels_once_and_keep_low_history():
+    controller = RecoveryController("pretrain_s1", RecoveryConfig(enabled=True))
+    assert controller.levels == tuple(value / 100 for value in range(5, 81, 5))
+    for update, rate in enumerate((0.15, 0.16, 0.17), 1):
+        decision = controller.observe(_report(update, rate))
+    assert decision.levels == (0.05, 0.10, 0.15)
+    initial_paths = _save_requested(controller, decision)
+    assert controller.reference_success == 0.15
+    first_history = copy.deepcopy(controller.stable_checkpoints)
+    for update, rate in enumerate((0.21, 0.22, 0.23), 4):
+        decision = controller.observe(_report(update, rate))
+    assert decision.action == "save_stable" and decision.levels == (0.20,)
+    new_paths = _save_requested(controller, decision)
+    assert controller.reference_success == 0.21
+    assert controller.stable_checkpoint == new_paths[0.20]
+    for level, path in initial_paths.items():
+        assert controller.stable_checkpoints[level] == first_history[level]
+        assert controller.stable_checkpoints[level]["checkpoint"] == path
+    # Improving inside an already saved level does not replace its historical
+    # state or silently move its reference away from the saved window minimum.
+    for update in range(7, 10):
+        assert controller.observe(_report(update, 0.24)).action == "none"
+    assert controller.reference_success == 0.21
+
+
+def test_recovery_ack_mapping_is_atomic_requires_all_new_levels_and_preserves_older_paths():
+    controller = RecoveryController("pretrain_s1", RecoveryConfig(enabled=True))
+    for update in range(1, 4):
+        decision = controller.observe(_report(update, 0.10))
+    for invalid in ({0.05: "/five.pt"}, {0.05: "/five.pt", 0.10: ""}, {0.05: "/five.pt", 0.10: "/ten.pt", 0.15: "/extra.pt"}):
+        with pytest.raises(ValueError, match="mapping|path"):
+            controller.acknowledge("save_stable", checkpoints=invalid)
+        assert controller.stable_checkpoints == {} and controller.pending == decision
+    # A single trained state can serve several newly crossed levels.
+    controller.acknowledge("save_stable", checkpoints={0.05: "/u3.pt", 0.10: "/u3.pt"})
+    for update in range(4, 7):
+        decision = controller.observe(_report(update, 0.15))
+    assert decision.levels == (0.15,)
+    with pytest.raises(ValueError, match="overwrite"):
+        controller.acknowledge("save_stable", checkpoints={0.15: "/u3.pt"})
+    assert set(controller.stable_checkpoints) == {0.05, 0.10}
+
+
+def test_recovery_three_report_stability_and_spread_are_independent_of_stage_pass():
+    controller = RecoveryController("pretrain_s1", RecoveryConfig(enabled=True))
+    for update, rate in enumerate((0.04, 0.10, 0.04, 0.10), 1):
+        assert controller.observe(_report(update, rate)).action == "none"
+    assert controller.stable_checkpoint is None
+    for update, rate in enumerate((0.50, 0.55, 0.52), 5):
+        decision = controller.observe(_report(update, rate))
+    assert decision.action == "save_stable" and decision.reference_success == 0.50
+    _save_requested(controller, decision)
+    assert controller.observe(_report(8, 0.8)).action == "none"
+    assert 0.8 not in controller.stable_checkpoints
+    assert controller.observe(_report(9, 0.8)).action == "none"
+    decision = controller.observe(_report(10, 0.8))
+    assert decision.action == "save_stable" and decision.levels[-1] == 0.8
+    assert decision.reference_success == 0.8
+
+
+def test_recovery_nonconsecutive_drops_do_not_trigger_and_restore_selects_highest_level():
+    controller = _armed_controller()
+    for update, rate in enumerate((0.42, 0.43, 0.45, 0.42, 0.45), 4):
+        assert controller.observe(_report(update, rate)).action == "none"
+    for update in range(9, 12):
+        decision = controller.observe(_report(update, 0.61))
+    assert decision.levels == (0.55, 0.60)
+    _save_requested(controller, decision)
+    for update in range(12, 15):
+        decision = controller.observe(_report(update, 0.5))
+    assert decision.action == "reduce_lr"
+    controller.acknowledge("reduce_lr")
+    for update in range(15, 18):
+        decision = controller.observe(_report(update, 0.5))
+    assert decision.action == "restore"
+    assert decision.reference_success == 0.61
+    assert decision.checkpoint == controller.stable_checkpoints[0.60]["checkpoint"]
+    controller.acknowledge("restore")
+    assert controller.last_report_update == 17 and controller.restore_count == 1
+    assert 0.05 in controller.stable_checkpoints and 0.60 in controller.stable_checkpoints
+
+
+def test_recovery_pending_multi_level_save_roundtrips_json_and_rejects_old_state():
+    controller = RecoveryController("pretrain_s1", RecoveryConfig(enabled=True))
+    for update in range(1, 4):
+        decision = controller.observe(_report(update, 0.15))
+    payload = json.loads(json.dumps(controller.state_dict(), allow_nan=False))
+    restored = RecoveryController("pretrain_s1", RecoveryConfig(enabled=True))
+    restored.load_state_dict(payload)
+    assert restored.pending == decision
+    assert restored.state_dict() == controller.state_dict()
+    _save_requested(restored, restored.pending)
+    assert restored.reference_success == 0.15 and len(restored.stable_checkpoints) == 3
+    payload["version"] = 1
+    with pytest.raises(ValueError, match="same version"):
+        restored.load_state_dict(payload)
+
+
+@pytest.mark.parametrize("kwargs", (
+    {"stable_min_success": 0}, {"stable_level_step": 0}, {"stable_max_success": 0.04},
+    {"degrade_min_drop": 0.06}, {"degrade_abs_drop": 0}, {"degrade_relative_drop": 0},
+))
+def test_recovery_rejects_invalid_level_or_degradation_ranges(kwargs):
+    with pytest.raises(ValueError):
+        RecoveryController("pretrain_s1", RecoveryConfig(**kwargs))

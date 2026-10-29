@@ -76,6 +76,12 @@ class GradientDiagnostic:
         self._sum_check = None
         self._finish_timing(started)
 
+    def component_gradient(self, name):
+        """Return an independent detached flat component in parameter-layout order."""
+        if name not in self.term_names:
+            raise ValueError(f"Unknown gradient component: {name}")
+        return self._gradients[self.term_names.index(name)].detach().clone()
+
     def _flatten(self, values):
         return torch.cat([
             (torch.zeros_like(parameter) if value is None else value.detach()).reshape(-1)

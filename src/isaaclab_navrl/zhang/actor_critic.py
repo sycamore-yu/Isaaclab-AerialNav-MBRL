@@ -116,7 +116,7 @@ class AHACSettings:
 
     initial_horizon: int = 32
     min_horizon: int = 16
-    max_horizon: int = 150
+    max_horizon: int = 300
     risk_clearance: float = 0.10
     risk_scale: float = 0.05
     risk_budget: float = 0.10

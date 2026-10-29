@@ -27,8 +27,8 @@ def _history(velocity, target=None, episode=None, done=None):
         "velocity": list(velocity.unbind(0)), "target_velocity": list(target.unbind(0)),
         "episode_id": list(episode.unbind(0)), "done": list(done.unbind(0)),
         "collision": list(done.unbind(0)), "position": list(position.unbind(0)),
-        "obstacle_vector": list(vectors.unbind(0)),
-        "ground_signed_distance": [velocity.new_full((batch, 10), 1.99)] * count,
+        "obstacle_signed_distance": list(vectors.norm(dim=-1).unbind(0)),
+        "height_target": [velocity.new_full((batch,), 2.0)] * count,
         "dcol_gap": [velocity.new_full((batch, 9), 9.7)] * count,
         "margin": [velocity.new_full((batch,), 0.3)] * count,
         "command": list(zero.unbind(0)), "previous_command": list(zero.unbind(0)),
@@ -38,7 +38,7 @@ def _history(velocity, target=None, episode=None, done=None):
 
 def _velocity_only_cfg(**overrides):
     values = {
-        "variant": "dcol", "coef_v_pred": 0.0, "coef_obj_avoidance": 0.0,
+        "variant": "dcol", "velocity_loss_mode": "full_window", "coef_v_pred": 0.0, "coef_obj_avoidance": 0.0,
         "coef_collide": 0.0, "coef_d_acc": 0.0, "coef_d_jerk": 0.0, "coef_height_boundary": 0.0,
     }
     values.update(overrides)
@@ -75,7 +75,7 @@ def test_dcol_per_step_scores_every_short_episode_sample_and_ignores_window_cach
     expected_terminal_gradient = torch.zeros_like(velocity)
     expected_terminal_gradient[1, 0, 1] = 1
     torch.testing.assert_close(terminal_gradient, expected_terminal_gradient, rtol=0, atol=0)
-    original, _, _ = zhang_transition_costs(history, replace(cfg, velocity_loss_mode="variant_default"))
+    original, _, _ = zhang_transition_costs(history, replace(cfg, velocity_loss_mode="full_window"))
     assert original["velocity"] == 0 and original["velocity_valid_samples"] == 0
     # SHAC receives the actual per-transition costs, without a sparse-window
     # H*N/K multiplier. Only its ordinary within-episode discount remains.
@@ -109,7 +109,7 @@ def test_per_step_uses_terminal_velocity_before_same_step_reset():
 
 
 @pytest.mark.parametrize("variant", ("continuous", "dcol"))
-def test_default_window_retains_known_values_gradients_and_detached_prefix(variant):
+def test_explicit_full_window_retains_known_values_gradients_and_detached_prefix(variant):
     # This is the pre-override W=2 regression case: one environment resets
     # inside the rollout; the other resets between the prefix and rollout.
     previous = torch.zeros(2, 2, 3, dtype=torch.float64)
@@ -127,7 +127,7 @@ def test_default_window_retains_known_values_gradients_and_detached_prefix(varia
     prefix = {"velocity": previous, "target_velocity": previous_target,
               "episode_id": torch.zeros(2, 2, dtype=torch.long)}
     cfg = _velocity_only_cfg(variant=variant, velocity_window_s=0.2)
-    assert cfg.velocity_loss_mode == "variant_default" and cfg.resolved_velocity_loss_mode == "window"
+    assert cfg.velocity_loss_mode == "full_window" and cfg.resolved_velocity_loss_mode == "window"
     done = torch.tensor([[False, False], [True, False], [False, False], [False, False]])
     losses, cache, cost = zhang_transition_costs(_history(velocity, target, episode, done), cfg, prefix)
     # The legacy integer-count division rounds H*N/K in float32 even for
@@ -171,6 +171,7 @@ def _rich_history():
     for name, value in (("obstacle_vector", vectors), ("dcol_gap", gap), ("command", command),
                         ("velocity_prediction", prediction), ("position", position)):
         history[name] = list(value.unbind(0))
+    history["obstacle_signed_distance"] = list(vectors.norm(dim=-1).unbind(0))
     return velocity, history, (vectors, gap, command, prediction, position)
 
 
@@ -192,7 +193,7 @@ def test_step_variant_default_and_override_are_exactly_identical():
 
 def test_dcol_override_preserves_all_six_other_costs_and_their_gradients():
     velocity, history, geometry_and_control = _rich_history()
-    cfg = ZhangTrainCfg(variant="dcol")
+    cfg = ZhangTrainCfg(variant="dcol", velocity_loss_mode="full_window")
     original, _, original_cost = zhang_transition_costs(history, cfg)
     explicit, cache, explicit_cost = zhang_transition_costs(history, replace(cfg, velocity_loss_mode="per_step"))
     assert original["velocity"] == 0  # Three transitions cannot fill W20.

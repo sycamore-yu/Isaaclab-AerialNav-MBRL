@@ -1,0 +1,679 @@
+{
+  "schema_version": 1,
+  "geometry_mode": "signed_heightfield_occupancy_exit_proxy",
+  "audit_date": "2026-10-29",
+  "validation_status": "pending_real_scene_exit_gates",
+  "original_actual_300_failure": {
+    "status": "failed",
+    "static_obstacles": 300,
+    "seed": 0,
+    "above_ground_faces_checked": 25770,
+    "both_sides_inside_count": 74,
+    "both_sides_outside_count": 43,
+    "source_json": "/home/tong/tongworkspace/free/.worktrees/isaaclab-navrl/restart-controls-20261029/logs/restart_checks/geometry/static_300.json",
+    "source_stdout": "/home/tong/tongworkspace/free/.worktrees/isaaclab-navrl/restart-controls-20261029/logs/restart_checks/geometry/static_300.stdout.log",
+    "failure_reason": "Initial highest-projection/full-nearest surface consistency gate found above-ground internal surfaces.",
+    "training_acceptance": false
+  },
+  "source_provenance": {
+    "installed_converter_path": "/home/tong/tongworkspace/free/isaaclab-navrl/.venv/lib/python3.12/site-packages/isaaclab/terrains/height_field/utils.py",
+    "installed_converter_sha256": "2970d33f94bbd1b64e6a0ba2f2d6d3cfe414dcc7fd37aac8c33ffaf0e658051d",
+    "project_sampler": "src/isaaclab_navrl/terrain.py",
+    "project_sampler_sha256": "a0bcfddacb105430cd11f778ed635979deb65395a1b74de8887921c33a4c5559",
+    "reproducer": "tests/audit_heightfield_exit_proxy.py",
+    "reconstruction": {
+      "width_points": 401,
+      "interior_points": 399,
+      "border_pixels": 1,
+      "horizontal_scale_m": 0.1,
+      "vertical_scale_m": 0.1,
+      "slope_threshold": 0.75,
+      "world_xy_translation_m": [
+        -20,
+        -20
+      ]
+    },
+    "scope": "Read-only top-mesh reconstruction; no USD, depth camera, PhysX or termination changes."
+  },
+  "local_reconstruction": {
+    "300": {
+      "num_obstacles": 300,
+      "seed": 0,
+      "above_ground_faces": 25770,
+      "nondegenerate_faces": 316889,
+      "height_samples_sha256": "69364a1a97f7f2e3a269d7752f4eba372876d6ba3ea5537262b819d5b7f56f74",
+      "counts": {
+        "both_inside": 74,
+        "both_outside": 43,
+        "raw_crossing_pair_0_1": 25622,
+        "grouped_crossing_pair_0_1": 25626,
+        "raw_crossing_pair_-1_0": 62,
+        "grouped_crossing_pair_-1_0": 62,
+        "raw_crossing_pair_0_0": 57,
+        "grouped_crossing_pair_0_0": 57,
+        "raw_crossing_pair_1_0": 13,
+        "grouped_crossing_pair_1_0": 13,
+        "raw_crossing_pair_-1_1": 3,
+        "grouped_crossing_pair_-1_1": 3,
+        "raw_crossing_pair_1_1": 8,
+        "grouped_crossing_pair_1_1": 8,
+        "raw_crossing_pair_0_2": 5,
+        "grouped_crossing_pair_0_2": 1
+      },
+      "live_runtime_matching": "25770/74/43 exactly match the original actual gate",
+      "classification_note": "Raw/grouped oriented ray crossing counts are diagnostics; not certified winding numbers for the self-intersecting mesh."
+    },
+    "400": {
+      "num_obstacles": 400,
+      "seed": 0,
+      "above_ground_faces": 32079,
+      "nondegenerate_faces": 316196,
+      "height_samples_sha256": "66b6b0e8833938026263f8cecdaf705d6c4c44a924369785b547c76c403bf257",
+      "counts": {
+        "both_inside": 138,
+        "both_outside": 58,
+        "raw_crossing_pair_0_1": 31858,
+        "grouped_crossing_pair_0_1": 31866,
+        "raw_crossing_pair_-1_0": 81,
+        "grouped_crossing_pair_-1_0": 81,
+        "raw_crossing_pair_0_0": 82,
+        "grouped_crossing_pair_0_0": 82,
+        "raw_crossing_pair_1_0": 29,
+        "grouped_crossing_pair_1_0": 29,
+        "raw_crossing_pair_1_1": 18,
+        "grouped_crossing_pair_1_1": 18,
+        "raw_crossing_pair_0_2": 9,
+        "raw_crossing_pair_-1_1": 2,
+        "grouped_crossing_pair_-1_1": 2,
+        "grouped_crossing_pair_0_2": 1
+      },
+      "live_runtime_matching": "pending",
+      "classification_note": "Raw/grouped oriented ray crossing counts are diagnostics; not certified winding numbers for the self-intersecting mesh."
+    }
+  },
+  "strict_actual_seed_self_intersection": {
+    "raw_converter_face_ids": [
+      57033,
+      57830
+    ],
+    "raw_face_vertices": [
+      [
+        [
+          -12.899999618530273,
+          -8.399999618530273,
+          1.5
+        ],
+        [
+          -12.699999809265137,
+          -8.300000190734863,
+          1.5
+        ],
+        [
+          -12.699999809265137,
+          -8.399999618530273,
+          0.0
+        ]
+      ],
+      [
+        [
+          -12.800000190734863,
+          -8.5,
+          1.5
+        ],
+        [
+          -12.800000190734863,
+          -8.300000190734863,
+          0.0
+        ],
+        [
+          -12.699999809265137,
+          -8.300000190734863,
+          1.5
+        ]
+      ]
+    ],
+    "shared_raw_vertex_indices": [
+      28988
+    ],
+    "intersection_point_m": [
+      -12.766666624280159,
+      -8.366666581894634,
+      0.999999999999783
+    ],
+    "barycentric_coordinates": [
+      [
+        0.3333343929675606,
+        0.3333322736989613,
+        0.3333333333334781
+      ],
+      [
+        0.3333322736892814,
+        0.33333333333347814,
+        0.3333343929772405
+      ]
+    ],
+    "reconstruction_error_m": [
+      0.0,
+      1.1102230246251565e-16
+    ],
+    "normal_cross_norm": 0.6084102485955643,
+    "strictly_inside_both_triangles": true,
+    "index_note": "Indices refer to raw converter output, before degenerate-face filtering, vertex merging or added border meshes."
+  },
+  "selected_anomalous_faces": [
+    {
+      "nondegenerate_face": 9713,
+      "raw_face": 9824,
+      "vertices": [
+        [
+          -18.799999237060547,
+          -8.699999809265137,
+          1.5
+        ],
+        [
+          -18.799999237060547,
+          -8.800000190734863,
+          0.0
+        ],
+        [
+          -18.799999237060547,
+          -8.699999809265137,
+          5.699999809265137
+        ]
+      ],
+      "center": [
+        -18.799999237060547,
+        -8.733333587646484,
+        2.3999998569488525
+      ],
+      "normal": [
+        -1.0,
+        -0.0,
+        0.0
+      ],
+      "both_inside": false,
+      "both_outside": true,
+      "plus": [
+        -18.800098419189453,
+        -8.733333587646484,
+        2.3999998569488525
+      ],
+      "minus": [
+        -18.79990005493164,
+        -8.733333587646484,
+        2.3999998569488525
+      ],
+      "plus_highest_raw_grouped": [
+        false,
+        0,
+        0
+      ],
+      "minus_highest_raw_grouped": [
+        false,
+        0,
+        0
+      ],
+      "plus_all_hits_z_raw_face_sign_uv": [
+        [
+          1.5,
+          9023,
+          1,
+          0.16567723334915244,
+          0.8333309491452686
+        ]
+      ],
+      "minus_all_hits_z_raw_face_sign_uv": [
+        [
+          0.0,
+          10626,
+          1,
+          0.0004959134821709567,
+          0.6656716655294448
+        ]
+      ]
+    },
+    {
+      "nondegenerate_face": 9716,
+      "raw_face": 9827,
+      "vertices": [
+        [
+          -18.799999237060547,
+          -8.699999809265137,
+          5.699999809265137
+        ],
+        [
+          -18.799999237060547,
+          -8.800000190734863,
+          0.0
+        ],
+        [
+          -18.799999237060547,
+          -8.699999809265137,
+          0.0
+        ]
+      ],
+      "center": [
+        -18.799999237060547,
+        -8.733333587646484,
+        1.899999976158142
+      ],
+      "normal": [
+        1.0,
+        0.0,
+        0.0
+      ],
+      "both_inside": false,
+      "both_outside": true,
+      "plus": [
+        -18.79990005493164,
+        -8.733333587646484,
+        1.899999976158142
+      ],
+      "minus": [
+        -18.800098419189453,
+        -8.733333587646484,
+        1.899999976158142
+      ],
+      "plus_highest_raw_grouped": [
+        false,
+        0,
+        0
+      ],
+      "minus_highest_raw_grouped": [
+        false,
+        0,
+        0
+      ],
+      "plus_all_hits_z_raw_face_sign_uv": [
+        [
+          0.0,
+          10626,
+          1,
+          0.0004959134821709567,
+          0.6656716655294448
+        ]
+      ],
+      "minus_all_hits_z_raw_face_sign_uv": [
+        [
+          1.5,
+          9023,
+          1,
+          0.16567723334915244,
+          0.8333309491452686
+        ]
+      ]
+    },
+    {
+      "nondegenerate_face": 56509,
+      "raw_face": 57032,
+      "vertices": [
+        [
+          -12.899999618530273,
+          -8.399999618530273,
+          1.5
+        ],
+        [
+          -12.699999809265137,
+          -8.399999618530273,
+          0.0
+        ],
+        [
+          -13.0,
+          -8.399999618530273,
+          0.0
+        ]
+      ],
+      "center": [
+        -12.866665840148926,
+        -8.399999618530273,
+        0.5
+      ],
+      "normal": [
+        0.0,
+        1.0,
+        0.0
+      ],
+      "both_inside": true,
+      "both_outside": false,
+      "plus": [
+        -12.866665840148926,
+        -8.39989948272705,
+        0.5
+      ],
+      "minus": [
+        -12.866665840148926,
+        -8.400099754333496,
+        0.5
+      ],
+      "plus_highest_raw_grouped": [
+        true,
+        0,
+        0
+      ],
+      "minus_highest_raw_grouped": [
+        true,
+        1,
+        1
+      ],
+      "plus_all_hits_z_raw_face_sign_uv": [
+        [
+          1.5,
+          57030,
+          1,
+          0.1666690508547314,
+          0.6676648419767686
+        ],
+        [
+          1.2514984693610167,
+          57033,
+          -1,
+          0.0010013637620759702,
+          0.16566768709265545
+        ],
+        [
+          0.0,
+          57035,
+          1,
+          0.44411313007223485,
+          0.00033378685960606795
+        ]
+      ],
+      "minus_all_hits_z_raw_face_sign_uv": [
+        [
+          1.5,
+          57030,
+          1,
+          0.1666690508547314,
+          0.6656621335520418
+        ]
+      ]
+    },
+    {
+      "nondegenerate_face": 56510,
+      "raw_face": 57033,
+      "vertices": [
+        [
+          -12.899999618530273,
+          -8.399999618530273,
+          1.5
+        ],
+        [
+          -12.699999809265137,
+          -8.300000190734863,
+          1.5
+        ],
+        [
+          -12.699999809265137,
+          -8.399999618530273,
+          0.0
+        ]
+      ],
+      "center": [
+        -12.766666412353516,
+        -8.366666793823242,
+        1.0
+      ],
+      "normal": [
+        -0.44641897082328796,
+        0.8928422331809998,
+        -0.05952247604727745
+      ],
+      "both_inside": true,
+      "both_outside": false,
+      "plus": [
+        -12.766711235046387,
+        -8.3665771484375,
+        0.9999940395355225
+      ],
+      "minus": [
+        -12.766621589660645,
+        -8.366756439208984,
+        1.0000059604644775
+      ],
+      "plus_highest_raw_grouped": [
+        true,
+        0,
+        0
+      ],
+      "minus_highest_raw_grouped": [
+        true,
+        0,
+        0
+      ],
+      "plus_all_hits_z_raw_face_sign_uv": [
+        [
+          1.5,
+          57030,
+          1,
+          0.6664425529885797,
+          0.0013446756566022622
+        ],
+        [
+          1.0016760905987652,
+          57033,
+          -1,
+          0.33422661338775667,
+          0.3322159396008231
+        ],
+        [
+          0.9986600894908304,
+          57830,
+          -1,
+          0.3342266070061131,
+          0.3328882870167274
+        ],
+        [
+          0.0,
+          58630,
+          1,
+          0.11096311507980659,
+          0.6671138336729472
+        ],
+        [
+          0.0,
+          57035,
+          1,
+          0.6662202051399294,
+          0.11140851696908816
+        ]
+      ],
+      "minus_all_hits_z_raw_face_sign_uv": [
+        [
+          1.5,
+          57031,
+          1,
+          0.001344688480502017,
+          0.6662184393104928
+        ],
+        [
+          1.001349447215954,
+          57830,
+          -1,
+          0.3324337018560306,
+          0.33378473745446224
+        ],
+        [
+          0.9983143726035006,
+          57033,
+          -1,
+          0.33243369541375395,
+          0.3344570849309996
+        ],
+        [
+          0.0,
+          58630,
+          1,
+          0.11126193284229734,
+          0.666217380385475
+        ],
+        [
+          0.0,
+          57035,
+          1,
+          0.6671166603272387,
+          0.11081087954426967
+        ]
+      ]
+    },
+    {
+      "nondegenerate_face": 57296,
+      "raw_face": 57830,
+      "vertices": [
+        [
+          -12.800000190734863,
+          -8.5,
+          1.5
+        ],
+        [
+          -12.800000190734863,
+          -8.300000190734863,
+          0.0
+        ],
+        [
+          -12.699999809265137,
+          -8.300000190734863,
+          1.5
+        ]
+      ],
+      "center": [
+        -12.766666412353516,
+        -8.366665840148926,
+        1.0
+      ],
+      "normal": [
+        0.8928404450416565,
+        -0.44642236828804016,
+        -0.059522923082113266
+      ],
+      "both_inside": true,
+      "both_outside": false,
+      "plus": [
+        -12.766576766967773,
+        -8.366710662841797,
+        0.9999940395355225
+      ],
+      "minus": [
+        -12.766756057739258,
+        -8.366621017456055,
+        1.0000059604644775
+      ],
+      "plus_highest_raw_grouped": [
+        true,
+        0,
+        0
+      ],
+      "minus_highest_raw_grouped": [
+        true,
+        0,
+        0
+      ],
+      "plus_all_hits_z_raw_face_sign_uv": [
+        [
+          1.5,
+          57031,
+          1,
+          0.0013351516827679601,
+          0.6664473213647093
+        ],
+        [
+          1.0016784619629306,
+          57830,
+          -1,
+          0.3322143586913796,
+          0.33423296267332964
+        ],
+        [
+          0.9986648515232222,
+          57033,
+          -1,
+          0.3328914617049887,
+          0.33422343231785184
+        ],
+        [
+          0.0,
+          58630,
+          1,
+          0.11141134172354271,
+          0.6662205592978419
+        ],
+        [
+          0.0,
+          57035,
+          1,
+          0.667113480929807,
+          0.11096346782294673
+        ]
+      ],
+      "minus_all_hits_z_raw_face_sign_uv": [
+        [
+          1.5,
+          57030,
+          1,
+          0.6662184393104928,
+          0.0013542123633866754
+        ],
+        [
+          1.001354222072246,
+          57033,
+          -1,
+          0.33378792069199004,
+          0.33243051861850276
+        ],
+        [
+          0.9983167696154652,
+          57830,
+          -1,
+          0.3344554869230231,
+          0.33244006179785995
+        ],
+        [
+          0.0,
+          58630,
+          1,
+          0.11081370619856122,
+          0.6671170125853141
+        ],
+        [
+          0.0,
+          57035,
+          1,
+          0.6662170266924162,
+          0.11126228653535597
+        ]
+      ]
+    }
+  ],
+  "candidate_unit_validation": {
+    "status": "passed_as_reported_by_root",
+    "cpu_warp_tests": 40,
+    "log_filename": "geometry_proxy_unit_v1.log",
+    "junit_filename": "geometry_proxy_unit_v1.xml",
+    "scope": "Unit tests do not establish passage of the new actual 300/400 scene gates.",
+    "candidate_revision": "geometry_proxy_unit_v1; final bounded-search/fail-fast revision pending"
+  },
+  "pending_gates": [
+    "actual_300_inside_exit_legality",
+    "actual_400_inside_exit_legality",
+    "internal_zero_distance_rejection",
+    "partial_face_exit_search",
+    "lateral_gradient_at_real_side",
+    "outside_zero_thickness_fin_preservation",
+    "signed_ground_and_finite_gradients",
+    "unchanged_scene_perception_and_termination",
+    "anomalous_query_performance"
+  ],
+  "proxy_contract": {
+    "occupancy": "below_highest_projected_actual_triangle",
+    "outside": "original_full_mesh_unsigned_distance_including_zero_thickness_fins",
+    "inside": "negative_verified_original_mesh_exit_distance_with_frozen_anchor_derivative",
+    "local_exit_search_radius_limit_m": 2.0,
+    "ordinary_legal_nearest_points_are_limited_to_2m": false,
+    "roof_fallback_may_exceed_local_search_radius": true,
+    "invalid_inside_exit_behavior": "distance_NaN_triggers_existing_rollout_finiteness_gate",
+    "exact_mesh_sdf_claimed": false,
+    "physical_air_cavity_equivalence_claimed": false,
+    "global_continuity_or_lipschitz_claimed": false,
+    "virtual_query_curtains_added": false,
+    "physx_depth_and_termination_changed_by_this_fix": false
+  }
+}

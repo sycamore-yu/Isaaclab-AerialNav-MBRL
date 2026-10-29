@@ -215,6 +215,7 @@ class ZhangEventsCfg(NavigationEventsCfg):
 class ZhangNavRLEnvCfg(NavRLEnvCfg):
     method = "zhang"
     variant: str = "step"
+    height_target_range: tuple[float, float] = (0.5, 2.5)
     decimation = 10
     events = ZhangEventsCfg()
 
@@ -226,6 +227,9 @@ class ZhangNavRLEnvCfg(NavRLEnvCfg):
     def configure_scene(self):
         if self.variant not in ("step", "continuous", "dcol"):
             raise ValueError(f"Unknown Zhang variant: {self.variant}")
+        low, high = self.height_target_range
+        if not 0.2 < low < high < 4.0:
+            raise ValueError("Zhang height_target_range must lie strictly within (0.2, 4.0) metres")
         super().configure_scene()
         # UsdFileCfg's original None preserves the asset's collision attributes.
         # Reassign on every configuration pass so a previous variant cannot leak.
