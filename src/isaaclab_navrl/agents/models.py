@@ -40,8 +40,8 @@ class NavRLEncoder(nn.Module):
         state = observations[:, :8]
         lidar = observations[:, 8:152].reshape(-1, 1, 36, 4)
         dynamic = observations[:, 152:202]
-        # Preserve the original CatTensors order: CNN, state, dynamic features.
-        return self.fusion(torch.cat((self.lidar(lidar), state, self.dynamic(dynamic)), dim=-1))
+        # Vendored CatTensors sorts its keys by default: CNN, dynamic, state.
+        return self.fusion(torch.cat((self.lidar(lidar), self.dynamic(dynamic), state), dim=-1))
 
 
 class BetaHeads(nn.Module):

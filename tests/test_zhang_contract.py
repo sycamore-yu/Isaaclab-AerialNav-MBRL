@@ -59,6 +59,40 @@ def test_original_network_matches_published_model():
     torch.testing.assert_close(actual_hidden, expected_hidden, rtol=0, atol=0)
 
 
+def test_activation_checkpointing_preserves_recurrent_outputs_and_gradients():
+    import copy
+
+    torch.manual_seed(29)
+    original = ZhangPolicy()
+    checkpointed = copy.deepcopy(original)
+    depth = torch.randn(4, 1, 12, 16)
+    state = torch.randn(4, 10)
+    outputs, gradients, saved_counts = [], [], []
+    for model, forward in ((original, original.forward), (checkpointed, checkpointed.forward_checkpointed)):
+        state_input = state.clone().requires_grad_()
+        hidden = torch.zeros(4, 192)
+        saved = []
+
+        def pack(tensor, saved=saved):
+            saved.append(tensor.numel())
+            return tensor
+
+        with torch.autograd.graph.saved_tensors_hooks(pack, lambda tensor: tensor):
+            sequence = []
+            for _ in range(3):
+                action, hidden = forward(depth, state_input, hidden)
+                sequence.append(action)
+            loss = torch.stack(sequence).square().sum() + hidden.square().mean()
+        saved_counts.append(sum(saved))
+        loss.backward()
+        outputs.append(torch.stack(sequence).detach())
+        gradients.append([state_input.grad, *[p.grad for p in model.parameters()]])
+    torch.testing.assert_close(outputs[0], outputs[1], rtol=0, atol=0)
+    for reference, actual in zip(gradients[0], gradients[1], strict=True):
+        torch.testing.assert_close(actual, reference, rtol=0, atol=0)
+    assert saved_counts[1] < saved_counts[0] / 2
+
+
 def test_interleaved_decode_and_ten_state_features_have_no_axis_speed_clip():
     quaternion = torch.tensor([[0.0, 0.0, math.sqrt(0.5), math.sqrt(0.5)]])
     state, heading, target, _ = policy_state(
@@ -176,14 +210,17 @@ def test_pre_step_lookahead_preserves_gradient_for_a_crossed_obstacle():
     assert velocity.grad[0, 1] < 0  # Gradient descent steers farther from the obstacle in +Y.
 
 
-def test_defaults_and_five_cosine_cycles_have_explicit_units():
+def test_unlimited_training_and_budget_independent_cosine_period():
     cfg = ZhangTrainCfg()
     cfg.validate()
+    assert cfg.max_iterations is None
+    assert cfg.cosine_period_updates == 400
     assert cfg.velocity_window_steps == 60
     assert cfg.timesteps * cfg.policy_dt == 15
-    for update in (0, 440, 880, 1320, 1760):
+    for update in (0, 400, 800, 1200, 1600, 2000, 40000):
         assert cosine_learning_rate(update, cfg) == pytest.approx(0.001)
-    assert cosine_learning_rate(439, cfg) < 0.000011
+        assert cosine_learning_rate(update, ZhangTrainCfg(max_iterations=2)) == pytest.approx(0.001)
+    assert cosine_learning_rate(399, cfg) < 0.000011
     with pytest.raises(ValueError, match="policy steps"):
         ZhangTrainCfg(velocity_window_s=0.15).validate()
 
@@ -206,6 +243,7 @@ class AnalyticEnv:
         self.total_steps = 0
         self.queried_at_steps = []
         self.nonfinite_events = torch.zeros((), dtype=torch.long)
+        self.curriculum = None
 
     def reset(self):
         self.position.zero_()
@@ -265,6 +303,44 @@ def test_two_bptt_updates_survive_resets_and_save_independent_inference(tmp_path
     env.episode_id[0] += 1
     after_reset = policy()
     torch.testing.assert_close(after_reset[0], torch.zeros(3))
+
+
+def test_bptt_curriculum_resets_temporal_history_without_recreating_optimizer(tmp_path):
+    from isaaclab_navrl.tasks.navigation.curriculum import TrainingCurriculum
+
+    class CurriculumEnv(AnalyticEnv):
+        def __init__(self):
+            super().__init__()
+            self.curriculum = TrainingCurriculum(self.num_envs, self.device)
+            self.cfg.num_dynamic_obstacles = 60
+
+        def step(self, command):
+            result = super().step(command)
+            self.curriculum.observe({
+                "first_event_code": result[2].long(),
+                "first_event_time_s": torch.full((2,), self.total_steps * self.step_dt),
+                "terminated": result[2], "timeout": result[3],
+                "episode_return": torch.zeros(2), "step": torch.full((2,), self.total_steps),
+            })
+            return result
+
+        def advance_curriculum(self):
+            self.cfg.num_dynamic_obstacles = self.curriculum.advance()
+            self.reset()
+
+    env = CurriculumEnv()
+    cfg = ZhangTrainCfg(timesteps=4, max_iterations=3, velocity_window_s=0.2)
+    trainer = ZhangTrainer(env, cfg, tmp_path)
+    optimizer = trainer.optimizer
+    result = trainer.run()
+    assert result["completed_updates"] == 3
+    assert env.cfg.num_dynamic_obstacles == 120
+    assert trainer.velocity_history is None
+    assert env.queried_at_steps == list(range(4)) * 3
+    assert trainer.optimizer is optimizer
+    assert all(int(value["step"]) == 3 for value in optimizer.state.values())
+    assert (tmp_path / "checkpoint_best_100.pt").exists()
+    assert result["acceptance_passed"] is False  # Two synthetic environments are not a 1024-env acceptance run.
 
 
 def test_event_randomization_uses_geometry_margin_and_nominal_evaluation():

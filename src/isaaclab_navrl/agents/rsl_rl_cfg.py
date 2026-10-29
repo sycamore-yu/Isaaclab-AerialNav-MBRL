@@ -13,7 +13,7 @@ class NavRLModelCfg:
 class NavRLPpoRunnerCfg(RslRlOnPolicyRunnerCfg):
     seed = 0
     num_steps_per_env = 32
-    max_iterations = 2200
+    max_iterations = None
     init_at_random_ep_len = False
     save_interval = 100
     experiment_name = "navrl"

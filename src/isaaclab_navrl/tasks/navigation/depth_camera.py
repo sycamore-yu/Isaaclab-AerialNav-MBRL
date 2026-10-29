@@ -1,8 +1,9 @@
 """Full-resolution Isaac Lab depth rays with bounded image working memory.
 
-Uses the official PhysX multi-mesh sensor and Warp ray-casting kernels. Only
-the image buffers are batched; every configured pixel is traced before the
-Zhang inverse-depth/noise/max-pooling transform.
+Uses the official PhysX multi-mesh sensor's unchanged local triangle geometry.
+One top-level BVH conservatively selects candidate meshes, then the original
+local-frame mesh query computes depth. Every configured pixel is traced before
+the Zhang depth transform; only image working buffers are batched.
 """
 
 from __future__ import annotations
@@ -15,7 +16,6 @@ from isaaclab.sensors.ray_caster import kernels as camera_kernels
 from isaaclab.sensors.sensor_base import SensorBase
 from isaaclab.utils import math as math_utils
 from isaaclab.utils.warp import ProxyArray
-from isaaclab.utils.warp import kernels as warp_kernels
 from isaaclab_physx.sensors.ray_caster.multi_mesh_ray_caster_camera import MultiMeshRayCasterCamera
 
 from .depth_processing import depth_features
@@ -23,6 +23,76 @@ from .depth_processing import depth_features
 
 def _slice(array: wp.array, begin: int, end: int) -> wp.array:
     return array[begin:end]
+
+
+@wp.kernel(enable_backward=False)
+def _update_mesh_bounds(
+    local_lower: wp.array(dtype=wp.vec3f),
+    local_upper: wp.array(dtype=wp.vec3f),
+    positions: wp.array2d(dtype=wp.vec3f),
+    orientations: wp.array2d(dtype=wp.quatf),
+    world_lower: wp.array(dtype=wp.vec3f),
+    world_upper: wp.array(dtype=wp.vec3f),
+):
+    mesh = wp.tid()
+    pose = wp.transform(positions[0, mesh], orientations[0, mesh])
+    lower = wp.vec3f(1.0e30)
+    upper = wp.vec3f(-1.0e30)
+    for corner in range(8):
+        point = wp.vec3f(
+            wp.where((corner & 1) == 0, local_lower[mesh][0], local_upper[mesh][0]),
+            wp.where((corner & 2) == 0, local_lower[mesh][1], local_upper[mesh][1]),
+            wp.where((corner & 4) == 0, local_lower[mesh][2], local_upper[mesh][2]),
+        )
+        point = wp.transform_point(pose, point)
+        lower = wp.vec3f(wp.min(lower[0], point[0]), wp.min(lower[1], point[1]), wp.min(lower[2], point[2]))
+        upper = wp.vec3f(wp.max(upper[0], point[0]), wp.max(upper[1], point[1]), wp.max(upper[2], point[2]))
+    magnitude = wp.max(wp.max(wp.abs(lower[0]), wp.abs(upper[0])),
+                       wp.max(wp.max(wp.abs(lower[1]), wp.abs(upper[1])),
+                              wp.max(wp.abs(lower[2]), wp.abs(upper[2]))))
+    # Broad-phase only: outward padding covers float32 transform/slab rounding.
+    # It never changes a triangle or the final mesh-query hit distance.
+    padding = wp.vec3f(0.001 + 4.0e-6 * magnitude)
+    world_lower[mesh] = lower - padding
+    world_upper[mesh] = upper + padding
+
+
+@wp.kernel(enable_backward=False)
+def _raycast_shared_meshes(
+    bvh: wp.uint64,
+    env_mask: wp.array(dtype=wp.bool),
+    mesh_ids: wp.array2d(dtype=wp.uint64),
+    positions: wp.array2d(dtype=wp.vec3f),
+    orientations: wp.array2d(dtype=wp.quatf),
+    ray_starts: wp.array2d(dtype=wp.vec3f),
+    ray_directions: wp.array2d(dtype=wp.vec3f),
+    max_dist: wp.float32,
+    ray_hits: wp.array2d(dtype=wp.vec3f),
+    ray_distance: wp.array2d(dtype=wp.float32),
+):
+    env, ray = wp.tid()
+    if not env_mask[env]:
+        return
+    query = wp.bvh_query_ray(bvh, ray_starts[env, ray], ray_directions[env, ray])
+    column = int(0)  # noqa: UP018 -- Warp mutable variables in a dynamic loop.
+    closest = float(1.0e30)  # noqa: UP018 -- Warp mutable variables in a dynamic loop.
+    closest_point = wp.vec3f()
+    found = bool(False)  # noqa: UP018 -- Warp mutable variables in a dynamic loop.
+    while wp.bvh_query_next(query, column):
+        # Preserve Isaac Lab raycast_dynamic_meshes_kernel's local-frame
+        # arithmetic, including its inverse-transform order and max distance.
+        pose = wp.transform(positions[0, column], orientations[0, column])
+        inverse = wp.transform_inverse(pose)
+        direction = wp.transform_vector(inverse, ray_directions[env, ray])
+        start = wp.transform_point(inverse, ray_starts[env, ray])
+        hit = wp.mesh_query_ray(mesh_ids[0, column], start, direction, max_dist)
+        if hit.result and hit.t < closest:
+            closest = hit.t
+            closest_point = wp.transform_point(pose, start + hit.t * direction)
+            found = True
+    if found:
+        ray_hits[env, ray] = closest_point
+        ray_distance[env, ray] = closest
 
 
 class BatchedDepthCamera(MultiMeshRayCasterCamera):
@@ -33,6 +103,57 @@ class BatchedDepthCamera(MultiMeshRayCasterCamera):
     ``last_depth_batch`` exposes the most recently computed raw depth batch
     for numerical checks without retaining all full-resolution images.
     """
+
+    def _initialize_warp_meshes(self):
+        """Build a shared-world broad phase without modifying native meshes."""
+        super()._initialize_warp_meshes()
+        stream = wp.stream_from_torch(torch.cuda.current_stream(self._device)) if self._device.startswith("cuda") else None
+        with wp.ScopedStream(stream) if stream is not None else nullcontext():
+            self._update_mesh_transforms()
+            mesh_ids = self._mesh_ids_wp.numpy()
+            if not (mesh_ids == mesh_ids[:1]).all():
+                raise ValueError("The batched navigation camera requires one shared obstacle world.")
+            for poses in (self._mesh_positions_w, self._mesh_orientations_w):
+                values = poses.numpy()
+                if not (values == values[:1]).all():
+                    raise ValueError("Shared obstacle poses must match across camera environments.")
+            for view in self._mesh_views:
+                if view is not None and view.count != 1:
+                    raise ValueError("Each tracked camera target must be one shared rigid body.")
+            meshes_by_id = {int(mesh.id): mesh for mesh in self.meshes.values()}
+            lower, upper = [], []
+            vertex_count, triangle_count = 0, 0
+            for mesh_id in mesh_ids[0]:
+                mesh = meshes_by_id[int(mesh_id)]
+                points = wp.to_torch(mesh.points)
+                lower.append(points.amin(dim=0))
+                upper.append(points.amax(dim=0))
+                vertex_count += len(points)
+                triangle_count += mesh.indices.size // 3
+            self._local_lower_torch = torch.stack(lower).contiguous()
+            self._local_upper_torch = torch.stack(upper).contiguous()
+            self._local_lower = wp.from_torch(self._local_lower_torch, dtype=wp.vec3f)
+            self._local_upper = wp.from_torch(self._local_upper_torch, dtype=wp.vec3f)
+            self._world_lower = wp.empty(len(lower), dtype=wp.vec3f, device=self._device)
+            self._world_upper = wp.empty(len(upper), dtype=wp.vec3f, device=self._device)
+            self._update_world_bounds()
+            self._world_bvh = wp.Bvh(self._world_lower, self._world_upper)
+            self.world_mesh_info = {
+                "acceleration_structure": "native_local_meshes_with_top_level_aabb_bvh",
+                "source_meshes": len(mesh_ids[0]), "vertices": vertex_count, "triangles": triangle_count,
+                "dynamic_meshes": sum(
+                    self._num_meshes_per_env[target.prim_expr]
+                    for target in self._raycast_targets_cfg if target.track_mesh_transforms
+                ),
+                "broad_phase_padding_min_m": 0.001, "broad_phase_padding_relative": 4.0e-6,
+            }
+
+    def _update_world_bounds(self):
+        wp.launch(
+            _update_mesh_bounds, dim=self._world_lower.size,
+            inputs=[self._local_lower, self._local_upper, self._mesh_positions_w, self._mesh_orientations_w],
+            outputs=[self._world_lower, self._world_upper], device=self._device,
+        )
 
     def _initialize_rays_impl(self):
         if self.cfg.data_types != ["distance_to_image_plane"] or self.cfg.update_mesh_ids:
@@ -58,8 +179,6 @@ class BatchedDepthCamera(MultiMeshRayCasterCamera):
         self._batch_distance = wp.empty(shape, dtype=wp.float32, device=self._device)
         self._batch_depth = wp.empty((self._batch_size, *self.image_shape, 1), dtype=wp.float32, device=self._device)
         self._dummy_normal = wp.empty((1, 1), dtype=wp.vec3f, device=self._device)
-        self._dummy_face = wp.empty((1, 1), dtype=wp.int32, device=self._device)
-        self._dummy_mesh = wp.empty((1, 1), dtype=wp.int16, device=self._device)
         self._pose_ray = wp.zeros((self._num_envs, 1), dtype=wp.vec3f, device=self._device)
         self._pose_start = wp.empty_like(self._pose_ray)
         self._pose_direction = wp.empty_like(self._pose_ray)
@@ -102,6 +221,8 @@ class BatchedDepthCamera(MultiMeshRayCasterCamera):
         with wp.ScopedStream(stream) if stream is not None else nullcontext():
             self._update_frame(env_mask, frame_op=1)
             self._update_mesh_transforms()
+            self._update_world_bounds()
+            self._world_bvh.refit()
             transforms = self._get_view_transforms_wp()
             for begin in range(0, self._num_envs, self._batch_size):
                 end = min(begin + self._batch_size, self._num_envs)
@@ -130,13 +251,13 @@ class BatchedDepthCamera(MultiMeshRayCasterCamera):
                     outputs=[self.ray_hits_w.warp, self._batch_distance, self._dummy_normal], device=self._device,
                 )
                 wp.launch(
-                    warp_kernels.raycast_dynamic_meshes_kernel,
-                    dim=(self._mesh_ids_wp.shape[1], count, self.num_rays),
-                    inputs=[mask, _slice(self._mesh_ids_wp, begin, end), self._batch_starts_w,
-                            self._batch_directions_w, self.ray_hits_w.warp, self._batch_distance,
-                            self._dummy_normal, self._dummy_face, self._dummy_mesh,
-                            _slice(self._mesh_positions_w, begin, end), _slice(self._mesh_orientations_w, begin, end),
-                            float(camera_kernels.CAMERA_RAYCAST_MAX_DIST), 0, 0, 0],
+                    _raycast_shared_meshes,
+                    dim=(count, self.num_rays),
+                    inputs=[self._world_bvh.id, mask, self._mesh_ids_wp,
+                            self._mesh_positions_w, self._mesh_orientations_w,
+                            self._batch_starts_w, self._batch_directions_w,
+                            float(camera_kernels.CAMERA_RAYCAST_MAX_DIST)],
+                    outputs=[self.ray_hits_w.warp, self._batch_distance],
                     device=self._device,
                 )
                 wp.launch(

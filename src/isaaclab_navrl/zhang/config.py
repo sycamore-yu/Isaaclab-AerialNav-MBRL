@@ -6,13 +6,14 @@ from dataclasses import dataclass
 @dataclass
 class ZhangTrainCfg:
     timesteps: int = 150
-    max_iterations: int = 2200
+    max_iterations: int | None = None
+    stop_after_acceptance: bool = False
     physics_dt: float = 0.01
     policy_dt: float = 0.1
     velocity_window_s: float = 6.0
     grad_decay: float = 0.4
     lr: float = 0.001
-    cosine_cycles: int = 5
+    cosine_period_updates: int = 400
     min_lr_ratio: float = 0.01
     max_grad_norm: float = 5.0
     coef_v: float = 1.0
@@ -34,8 +35,10 @@ class ZhangTrainCfg:
     def validate(self) -> None:
         if self.physics_dt != 0.01 or self.policy_dt != 0.1:
             raise ValueError("The approved task requires 100 Hz physics and a 10 Hz policy")
-        if self.timesteps < 2 or self.max_iterations < 1:
+        if self.timesteps < 2 or (self.max_iterations is not None and self.max_iterations < 1):
             raise ValueError("Training requires at least two rollout steps and one update")
+        if self.cosine_period_updates < 1:
+            raise ValueError("cosine_period_updates must be positive")
         if not 0 < self.grad_decay <= 1 or self.max_grad_norm <= 0:
             raise ValueError("grad_decay must be in (0, 1] and max_grad_norm must be positive")
         if self.action_delay_steps != 1:

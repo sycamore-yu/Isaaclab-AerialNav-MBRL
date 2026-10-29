@@ -86,7 +86,8 @@ class NavRLEnvCfg(DirectRLEnvCfg):
     state_space = 0
     seed = 0
     num_static_obstacles: int = 350
-    num_dynamic_obstacles: int = 100
+    num_dynamic_obstacles: int = 60
+    training_curriculum: bool = True
     terrain_seed: int = 0
     dynamic_speed_range: tuple[float, float] = (0.5, 1.5)
     evaluation: bool = False
@@ -115,10 +116,13 @@ class NavRLEnvCfg(DirectRLEnvCfg):
     def configure_scene(self):
         """Apply task counts after command-line overrides and before launch."""
         self.scene.terrain = build_terrain_cfg(self.scene.num_envs, self.num_static_obstacles, self.terrain_seed)
-        self.scene.dynamic_obstacles = make_dynamic_cfg(self.num_dynamic_obstacles, self.terrain_seed)
+        self.scene.dynamic_obstacles = make_dynamic_cfg(self.dynamic_capacity(), self.terrain_seed)
         self.scene.lidar.update_period = self.sim.dt * self.decimation
         for actuator in self.scene.drone.actuators.values():
             actuator.dt = self.sim.dt
+
+    def dynamic_capacity(self) -> int:
+        return 120 if self.training_curriculum else self.num_dynamic_obstacles
 
 
 @configclass
@@ -157,7 +161,7 @@ class ZhangNavRLEnvCfg(NavRLEnvCfg):
         ]
         meshes.extend(
             target(prim_expr=f"/World/Dynamic/obstacle_{i:03d}", is_shared=True, track_mesh_transforms=True)
-            for i in range(self.num_dynamic_obstacles)
+            for i in range(self.dynamic_capacity())
         )
         self.scene.depth_camera = BatchedDepthCameraCfg(
             prim_path="{ENV_REGEX_NS}/Hummingbird/base_link",

@@ -146,8 +146,8 @@ def test_encoder_against_actual_upstream_source():
     fusion.load_state_dict(actor.cnns.fusion.state_dict())
     reference_head.load_state_dict(actor.mlp.state_dict())
     reference_features = fusion(torch.cat((
-        lidar(flat[:, 8:152].reshape(-1, 1, 36, 4)), flat[:, :8],
-        dynamic(flat[:, 152:].reshape(-1, 1, 5, 10)),
+            lidar(flat[:, 8:152].reshape(-1, 1, 36, 4)),
+            dynamic(flat[:, 152:].reshape(-1, 1, 5, 10)), flat[:, :8],
     ), dim=-1))
     torch.testing.assert_close(actor.cnns(flat), reference_features, rtol=0, atol=0)
     alpha, beta = reference_head(reference_features)

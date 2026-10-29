@@ -9,6 +9,7 @@ from isaaclab.utils.math import quat_apply, quat_from_euler_xyz
 
 from isaaclab_navrl.control import LeeRotorController
 
+from .curriculum import TrainingCurriculum, active_obstacle_indices
 from .task_logic import DynamicObstacleMotion, goal_frame, navigation_terms
 
 
@@ -21,6 +22,9 @@ class NavRLEnv(DirectRLEnv):
         self.drone = self.scene["drone"]
         self.lidar = self.scene["lidar"]
         self.controller = LeeRotorController(self.num_envs, self.device, dt=self.physics_dt)
+        self.curriculum = TrainingCurriculum(self.num_envs, self.device) if cfg.training_curriculum else None
+        if self.curriculum is not None:
+            cfg.num_dynamic_obstacles = self.curriculum.active_obstacles
         self.motion = DynamicObstacleMotion(
             cfg.num_dynamic_obstacles, cfg.terrain_seed, self.device,
             self.physics_dt if cfg.method == "zhang" else self.step_dt, cfg.dynamic_speed_range,
@@ -30,6 +34,7 @@ class NavRLEnv(DirectRLEnv):
             if self.dynamic_collection.data.body_pose_w.torch.shape[0] != 1:
                 raise RuntimeError("The global dynamic obstacles were unexpectedly replicated.")
             self._dynamic_pose = self.dynamic_collection.data.body_pose_w.torch.clone()
+            self.set_active_obstacles(cfg.num_dynamic_obstacles)
         self.target_pos = torch.zeros(self.num_envs, 3, device=self.device)
         self.target_dir = torch.zeros_like(self.target_pos)
         self.height_range = torch.zeros(self.num_envs, 2, device=self.device)
@@ -111,7 +116,35 @@ class NavRLEnv(DirectRLEnv):
     def reset(self, *args, **kwargs):
         self._stepping = False
         self.extras = {}
+        if self.curriculum is not None:
+            self.curriculum.reset_episodes()
         return super().reset(*args, **kwargs)
+
+    def step(self, actions):
+        result = super().step(actions)
+        if self.curriculum is not None:
+            self.curriculum.observe(result[-1]["transition"])
+        return result
+
+    def set_active_obstacles(self, count: int):
+        """Change the shared difficulty without respawning USD or copying worlds."""
+        self._active_obstacle_ids = torch.tensor(
+            active_obstacle_indices(count, self.cfg.dynamic_capacity()), device=self.device, dtype=torch.long
+        )
+        self.motion = DynamicObstacleMotion(
+            count, self.cfg.terrain_seed, self.device,
+            self.physics_dt if self.cfg.method == "zhang" else self.step_dt, self.cfg.dynamic_speed_range,
+        )
+        self.cfg.num_dynamic_obstacles = count
+        self._dynamic_pose[0, :, :3] = self._dynamic_pose.new_tensor((0.0, 0.0, -1000.0))
+        self._write_dynamic_obstacles()
+
+    def advance_curriculum(self):
+        count = self.curriculum.advance()
+        self.set_active_obstacles(count)
+        # Every new episode belongs to one difficulty; interrupted episodes do
+        # not enter success statistics or cross-stage temporal histories.
+        return self.reset()
 
     def _pre_physics_step(self, actions):
         self._stepping = True
@@ -127,9 +160,12 @@ class NavRLEnv(DirectRLEnv):
 
     def _update_dynamic_obstacles(self):
         self.motion.advance()
+        self._write_dynamic_obstacles()
+
+    def _write_dynamic_obstacles(self):
         if self.dynamic_collection is None:
             return
-        self._dynamic_pose[0, :, :3] = self.motion.position
+        self._dynamic_pose[0, self._active_obstacle_ids, :3] = self.motion.position
         # Kinematic poses are authoritative; visual motion never changes the collision rule.
         self.dynamic_collection.write_body_pose_to_sim_index(body_poses=self._dynamic_pose)
         self.dynamic_collection.write_data_to_sim()
@@ -175,6 +211,7 @@ class NavRLEnv(DirectRLEnv):
     def _get_rewards(self):
         reward = self._terms["reward"]
         self.episode_return += reward
+        self.extras["transition"]["episode_return"] = self.episode_return.clone()
         self.previous_velocity.copy_(self.drone.data.root_lin_vel_w.torch)
         return reward
 
@@ -199,8 +236,14 @@ class ZhangNavRLEnv(NavRLEnv):
 
     def __init__(self, cfg, render_mode=None, **kwargs):
         super().__init__(cfg, render_mode=render_mode, **kwargs)
+        from isaaclab_navrl.zhang.controller import GraphedLeeRotorController
+
         from .geometry import TerrainDistance
 
+        state = self.root_state()
+        self.controller = GraphedLeeRotorController(
+            self.controller, (state, state[:, 7:10], self.command, self.command[:, :1])
+        )
         self.terrain_distance = TerrainDistance.from_stage(self.sim.stage, self.device)
         self._event_code = torch.zeros(self.num_envs, dtype=torch.int8, device=self.device)
         self._event_time = torch.zeros(self.num_envs, device=self.device)
@@ -247,6 +290,15 @@ class ZhangNavRLEnv(NavRLEnv):
         self._substep_bounds.zero_()
         self._substep_invalid.zero_()
 
+    def _compute_first_events(self):
+        from isaaclab_navrl.zhang.termination import first_events
+
+        state = self.root_state()
+        hits = self.lidar.data.ray_hits_w.torch
+        origin = self.lidar.data.pos_w.torch
+        distances = (hits - origin[:, None]).norm(dim=-1).clamp_max(4).reshape(self.num_envs, 1, 36, 4)
+        return first_events(state, self.target_pos, distances, self.motion)
+
     def _record_substep(self, terms):
         # A 10 Hz policy can cross the collision band between observations.
         # Evaluate the unchanged NavRL rules at every completed PhysX step.
@@ -286,7 +338,7 @@ class ZhangNavRLEnv(NavRLEnv):
 
         if self._physical_substep:
             self._update_dynamic_obstacles()
-            self._record_substep(self._compute_terms())
+            self._record_substep(self._compute_first_events())
         self._physical_substep += 1
         state = self.root_state()
         alpha = torch.exp(-self.zhang_parameters["pitch_ctl_delay"] * self.physics_dt)

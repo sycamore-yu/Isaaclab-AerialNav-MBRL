@@ -73,6 +73,8 @@ def main():
     from isaaclab_navrl.tasks.navigation.config.hummingbird.env_cfg import NavRLEnvCfg, ZhangNavRLEnvCfg
 
     cfg = (ZhangNavRLEnvCfg if args.method == "zhang" else NavRLEnvCfg)()
+    cfg.training_curriculum = False
+    cfg.num_dynamic_obstacles = 100
     cfg.scene.num_envs = args.num_envs
     cfg.sim.device = args.device
     cfg.configure_scene()
@@ -114,6 +116,7 @@ def main():
                     ("scene.update", env.scene, "update"),
                 ]
                 if args.method == "zhang":
+                    methods.append(("env.first_events", env, "_compute_first_events"))
                     methods.append(("depth.sample", env, "get_zhang_observation"))
                 with instrument_methods(methods, synchronize) as totals:
                     instrumented_s = measure_steps()
@@ -130,6 +133,7 @@ def main():
                 "method": args.method, "num_envs": args.num_envs, "device": str(env.device),
                 "warmup_policy_steps": args.warmup, "measured_policy_steps_per_run": args.measured,
                 "physics_dt": env.physics_dt, "policy_dt": env.step_dt, "decimation": cfg.decimation,
+                "controller_capture_setup_wall_s": getattr(env.controller, "capture_setup_wall_s", 0.0),
                 "static_obstacles": cfg.num_static_obstacles, "dynamic_obstacles": cfg.num_dynamic_obstacles,
                 "workload": "zero command environment steps, including depth sampling for Zhang; no policy or BPTT",
                 "runs": "warmup, uninstrumented baseline, then instrumented phases in the same shared world",

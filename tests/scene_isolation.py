@@ -22,6 +22,8 @@ def main():
     from isaaclab_navrl.tasks.navigation.config.hummingbird.env_cfg import NavRLEnvCfg
 
     cfg = NavRLEnvCfg()
+    cfg.training_curriculum = False
+    cfg.num_dynamic_obstacles = 100
     cfg.scene.num_envs = 2
     cfg.sim.device = args.device
     cfg.configure_scene()

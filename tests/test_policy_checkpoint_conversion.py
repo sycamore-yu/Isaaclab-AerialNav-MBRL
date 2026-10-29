@@ -74,10 +74,42 @@ def test_released_checkpoint_conversion_preserves_actions_and_denormalized_value
     load_subtree(head, "actor.module.0.module.")
     load_subtree(value_head, "critic.module.")
     load_subtree(value_norm, "value_norm.")
-    features = fusion(torch.cat((
-        lidar(flat[:, 8:152].reshape(-1, 1, 36, 4)), flat[:, :8],
-        dynamic(flat[:, 152:].reshape(-1, 1, 5, 10)),
-    ), dim=-1))
+    # Execute the vendored CatTensors constructor and forward: its default
+    # sort=True, not the order of the call's in_keys list, defines checkpoint layout.
+    transform_source = subprocess.check_output([
+        "git", "show", "HEAD:isaac-training/third_party/rl/torchrl/envs/transforms/transforms.py"
+    ], cwd=source, text=True)
+    transform_class = next(node for node in ast.parse(transform_source).body
+                           if isinstance(node, ast.ClassDef) and node.name == "CatTensors")
+    utils_source = subprocess.check_output([
+        "git", "show", "HEAD:isaac-training/third_party/rl/torchrl/envs/utils.py"
+    ], cwd=source, text=True)
+    sort_function = next(node for node in ast.parse(utils_source).body
+                         if isinstance(node, ast.FunctionDef) and node.name == "_sort_keys")
+
+    class Transform(nn.Module):
+        def __init__(self, in_keys, out_keys):
+            super().__init__()
+            self.in_keys, self.out_keys = in_keys, out_keys
+
+    from tensordict import unravel_key
+
+    transform_namespace = {"torch": torch, "Transform": Transform, "unravel_key": unravel_key}
+    tree = ast.Module(body=[
+        ast.ImportFrom(module="__future__", names=[ast.alias(name="annotations")], level=0),
+        sort_function, transform_class,
+    ], type_ignores=[])
+    exec(compile(ast.fix_missing_locations(tree), "upstream-CatTensors", "exec"), transform_namespace)
+    concatenate = transform_namespace["CatTensors"](
+        ["_cnn_feature", ("agents", "observation", "state"), "_dynamic_obstacle_feature"],
+        "_feature", del_keys=False,
+    )
+    data = TensorDict({
+        "_cnn_feature": lidar(flat[:, 8:152].reshape(-1, 1, 36, 4)),
+        ("agents", "observation", "state"): flat[:, :8],
+        "_dynamic_obstacle_feature": dynamic(flat[:, 152:].reshape(-1, 1, 5, 10)),
+    }, batch_size=[32])
+    features = fusion(concatenate(data)["_feature"])
     alpha, beta = head(features)
     expected_actions = 4 * alpha / (alpha + beta) - 2
     expected_values = value_norm.denormalize(value_head(features))

@@ -6,6 +6,7 @@ three-vectors. Inputs retain the ten-dimensional odometry configuration.
 
 import torch
 from torch import nn
+from torch.utils.checkpoint import checkpoint
 
 
 class ZhangPolicy(nn.Module):
@@ -29,6 +30,10 @@ class ZhangPolicy(nn.Module):
         feature = self.act(self.stem(depth_features) + self.v_proj(state))
         hidden = self.gru(feature, hidden)
         return self.fc(self.act(hidden)), hidden
+
+    def forward_checkpointed(self, depth_features, state, hidden):
+        """Recompute neural activations during backward; never replay PhysX."""
+        return checkpoint(self, depth_features, state, hidden, use_reentrant=False)
 
 
 def quaternion_matrix(quaternion):

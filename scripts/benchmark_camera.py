@@ -48,6 +48,7 @@ def main():
     from isaaclab_navrl.tasks.navigation.config.hummingbird.env_cfg import ZhangNavRLEnvCfg
 
     cfg = ZhangNavRLEnvCfg()
+    cfg.training_curriculum = False
     cfg.scene.num_envs = args.num_envs
     cfg.seed, cfg.terrain_seed = args.seed, args.terrain_seed
     cfg.num_static_obstacles, cfg.num_dynamic_obstacles = args.static_obstacles, args.dynamic_obstacles

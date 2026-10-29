@@ -5,10 +5,13 @@ import math
 import time
 from collections import defaultdict
 from dataclasses import asdict
+from itertools import count
 from pathlib import Path
 
 import torch
 from torch.utils.tensorboard import SummaryWriter
+
+from isaaclab_navrl.training import record_curriculum, write_json
 
 from .dynamics import PointMassState, align_transition, policy_transition
 from .losses import zhang_losses
@@ -16,8 +19,8 @@ from .model import ZhangPolicy, decode_action, policy_state
 
 
 def cosine_learning_rate(update, cfg):
-    """Five full cosine decay/restart cycles within the configured update budget."""
-    cycle_progress = (update * cfg.cosine_cycles / cfg.max_iterations) % 1.0
+    """Repeat the fixed cosine period independently of the total run length."""
+    cycle_progress = (update % cfg.cosine_period_updates) / cfg.cosine_period_updates
     return cfg.lr * (cfg.min_lr_ratio + (1 - cfg.min_lr_ratio) * (1 + math.cos(math.pi * cycle_progress)) / 2)
 
 
@@ -48,6 +51,7 @@ class ZhangTrainer:
                             "dynamic_obstacles": self.env.cfg.num_dynamic_obstacles,
                             "physics_dt": self.env.physics_dt, "policy_dt": self.env.step_dt},
             "torch_rng_state": torch.get_rng_state(),
+            "curriculum": self.env.curriculum.state_dict() if self.env.curriculum is not None else None,
         }
         torch.save(payload, path)
 
@@ -59,9 +63,19 @@ class ZhangTrainer:
             "checkpoint": str(checkpoint) if checkpoint is not None else None,
             "elapsed_s": self.elapsed_s, "nonfinite_grad_events": self.nonfinite_grad_events,
             "nonfinite_events": int(self.env.nonfinite_events),
+            "environment_steps": self.completed_updates * self.cfg.timesteps * self.env.num_envs,
+            "torch_peak_allocated_mb": (
+                torch.cuda.max_memory_allocated(self.env.device) / 2**20
+                if torch.device(self.env.device).type == "cuda" else 0.0
+            ),
+            "curriculum": self.env.curriculum.state_dict() if self.env.curriculum is not None else None,
+            "acceptance_passed": bool(
+                self.env.curriculum is not None and self.env.curriculum.acceptance_passed
+                and self.env.num_envs == 1024 and self.env.cfg.num_static_obstacles == 350
+            ),
             "error": error,
         }
-        (self.log_dir / "training_result.json").write_text(json.dumps(result, indent=2, allow_nan=False) + "\n")
+        write_json(self.log_dir / "training_result.json", result)
         return result
 
     def run(self):
@@ -76,8 +90,10 @@ class ZhangTrainer:
         writer = SummaryWriter(str(self.log_dir / "tensorboard"))
         log = (self.log_dir / "updates.jsonl").open("w")
         started = time.perf_counter()
+        self._result("running")
         try:
-            for update in range(self.cfg.max_iterations):
+            updates = count() if self.cfg.max_iterations is None else range(self.cfg.max_iterations)
+            for update in updates:
                 update_started = time.perf_counter()
                 state = state.detach()
                 hidden, queued_command = hidden.detach(), queued_command.detach()
@@ -92,7 +108,9 @@ class ZhangTrainer:
                         parameters["max_speed"], parameters["margin"],
                     )
                     # Camera output is a reused buffer and must not overwrite saved CNN inputs.
-                    output, hidden = self.model(observation["depth_features"].detach().clone(), features, hidden)
+                    output, hidden = self.model.forward_checkpointed(
+                        observation["depth_features"].detach().clone(), features, hidden
+                    )
                     command, velocity_prediction = decode_action(output, heading, parameters["thr_est_error"])
                     # Source main_cuda records p + v * sub_div before env.run, including terminating steps.
                     query = state.position[:, None] + state.velocity[:, None] * lookahead
@@ -121,6 +139,14 @@ class ZhangTrainer:
                     previous_command = queued_command
                     observation = next_observation
                     terminated_count += done.sum()
+                episode_ids = torch.stack(history["episode_id"])
+                if self.velocity_history is not None:
+                    episode_ids = torch.cat((self.velocity_history["episode_id"], episode_ids))
+                if len(episode_ids) > self.cfg.velocity_window_steps:
+                    windows = episode_ids.unfold(0, self.cfg.velocity_window_steps, 1)[1:]
+                    valid_velocity_windows = (windows == windows[..., :1]).all(dim=-1).float().mean()
+                else:
+                    valid_velocity_windows = episode_ids.new_zeros((), dtype=torch.float)
                 losses, self.velocity_history = zhang_losses(history, self.cfg, self.velocity_history)
                 if not bool(torch.isfinite(losses["total"])):
                     raise FloatingPointError("Non-finite Zhang rollout loss")
@@ -141,14 +167,29 @@ class ZhangTrainer:
                 metrics = {name: float(value.detach()) for name, value in losses.items()}
                 metrics.update(update=self.completed_updates, learning_rate=learning_rate, grad_norm=float(grad_norm),
                                elapsed_s=self.elapsed_s, update_s=time.perf_counter() - update_started,
-                               completed_episodes=int(terminated_count))
+                               completed_episodes=int(terminated_count),
+                               velocity_window_valid_fraction=float(valid_velocity_windows))
                 log.write(json.dumps(metrics, allow_nan=False) + "\n")
                 log.flush()
                 for name, value in metrics.items():
                     writer.add_scalar(name, value, self.completed_updates)
                 print("ZHANG_UPDATE " + json.dumps(metrics), flush=True)
-                if self.completed_updates % 100 == 0:
-                    self._checkpoint(self.log_dir / f"checkpoint_{self.completed_updates:04d}.pt")
+                record_curriculum(self.env.curriculum, self.completed_updates, self.log_dir, writer, self._checkpoint)
+                if self.completed_updates == 1 or self.completed_updates % 100 == 0:
+                    self._checkpoint(self.log_dir / "checkpoint_latest.pt")
+                if self.env.curriculum is not None and self.env.curriculum.ready_to_advance:
+                    self.env.advance_curriculum()
+                    observation = self.env.get_zhang_observation()
+                    zero = torch.zeros_like(observation["velocity"])
+                    state = PointMassState(observation["position"].detach(), observation["velocity"].detach(), zero, zero)
+                    hidden = zero.new_zeros(self.env.num_envs, 192)
+                    queued_command = previous_command = zero
+                    self.velocity_history = None
+                    print(f"CURRICULUM -> {self.env.cfg.num_dynamic_obstacles} at update {self.completed_updates}", flush=True)
+                result = self._result("running")
+                if (self.cfg.stop_after_acceptance and result["acceptance_passed"]
+                        and 120 in self.env.curriculum.best_by_stage):
+                    break
             checkpoint = self.log_dir / "checkpoint_final.pt"
             self._checkpoint(checkpoint)
             result = self._result("completed", checkpoint)

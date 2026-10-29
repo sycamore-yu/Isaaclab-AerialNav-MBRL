@@ -6,6 +6,7 @@ import argparse
 import json
 import random
 import time
+from itertools import count
 from pathlib import Path
 
 from isaaclab.app import add_launcher_args, launch_simulation
@@ -15,15 +16,16 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument("--log_dir", type=Path, required=True)
     parser.add_argument("--num_envs", type=int, default=1024)
-    parser.add_argument("--max_iterations", type=int, default=2200)
+    parser.add_argument("--max_iterations", type=int, default=None, help="Optional limit for a smoke run; default unlimited")
+    parser.add_argument("--stop_after_acceptance", action="store_true",
+                        help="Finish after 100-obstacle acceptance and the first 120-obstacle training report")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--terrain_seed", type=int, default=0)
     parser.add_argument("--static_obstacles", type=int, default=350)
-    parser.add_argument("--dynamic_obstacles", type=int, default=100)
     add_launcher_args(parser)
     parser.set_defaults(visualizer=["none"])
     args = parser.parse_args()
-    if args.num_envs < 1 or args.max_iterations < 1:
+    if args.num_envs < 1 or (args.max_iterations is not None and args.max_iterations < 1):
         parser.error("num_envs and max_iterations must be positive")
     log_dir = args.log_dir.resolve()
     if log_dir.exists() and any(log_dir.iterdir()):
@@ -34,11 +36,12 @@ def main():
     import numpy as np
     import torch
     from isaaclab_rl.rsl_rl import RslRlVecEnvWrapper
-    from rsl_rl.runners import OnPolicyRunner
 
     import isaaclab_navrl.tasks  # noqa: F401
+    from isaaclab_navrl.agents.continuous_runner import ContinuousNavRLRunner
     from isaaclab_navrl.agents.rsl_rl_cfg import NavRLPpoRunnerCfg
     from isaaclab_navrl.tasks.navigation.config.hummingbird.env_cfg import NavRLEnvCfg
+    from isaaclab_navrl.training import record_curriculum, write_json
 
     random.seed(args.seed)
     np.random.seed(args.seed)
@@ -48,7 +51,8 @@ def main():
     cfg.seed = args.seed
     cfg.terrain_seed = args.terrain_seed
     cfg.num_static_obstacles = args.static_obstacles
-    cfg.num_dynamic_obstacles = args.dynamic_obstacles
+    cfg.training_curriculum = True
+    cfg.num_dynamic_obstacles = 60
     cfg.sim.device = args.device
     cfg.configure_scene()
     agent_cfg = NavRLPpoRunnerCfg()
@@ -58,7 +62,9 @@ def main():
     run_config = {
         "method": "navrl", "fresh": True, "num_envs": args.num_envs,
         "max_updates": args.max_iterations, "seed": args.seed, "terrain_seed": args.terrain_seed,
-        "static_obstacles": args.static_obstacles, "dynamic_obstacles": args.dynamic_obstacles,
+        "stop_after_acceptance": args.stop_after_acceptance,
+        "static_obstacles": args.static_obstacles, "dynamic_obstacles": 60,
+        "curriculum": [60, 80, 100, 120], "independent_evaluation": False,
         "physics_dt": cfg.sim.dt, "decimation": cfg.decimation,
         "episode_length_s": cfg.episode_length_s, "training": agent_cfg.to_dict(),
         "task": "Isaac-NavRL-Hummingbird-Direct-v0",
@@ -75,31 +81,64 @@ def main():
         "num_envs": args.num_envs, "completed_updates": 0, "max_updates": args.max_iterations,
     }
 
-    def write_result():
+    def write_result(announce=False):
         result["elapsed_s"] = time.perf_counter() - started
-        (log_dir / "training_result.json").write_text(json.dumps(result, indent=2, allow_nan=False) + "\n")
-        print("TRAINING_RESULT " + json.dumps(result), flush=True)
+        if env is not None:
+            result["curriculum"] = env.curriculum.state_dict()
+            result["acceptance_passed"] = (
+                env.curriculum.acceptance_passed and args.num_envs == 1024 and args.static_obstacles == 350
+            )
+            result["nonfinite_events"] = int(env.nonfinite_events)
+        write_json(log_dir / "training_result.json", result)
+        if announce:
+            print("TRAINING_RESULT " + json.dumps(result), flush=True)
 
-    write_result()
     runner = None
     env = None
+    write_result(announce=True)
     try:
         with launch_simulation(cfg, args):
             try:
                 env = gym.make(run_config["task"], cfg=cfg).unwrapped
                 wrapped = RslRlVecEnvWrapper(env, clip_actions=None)
-                runner = OnPolicyRunner(wrapped, agent_cfg.to_dict(), log_dir=str(log_dir), device=args.device)
+                runner = ContinuousNavRLRunner(wrapped, agent_cfg.to_dict(), log_dir=str(log_dir), device=args.device)
                 params = [p for group in runner.alg.optimizer.param_groups for p in group["params"]]
                 if len(params) != len({id(p) for p in params}):
                     raise RuntimeError("Shared network parameters were registered twice in the optimizer.")
                 runner.add_git_repo_to_log(__file__)
-                runner.learn(num_learning_iterations=args.max_iterations, init_at_random_ep_len=False)
+
+                def save_checkpoint(path):
+                    runner.save(str(path), infos={
+                        "fresh": True, "completed_updates": result["completed_updates"],
+                        "curriculum": env.curriculum.state_dict(),
+                    })
+
+                updates = count() if args.max_iterations is None else range(args.max_iterations)
+                for update in updates:
+                    runner.current_learning_iteration = update
+                    runner.learn(num_learning_iterations=1, init_at_random_ep_len=False)
+                    result["completed_updates"] = update + 1
+                    result["environment_steps"] = (update + 1) * agent_cfg.num_steps_per_env * args.num_envs
+                    record_curriculum(env.curriculum, update + 1, log_dir, runner.logger.writer, save_checkpoint)
+                    if (update + 1) % agent_cfg.save_interval == 0:
+                        save_checkpoint(log_dir / "checkpoint_latest.pt")
+                    if env.curriculum.ready_to_advance:
+                        env.advance_curriculum()
+                        runner.logger.cur_reward_sum.zero_()
+                        runner.logger.cur_episode_length.zero_()
+                        runner.logger.rewbuffer.clear()
+                        runner.logger.lenbuffer.clear()
+                        print(f"CURRICULUM -> {env.cfg.num_dynamic_obstacles} at update {update + 1}", flush=True)
+                    write_result()
+                    if (args.stop_after_acceptance and result["acceptance_passed"]
+                            and 120 in env.curriculum.best_by_stage):
+                        break
                 if not all(torch.isfinite(p).all() for p in params):
                     raise FloatingPointError("Training produced non-finite model parameters.")
                 checkpoint = log_dir / "checkpoint_final.pt"
-                runner.save(str(checkpoint), infos={"fresh": True, "completed_updates": args.max_iterations})
+                save_checkpoint(checkpoint)
                 result.update(
-                    status="completed", completed_updates=args.max_iterations,
+                    status="completed",
                     checkpoint=str(checkpoint), nonfinite_events=int(env.nonfinite_events),
                 )
             except BaseException as error:
@@ -111,8 +150,10 @@ def main():
                 # KitLauncher.close() can terminate Python during context exit.
                 # Persist the outcome while still inside the launched runtime.
                 try:
-                    write_result()
+                    write_result(announce=True)
                 finally:
+                    if runner is not None and runner.logger.writer is not None:
+                        runner.logger.writer.close()
                     if env is not None:
                         env.close()
     except BaseException as error:
