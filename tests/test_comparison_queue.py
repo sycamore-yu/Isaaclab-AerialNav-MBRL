@@ -1,6 +1,8 @@
 """Queue admission and fresh command contracts without launching simulation."""
 
+import copy
 import json
+import os
 import runpy
 from pathlib import Path
 
@@ -39,7 +41,10 @@ def test_admission_requires_update_capacity_and_slot():
     assert allow(1, True, 5632, 3584)
     assert not allow(1, True, 5631, 3584)
     assert not allow(1, False, 20000, 3584)
-    assert not allow(2, True, 20000, 3584)
+    assert allow(2, True, 20000, 3584)
+    assert allow(20, True, 20000, 3584)
+    assert not allow(20, True, 4000, 3584, reserve_mib=768)
+    assert allow(6, True, 4550, 3584, reserve_mib=768)
     assert not allow(0, True, 7167, 5120)
     assert allow(5, True, 6144, 4096, slots=6)
     assert not allow(6, True, 20000, 4096, slots=6)
@@ -113,6 +118,7 @@ def test_main_matrix_preserves_requested_controls_and_twenty_hz_priority(tmp_pat
     assert baseline["velocity_loss_mode"] == "full_window" and baseline["velocity_window_s"] == 2.0
     assert runs["plateau"]["train_args"] == {**baseline, "lr_schedule": "plateau"}
     assert runs["ahac"]["train_args"]["ahac_max_horizon"] == 300
+    assert plan['launch_order'].index('plateau') < plan['launch_order'].index('navrl_ppo')
 
 
 @pytest.mark.parametrize("dirty,branch,head", [(True, "main", "pinned"),
@@ -123,3 +129,34 @@ def test_queue_rejects_dirty_wrong_branch_or_changed_source(monkeypatch, dirty, 
     monkeypatch.setattr(QUEUE["subprocess"], "check_output", git)
     with pytest.raises(RuntimeError):
         QUEUE["check_source"](ROOT, "pinned")
+
+
+def test_takeover_preserves_training_arguments_and_source_identity(monkeypatch):
+    adopt = QUEUE['adopt_running_jobs']
+    previous = {'queue_pid': 100, 'source_commit': 'original-training', 'runs': {
+        'active': {'command': ['python', 'pipeline.py'], 'pid': 101, 'status': 'running'},
+        'pending': {'command': ['python', 'other.py'], 'pid': None, 'status': 'queued'},
+    }}
+    jobs = {name: {**entry, 'estimated_mib': 3584} for name, entry in previous['runs'].items()}
+    def ticks(pid, command=None):
+        return None if pid == 100 else 9876
+    monkeypatch.setitem(adopt.__globals__, 'process_start_ticks', ticks)
+    assert adopt(previous, jobs) == {'active': 101}
+    assert jobs['active']['process_start_ticks'] == 9876
+    assert jobs['active']['source_commit'] == 'original-training'
+    assert jobs['pending']['status'] == 'queued'
+    changed = copy.deepcopy(jobs)
+    changed['pending']['command'].append('--changed')
+    with pytest.raises(ValueError, match='training arguments'):
+        adopt(previous, changed)
+    monkeypatch.setitem(adopt.__globals__, 'process_start_ticks', lambda *args: 123)
+    with pytest.raises(ValueError, match='Previous dispatcher'):
+        adopt(previous, jobs)
+
+
+def test_process_identity_rejects_command_mismatch_and_missing_pid():
+    ticks = QUEUE['process_start_ticks']
+    assert ticks(os.getpid()) > 0
+    with pytest.raises(ValueError, match='recorded command'):
+        ticks(os.getpid(), ['unrelated', 'process'])
+    assert ticks(999999999) is None

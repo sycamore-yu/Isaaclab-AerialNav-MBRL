@@ -21,9 +21,9 @@
     "truncated",
     "shac",
     "ahac",
+    "plateau",
     "navrl_ppo",
-    "continuous",
-    "plateau"
+    "continuous"
   ],
   "initialization": "random_at_pretrain_s0_only_same_run_stage_handoff_thereafter",
   "capacity_policy": "Sequential initialization; concurrency from measured complete-update memory and throughput; pending cases are not running results. No training-budget or rollout shortening for capacity.",

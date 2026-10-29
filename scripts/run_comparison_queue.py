@@ -60,11 +60,49 @@ def command_for(source, output, plan, run, device):
 def estimated_mib(run):
     if run["method"] == "navrl":
         return 3584
-    return 5120 if run.get("train_args", {}).get("algorithm") == "ahac" else 4096
+    return 5120 if run.get("train_args", {}).get("algorithm") == "ahac" else 3584
 
 
-def admissible(active_count, all_ready, free_mib, estimate_mib, reserve_mib=2048, slots=2):
-    return active_count < slots and all_ready and free_mib >= estimate_mib + reserve_mib
+def admissible(active_count, all_ready, free_mib, estimate_mib, reserve_mib=2048, slots=None):
+    return (slots is None or active_count < slots) and all_ready and free_mib >= estimate_mib + reserve_mib
+
+
+def process_start_ticks(pid, command=None):
+    """Verify PID ownership before adopting an existing pipeline."""
+    path = Path('/proc') / str(pid)
+    try:
+        fields = (path / 'stat').read_text().rsplit(')', 1)[1].split()
+        if fields[0] == 'Z':
+            return None
+        if command is not None:
+            actual = (path / 'cmdline').read_bytes().decode().rstrip('\0').split('\0')
+            if actual != command:
+                raise ValueError(f"Pipeline PID {pid} no longer matches its recorded command")
+        return int(fields[19])
+    except FileNotFoundError:
+        return None
+
+
+def adopt_running_jobs(previous, jobs):
+    if set(previous['runs']) != set(jobs):
+        raise ValueError('Resume requires the same experiment matrix')
+    if process_start_ticks(previous['queue_pid']) is not None:
+        raise ValueError('Previous dispatcher must exit before takeover')
+    active = {}
+    for name, job in jobs.items():
+        old = previous['runs'][name]
+        if old['command'] != job['command']:
+            raise ValueError(f'Resume cannot change training arguments: {name}')
+        estimate = job['estimated_mib']
+        job.update(old, estimated_mib=estimate)
+        job.setdefault('source_commit', previous['source_commit'])
+        if old['status'] == 'running':
+            ticks = process_start_ticks(old['pid'], old['command'])
+            if ticks is None:
+                raise ValueError(f'Cannot adopt missing pipeline: {name}')
+            job.update(adopted=True, process_start_ticks=ticks)
+            active[name] = old['pid']
+    return active
 
 
 def check_source(source, expected_commit):
@@ -136,7 +174,8 @@ def main():
     parser.add_argument("--source_root", type=Path, help="Frozen training worktree; defaults to dispatcher tree")
     parser.add_argument("--gpu", default="0", help="Physical nvidia-smi GPU selector")
     parser.add_argument("--device", default="cuda:0", help="Trainer CUDA device")
-    parser.add_argument("--slots", type=int, choices=range(1, 7), default=2)
+    parser.add_argument("--slots", type=int, default=None, help="Optional limit; default admits by VRAM only")
+    parser.add_argument("--resume", action="store_true", help="Take over a stopped dispatcher's live pipelines")
     parser.add_argument("--reserve_mib", type=int, default=2048)
     args = parser.parse_args()
     dispatcher = Path(__file__).resolve().parents[1]
@@ -149,8 +188,9 @@ def main():
     plan_bytes = args.plan.read_bytes()
     plan = json.loads(plan_bytes)
     if (plan.get("num_envs") != 256 or plan.get("screening") is not True
-            or "max_updates" not in plan or plan["max_updates"] is not None or args.reserve_mib < 2048):
-        parser.error("Requires N256 screening, unlimited updates, reserve >= 2048 MiB")
+            or "max_updates" not in plan or plan["max_updates"] is not None or args.reserve_mib < 512
+            or (args.slots is not None and args.slots < 1)):
+        parser.error("Requires N256 screening, unlimited updates, reserve >= 512 MiB and positive optional slots")
 
     protocol = runpy.run_path(str(source / "scripts/run_acceptance.py"))
     if tuple(plan["stage_order"]) != protocol["STAGES"]:
@@ -185,7 +225,14 @@ def main():
             "command": command_for(source, target, plan, run, args.device),
         }
 
-    output.mkdir(parents=True, exist_ok=False)
+    previous = read_json(output / 'queue.json') if args.resume else None
+    if args.resume and not previous:
+        parser.error('Resume requires an existing queue.json')
+    active = adopt_running_jobs(previous, jobs) if previous else {}
+    output.mkdir(parents=True, exist_ok=args.resume)
+    if previous:
+        atomic_json(output / f"queue_before_takeover_{os.getpid()}.json", previous)
+        (output / f"plan_before_takeover_{os.getpid()}.json").write_bytes((output / 'plan.json').read_bytes())
     atomic_json(output / "plan.json", plan)
     environment = os.environ.copy()
     environment.update(
@@ -206,7 +253,9 @@ def main():
         "launch_order": order, "runs": jobs, "stop_dispatch_reason": None,
     }
     state_path = output / "queue.json"
-    active = {}
+    if previous:
+        state.update(previous_dispatcher_commit=previous['dispatcher_commit'], resumed_at=now(),
+                     previous_queue_pid=previous['queue_pid'])
     failed = False
 
     def stop_dispatch(signum, _frame):
@@ -219,14 +268,20 @@ def main():
 
     while True:
         for name, process in list(active.items()):
-            code = process.poll()
-            if code is None:
-                continue
             job = jobs[name]
+            if isinstance(process, int):
+                ticks = process_start_ticks(process)
+                if ticks == job['process_start_ticks']:
+                    continue
+                code = None  # An adopted process is not our child; its exit code is unavailable.
+            else:
+                code = process.poll()
+                if code is None:
+                    continue
             result = read_json(Path(job["output"]) / "training_result.json")
             status = result.get("status")
             valid = (
-                code == 0 and status in ("completed", "stopped")
+                (code == 0 or isinstance(process, int)) and status in ("completed", "stopped")
                 and result.get("method") == job["method"]
                 and result.get("screening") is True and result.get("num_envs") == 256
                 and result.get("acceptance_passed") is False and result.get("error") is None
@@ -246,7 +301,7 @@ def main():
             atomic_json(state_path, state)
             return 1 if failed else 0
 
-        if pending and not state["stop_dispatch_reason"] and len(active) < args.slots:
+        if pending and not state["stop_dispatch_reason"] and (args.slots is None or len(active) < args.slots):
             try:
                 ready = all(current_stage_ready(jobs[name]) for name in active)
                 if ready:
@@ -273,6 +328,7 @@ def main():
                                 )
                             active[name] = process
                             job.update(status="running", pid=process.pid, process_group=process.pid)
+                            job['source_commit'] = args.commit
                             atomic_json(output / "zhang_manifest.json", launched_zhang_manifest(jobs, plan))
             except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
                 failed = True

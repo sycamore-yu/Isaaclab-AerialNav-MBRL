@@ -61,9 +61,13 @@ cd /home/tong/tongworkspace/free/isaaclab-navrl
 .venv/bin/python scripts/run_comparison_queue.py \
   --plan configs/experiments/zhang_main_comparison.json \
   --output logs/curriculum/zhang_main_20261029 \
-  --commit "$(git rev-parse HEAD)" --gpu 0 --device cuda:0 --slots 6 --reserve_mib 2048
+  --commit "$(git rev-parse HEAD)" --gpu 0 --device cuda:0 --reserve_mib 768
 ```
 
 `queue.json` 区分 running、queued 和失败状态，启动命令本身不代表已完成训练。
 实际状态以运行回执和阶段 `training_result.json` 为准。TensorBoard 继续读取
 `logs/curriculum/`，历史运行与此次新运行分目录保留。
+
+## 按显存扩容
+
+取消固定并发数量上限，plateau优先于其余未启动组。N256的普通Zhang训练实测约3.1GiB，派发估算3584MiB；AHAC仍按5120MiB估算。启动预留768MiB，已有六条训练由新调度器按PID、命令及进程开始时间接管，不重启trainer。旧组保留原source_commit，新组记录新提交；本次仅修改调度、计划、测试和文档，训练源码相同。所有组仍须先完成至少一次更新再继续扩容。
