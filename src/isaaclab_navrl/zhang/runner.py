@@ -56,6 +56,8 @@ class ZhangTrainer:
         cfg.validate()
         if abs(env.physics_dt - cfg.physics_dt) > 1e-8 or abs(env.step_dt - cfg.policy_dt) > 1e-8:
             raise ValueError("The environment and differentiable model use different time steps")
+        if env.cfg.variant != cfg.variant:
+            raise ValueError("The environment and trainer must use the same Zhang variant")
         self.env, self.cfg = env, cfg
         self.log_dir = Path(log_dir).resolve()
         self.model = ZhangPolicy().to(env.device)
@@ -69,11 +71,23 @@ class ZhangTrainer:
         self.elapsed_s = 0.0
         self.velocity_history = None
 
+    def _dcol_gap(self, query, radius, obstacle_positions=None):
+        """True dynamic-body DCOL with the original actual-mesh static clearance."""
+        from .dcol import hybrid_collision_gap
+
+        radius = radius.reshape(-1, *([1] * (query.ndim - 2))).expand(query.shape[:-1])
+        return hybrid_collision_gap(
+            query, radius, self.env.terrain_distance.closest_points(query),
+            self.env.motion.position if obstacle_positions is None else obstacle_positions, self.env.motion.size,
+        )
+
     def load_stage_checkpoint(self, path):
         """Continue the same experiment after rebuilding its stage-specific terrain."""
         payload = torch.load(path, map_location=self.env.device, weights_only=True)
         if payload["format_version"] != 2 or payload["method"] != "zhang":
             raise ValueError("Stage transitions require this experiment's Zhang checkpoint")
+        if payload["train_cfg"].get("variant") != self.cfg.variant:
+            raise ValueError("Stage transitions cannot change the Zhang comparison variant")
         stages = list(STAGE_CONFIGS)
         index = stages.index(self.env.cfg.training_stage)
         if index == 0 or payload["environment"]["training_stage"] != stages[index - 1]:
@@ -94,7 +108,8 @@ class ZhangTrainer:
 
     def _checkpoint(self, path):
         payload = {
-            "format_version": 2, "method": "zhang", "fresh": self.parent_checkpoint is None,
+            "format_version": 2, "method": "zhang", "variant": self.cfg.variant,
+            "fresh": self.parent_checkpoint is None,
             "model_state_dict": self.model.state_dict(),
             "optimizer_state_dict": self.optimizer.state_dict(),
             "train_cfg": asdict(self.cfg), "completed_updates": self.completed_updates,
@@ -107,7 +122,7 @@ class ZhangTrainer:
                             "static_obstacles": self.env.cfg.num_static_obstacles,
                             "dynamic_obstacles": self.env.cfg.num_dynamic_obstacles,
                             "physics_dt": self.env.physics_dt, "policy_dt": self.env.step_dt,
-                            "training_stage": self.env.cfg.training_stage,
+                            "training_stage": self.env.cfg.training_stage, "variant": self.cfg.variant,
                             "sim_to_real": asdict(self.env.cfg.sim_to_real)},
             "torch_rng_state": torch.get_rng_state(),
             "curriculum": self.env.curriculum.state_dict() if self.env.curriculum is not None else None,
@@ -118,7 +133,8 @@ class ZhangTrainer:
 
     def _result(self, status, checkpoint=None, error=None):
         result = {
-            "method": "zhang", "status": status, "fresh": self.parent_checkpoint is None,
+            "method": "zhang", "variant": self.cfg.variant, "status": status,
+            "fresh": self.parent_checkpoint is None,
             "stage": self.env.cfg.training_stage, "stage_updates": self.stage_updates,
             "parent_checkpoint": self.parent_checkpoint,
             "num_envs": self.env.num_envs, "completed_updates": self.completed_updates,
@@ -154,6 +170,19 @@ class ZhangTrainer:
         observation_history = DifferentiableDelay(self.env.perturbation.observation_buffer.history_length)
         lookahead = torch.linspace(0, self.cfg.policy_dt, 10, device=self.env.device)[None, :, None]
         writer = SummaryWriter(str(self.log_dir / "tensorboard"))
+        if self.cfg.variant == "dcol":
+            write_json(self.log_dir / "dcol_geometry.json", {
+                "scope": "hybrid_dynamic_dcol",
+                "dynamic_geometry": "sphere_vs_axis_aligned_box_or_finite_z_cylinder",
+                "dynamic_selection": "minimum_common_scale_over_all_dynamic_obstacles",
+                "dynamic_metric": "radius_times_alpha_minus_one_metre_scaled_proxy_not_signed_distance",
+                "static_geometry": "actual_world_mesh_unchanged_unsigned_surface_clearance",
+                "static_deep_penetration_gradient_solved": False,
+                "ground_gap": "query_height_minus_0.01_minus_radius",
+                "terminal_sample": "first_collision_substep_position_and_obstacles_or_policy_terminal_position",
+                "collision_gradient": "aligned_surrogate_at_the_same_physics_substep_before_reset",
+                "physx_contact_jacobian": False,
+            })
         log = (self.log_dir / "updates.jsonl").open("w")
         started = time.perf_counter()
         previous_elapsed_s = self.elapsed_s
@@ -195,6 +224,8 @@ class ZhangTrainer:
                     # Source main_cuda records p + v * sub_div before env.run, including terminating steps.
                     query = state.position[:, None] + state.velocity[:, None] * lookahead
                     history["obstacle_vector"].append(self.env.nearest_obstacle_vector(query))
+                    if self.cfg.variant == "dcol":
+                        dcol_lookahead = self._dcol_gap(query[:, 1:-1], parameters["margin"])
                     history["margin"].append(parameters["margin"])
                     history["target_velocity"].append(target_velocity)
                     history["velocity_prediction"].append(velocity_prediction)
@@ -214,9 +245,15 @@ class ZhangTrainer:
                         execution_error, (applied_command.detach() - transition["executed_action"]).abs().max()
                     )
                     applied_command = align_state(applied_command, transition["executed_action"])
-                    prediction = policy_transition(state, applied_command, rotation, parameters, self.cfg)
-                    history["position"].append(transition["position"])
+                    if self.cfg.variant == "dcol":
+                        prediction, predicted_positions = policy_transition(
+                            state, applied_command, rotation, parameters, self.cfg, record_positions=True
+                        )
+                    else:
+                        prediction = policy_transition(state, applied_command, rotation, parameters, self.cfg)
                     history["bounds"].append(transition["bounds"])
+                    history["done"].append(done.clone())
+                    history["collision"].append(transition["collision"])
                     history["executed_command"].append(transition["executed_action"])
                     history["model_velocity_delta"].append(prediction.velocity.detach() - transition["velocity"])
                     terminal_state, state = align_transition(
@@ -225,21 +262,29 @@ class ZhangTrainer:
                         transition["actuator"],
                     )
                     # Source velocity history is post-step; preserve it before same-step autoreset.
+                    history["position"].append(terminal_state.position)
                     history["velocity"].append(terminal_state.velocity)
+                    if self.cfg.variant == "dcol":
+                        # Use the first collision's actual physical substep, including its
+                        # obstacle poses. A later policy-end position can already have passed
+                        # the object. Its aligned surrogate graph survives same-step reset.
+                        substep = transition["collision_substep"]
+                        index = (substep - 1).clamp_min(0)
+                        rows = torch.arange(self.env.num_envs, device=self.env.device)
+                        collision_position = align_state(predicted_positions[rows, index],
+                                                         transition["collision_position"])
+                        collision_position = torch.where(substep[:, None] > 0,
+                                                         collision_position, terminal_state.position)
+                        pose_index = torch.where(substep > 0, index, predicted_positions.shape[1] - 1)
+                        collision_obstacles = transition["dynamic_positions_by_substep"][pose_index]
+                        terminal_gap = self._dcol_gap(collision_position, parameters["margin"], collision_obstacles)
+                        history["dcol_gap"].append(torch.cat((dcol_lookahead, terminal_gap[:, None]), dim=1))
                     hidden = torch.where(done[:, None], torch.zeros_like(hidden), hidden)
                     previous_command = torch.where(done[:, None], torch.zeros_like(command), command)
                     action_history.reset(done)
                     observation_history.reset(done)
                     observation = next_observation
                     terminated_count += done.sum()
-                episode_ids = torch.stack(history["episode_id"])
-                if self.velocity_history is not None:
-                    episode_ids = torch.cat((self.velocity_history["episode_id"], episode_ids))
-                if len(episode_ids) > self.cfg.velocity_window_steps:
-                    windows = episode_ids.unfold(0, self.cfg.velocity_window_steps, 1)[1:]
-                    valid_velocity_windows = (windows == windows[..., :1]).all(dim=-1).float().mean()
-                else:
-                    valid_velocity_windows = episode_ids.new_zeros((), dtype=torch.float)
                 losses, self.velocity_history = zhang_losses(history, self.cfg, self.velocity_history)
                 if not bool(torch.isfinite(losses["total"])):
                     raise FloatingPointError("Non-finite Zhang rollout loss")
@@ -267,7 +312,6 @@ class ZhangTrainer:
                 metrics.update(update=self.completed_updates, learning_rate=learning_rate, grad_norm=float(grad_norm),
                                elapsed_s=self.elapsed_s, update_s=time.perf_counter() - update_started,
                                completed_episodes=int(terminated_count),
-                               velocity_window_valid_fraction=float(valid_velocity_windows),
                                executed_action_max_error=float(execution_error))
                 log.write(json.dumps(metrics, allow_nan=False) + "\n")
                 log.flush()

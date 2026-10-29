@@ -18,10 +18,17 @@ from isaaclab_navrl.zhang.dynamics import (
     align_transition,
     disturbance_acceleration,
     point_mass_step,
+    policy_transition,
 )
 from isaaclab_navrl.zhang.events import randomize_zhang_parameters, update_zhang_disturbance
 from isaaclab_navrl.zhang.inference import load_zhang_policy
-from isaaclab_navrl.zhang.losses import velocity_window_loss, zhang_losses
+from isaaclab_navrl.zhang.losses import (
+    height_boundary_loss,
+    truncated_velocity_window_loss,
+    velocity_step_loss,
+    velocity_window_loss,
+    zhang_losses,
+)
 from isaaclab_navrl.zhang.model import ZhangPolicy, decode_action, policy_state
 from isaaclab_navrl.zhang.runner import ZhangTrainer, cosine_learning_rate
 
@@ -41,6 +48,197 @@ def nominal_parameters(batch):
         "yaw_ctl_delay": torch.full((batch, 1), 6.0), "drag_2": torch.zeros(batch, 2),
         "z_drag_coef": torch.ones(batch, 1), "wind": torch.zeros(batch, 3), "dg": torch.zeros(batch, 3),
     }
+
+
+def loss_history(velocity, target=None, episode=None, done=None, collision=None, position=None):
+    """Construct measured transitions for loss contracts without a simulator."""
+    count, batch, _ = velocity.shape
+    target = torch.zeros_like(velocity) if target is None else target
+    episode = torch.zeros(count, batch, dtype=torch.long) if episode is None else episode
+    done = torch.zeros(count, batch, dtype=torch.bool) if done is None else done
+    collision = torch.zeros_like(done) if collision is None else collision
+    if position is None:
+        position = torch.zeros_like(velocity)
+        position[..., 2] = 2.0
+    vectors = torch.zeros(batch, 10, 3)
+    vectors[..., 0] = 10.0
+    zeros = torch.zeros(batch, 3)
+    return {
+        "velocity": list(velocity.unbind(0)), "target_velocity": list(target.unbind(0)),
+        "episode_id": list(episode.unbind(0)), "done": list(done.unbind(0)),
+        "collision": list(collision.unbind(0)), "position": list(position.unbind(0)),
+        "obstacle_vector": [vectors] * count, "margin": [torch.full((batch,), 0.3)] * count,
+        "command": [zeros] * count, "previous_command": [zeros] * count,
+        "velocity_prediction": [zeros] * count, "observed_velocity": [zeros] * count,
+    }
+
+
+def test_step_velocity_uses_first_last_and_terminal_transitions():
+    velocity = torch.tensor([[[2.0, 0, 0]], [[0, 3.0, 0]], [[0, 0, 4.0]]], requires_grad=True)
+    target = torch.tensor([[[1.0, 0, 0]], [[0, 1.0, 0]], [[0, 0, 1.0]]])
+    done = torch.tensor([[False], [False], [True]])
+    history = loss_history(velocity, target, done=done, collision=done)
+    losses, _ = zhang_losses(history, ZhangTrainCfg(variant="step"))
+    torch.testing.assert_close(losses["velocity"], torch.tensor(1.5))
+    torch.testing.assert_close(losses["velocity"], velocity_step_loss(velocity, target))
+    assert losses["velocity_valid_samples"] == 3
+    assert losses["velocity_sample_fraction"] == 1
+    assert losses["velocity_short_terminal_samples"] == 0
+    losses["velocity"].backward()
+    torch.testing.assert_close(velocity.grad, torch.eye(3).reshape(3, 1, 3) / 3)
+
+
+def test_short_collision_window_uses_actual_length_start_target_and_one_episode():
+    velocity = torch.tensor([[[2.0, 0, 0]], [[4.0, 0, 0]], [[50.0, 0, 0]], [[50.0, 0, 0]]], requires_grad=True)
+    target = torch.tensor([[[1.0, 0, 0]], [[100.0, 0, 0]], [[0, 0, 0]], [[0, 0, 0]]])
+    episode = torch.tensor([[0], [0], [1], [1]])
+    done = torch.tensor([[False], [True], [False], [False]])
+    actual = truncated_velocity_window_loss(velocity, target, episode, 4, done, done)
+    torch.testing.assert_close(actual, torch.tensor(1.5))  # mean(2, 4) - target_start(1) = 2.
+    actual.backward()
+    expected = torch.zeros_like(velocity)
+    expected[:2, :, 0] = 0.5
+    torch.testing.assert_close(velocity.grad, expected)
+
+
+def test_short_window_requires_collision_and_reset_and_does_not_repeat_full_windows():
+    short = torch.tensor([[[2.0, 0, 0]]], requires_grad=True)
+    target = torch.zeros_like(short)
+    episode = torch.zeros(1, 1, dtype=torch.long)
+    yes, no = torch.ones(1, 1, dtype=torch.bool), torch.zeros(1, 1, dtype=torch.bool)
+    assert truncated_velocity_window_loss(short, target, episode, 3, yes, no) == 0
+    assert truncated_velocity_window_loss(short, target, episode, 3, no, yes) == 0
+    assert truncated_velocity_window_loss(short, target, episode, 3, yes, yes) == 1.5
+    velocity = torch.zeros(6, 1, 3, requires_grad=True)
+    with torch.no_grad():
+        velocity[:, 0, 0] = torch.arange(1, 7)
+    target = torch.zeros_like(velocity)
+    episode = torch.zeros(6, 1, dtype=torch.long)
+    done = torch.zeros(6, 1, dtype=torch.bool)
+    done[-1] = True
+    original = velocity_window_loss(velocity, target, episode, 3)
+    actual = truncated_velocity_window_loss(velocity, target, episode, 3, done, done)
+    torch.testing.assert_close(actual, original)
+    torch.testing.assert_close(actual, torch.tensor(3.5))
+    torch.testing.assert_close(torch.autograd.grad(actual, velocity, retain_graph=True)[0],
+                               torch.autograd.grad(original, velocity)[0])
+
+
+def test_short_collision_window_crosses_update_with_detached_history():
+    cfg = ZhangTrainCfg(variant="truncated_window", velocity_window_s=0.4)
+    previous = torch.tensor([[[1.0, 0, 0]], [[3.0, 0, 0]]], requires_grad=True)
+    first, cache = zhang_losses(loss_history(previous), cfg)
+    assert first["velocity_valid_samples"] == 0
+    current = torch.tensor([[[5.0, 0, 0]]], requires_grad=True)
+    terminal = torch.ones(1, 1, dtype=torch.bool)
+    losses, _ = zhang_losses(loss_history(current, done=terminal, collision=terminal), cfg, cache)
+    torch.testing.assert_close(losses["velocity"], torch.tensor(2.5))
+    assert losses["velocity_valid_samples"] == 1
+    assert losses["velocity_short_terminal_samples"] == 1
+    losses["velocity"].backward()
+    assert previous.grad is None
+    torch.testing.assert_close(current.grad, torch.tensor([[[1 / 3, 0, 0]]]))
+
+
+def test_full_and_short_windows_share_one_sample_denominator():
+    velocity = torch.zeros(4, 2, 3)
+    velocity[:, 0, 0] = torch.tensor([1.0, 2.0, 3.0, 4.0])
+    velocity[:, 1, 0] = torch.tensor([4.0, 8.0, 0.0, 0.0])
+    episode = torch.tensor([[0, 0], [0, 0], [0, 1], [0, 1]])
+    done = torch.zeros(4, 2, dtype=torch.bool)
+    done[1, 1] = True
+    actual = truncated_velocity_window_loss(velocity, torch.zeros_like(velocity), episode, 3, done, done)
+    torch.testing.assert_close(actual, torch.tensor(4.0))  # (full loss 2.5 + short loss 5.5) / 2.
+
+
+def test_exact_first_window_collision_is_scored_once_without_duplicate_later_windows():
+    cfg = ZhangTrainCfg(variant="truncated_window", velocity_window_s=0.3)
+    velocity = torch.zeros(3, 1, 3, requires_grad=True)
+    with torch.no_grad():
+        velocity[:, 0, 0] = torch.tensor([1.0, 2.0, 3.0])
+    done = torch.tensor([[False], [False], [True]])
+    original = velocity_window_loss(velocity, torch.zeros_like(velocity), torch.zeros(3, 1, dtype=torch.long), 3)
+    assert original == 0
+    first, _ = zhang_losses(loss_history(velocity, done=done, collision=done), cfg)
+    torch.testing.assert_close(first["velocity"], torch.tensor(1.5))
+    assert first["velocity_valid_samples"] == 1
+    assert first["velocity_short_terminal_samples"] == 1
+    first["velocity"].backward()
+    expected_gradient = torch.zeros_like(velocity)
+    expected_gradient[:, :, 0] = 1 / 3
+    torch.testing.assert_close(velocity.grad, expected_gradient)
+    later_velocity = torch.cat((torch.tensor([[[9.0, 0, 0]]]), velocity.detach()), dim=0)
+    later_episode = torch.tensor([[0], [1], [1], [1]])
+    later_done = torch.tensor([[True], [False], [False], [True]])
+    later_collision = torch.tensor([[False], [False], [False], [True]])
+    later, _ = zhang_losses(loss_history(later_velocity, episode=later_episode,
+                                       done=later_done, collision=later_collision), cfg)
+    torch.testing.assert_close(later["velocity"], torch.tensor(1.5))
+    assert later["velocity_valid_samples"] == 1
+    assert later["velocity_short_terminal_samples"] == 0
+
+
+def test_height_boundary_is_zero_inside_c1_at_edges_and_points_inward():
+    height = torch.tensor([0.4, 0.7, 2.0, 3.5, 3.8], dtype=torch.float64, requires_grad=True)
+    position = torch.stack((torch.zeros_like(height), torch.zeros_like(height), height), dim=-1)
+    loss = height_boundary_loss(position)
+    expected = 2 * (1 - math.exp(-0.6**2)) / 5
+    torch.testing.assert_close(loss, torch.tensor(expected, dtype=torch.float64))
+    gradient = torch.autograd.grad(loss, height)[0]
+    assert gradient[0] < 0 and gradient[-1] > 0
+    torch.testing.assert_close(gradient[1:4], torch.zeros(3, dtype=torch.float64), atol=1e-14, rtol=0)
+    interior = torch.tensor([[[0.0, 0.0, 0.7], [0.0, 0.0, 3.5]]], dtype=torch.float64, requires_grad=True)
+    inside_loss = height_boundary_loss(interior)
+    assert inside_loss == 0
+    torch.testing.assert_close(torch.autograd.grad(inside_loss, interior)[0], torch.zeros_like(interior))
+    nearby = torch.tensor([[[0.0, 0.0, 0.7 - 1e-6], [0.0, 0.0, 3.5 + 1e-6]]], dtype=torch.float64, requires_grad=True)
+    nearby_gradient = torch.autograd.grad(height_boundary_loss(nearby), nearby)[0]
+    assert nearby_gradient.abs().max() < 1e-5
+
+
+def test_height_boundary_keeps_terminal_gradient_and_can_be_disabled():
+    predicted_position = torch.tensor([[0.0, 0.0, 2.0]], requires_grad=True)
+    zeros = torch.zeros(1, 3)
+    prediction = PointMassState(predicted_position, zeros, zeros, zeros)
+    terminal, reset = align_transition(
+        prediction, torch.tensor([[0.0, 0.0, 3.8]]), zeros, zeros,
+        torch.tensor([True]), torch.tensor([[0.0, 0.0, 2.0]]), zeros, 0.1,
+    )
+    history = loss_history(terminal.velocity[None], position=terminal.position[None], done=torch.tensor([[True]]))
+    active, _ = zhang_losses(history, ZhangTrainCfg())
+    disabled, _ = zhang_losses(history, ZhangTrainCfg(coef_height_boundary=0))
+    torch.testing.assert_close(active["total"] - disabled["total"], active["height_boundary"])
+    gradient = torch.autograd.grad(active["height_boundary"], predicted_position, retain_graph=True)[0]
+    assert gradient[0, 2] > 0
+    torch.testing.assert_close(torch.autograd.grad(reset.position.sum(), predicted_position)[0], torch.zeros_like(predicted_position))
+
+
+def test_dcol_changes_only_collision_gap_and_preserves_approach_weight():
+    velocity = torch.zeros(3, 1, 3)
+    history = loss_history(velocity)
+    vectors = torch.zeros(1, 10, 3)
+    vectors[0, :, 0] = torch.linspace(2.0, 1.1, 10)
+    history["obstacle_vector"] = [vectors] * 3
+    gap = torch.full((3, 1, 9), 0.02, requires_grad=True)
+    history["dcol_gap"] = list(gap.unbind(0))
+    original, _ = zhang_losses(history, ZhangTrainCfg(variant="continuous", velocity_window_s=0.2))
+    dcol, _ = zhang_losses(history, ZhangTrainCfg(variant="dcol", velocity_window_s=0.2))
+    torch.testing.assert_close(dcol["collision"], (9 * F.softplus(-32 * gap)).mean())
+    for name in ("velocity", "velocity_prediction", "obstacle_avoidance", "acceleration", "jerk", "height_boundary"):
+        torch.testing.assert_close(dcol[name], original[name])
+    dcol["collision"].backward()
+    assert bool((gap.grad < 0).all())
+
+
+def test_variant_and_height_boundary_configuration():
+    cfg = ZhangTrainCfg()
+    assert cfg.variant == "step" and cfg.velocity_window_steps == 20
+    assert cfg.height_bounds == (0.2, 4.0)
+    ZhangTrainCfg(coef_height_boundary=0).validate()
+    for options in ({"variant": "unknown"}, {"boundary_scale": 0}, {"boundary_margin": 2},
+                    {"coef_height_boundary": -1}, {"height_bounds": (4.0, 0.2)}):
+        with pytest.raises(ValueError):
+            ZhangTrainCfg(**options).validate()
 
 
 def test_original_network_matches_published_model():
@@ -139,6 +337,22 @@ def test_state_alignment_keeps_terminal_gradients_and_cuts_reset_history():
     torch.testing.assert_close(next_gradient, torch.tensor([[0.0] * 3, [1.0] * 3]))
 
 
+def test_collision_substep_trace_matches_the_model_and_keeps_only_its_causal_gradient():
+    command = torch.tensor([[1.0, 0.0, 0.0]], requires_grad=True)
+    zero = torch.zeros(1, 3)
+    start = PointMassState(zero, zero, zero, zero)
+    parameters, rotation, cfg = nominal_parameters(1), torch.eye(3)[None], ZhangTrainCfg()
+    final, positions = policy_transition(start, command, rotation, parameters, cfg, record_positions=True)
+    expected = policy_transition(start, command, rotation, parameters, cfg)
+    assert positions.shape == (1, 10, 3)
+    torch.testing.assert_close(final.position, expected.position, rtol=0, atol=0)
+    first_gradient = torch.autograd.grad(positions[:, 0].sum(), command, retain_graph=True, allow_unused=True)[0]
+    assert first_gradient is None or bool((first_gradient == 0).all())
+    early_gradient = torch.autograd.grad(positions[:, 2].sum(), command, retain_graph=True)[0]
+    last_gradient = torch.autograd.grad(positions[:, -1].sum(), command)[0]
+    assert bool((early_gradient > 0).all()) and bool((last_gradient > early_gradient).all())
+
+
 def test_drag_matches_source_body_axis_formula():
     parameters = nominal_parameters(1)
     parameters["drag_2"][:] = torch.tensor([0.2, 0.3])
@@ -174,6 +388,9 @@ def test_avoidance_speed_and_jerk_use_policy_time_units():
     commands = [torch.tensor([[0.1 * i, 0.0, 0.0]]) for i in range(4)]
     history = {
         "velocity": [torch.zeros(1, 3)] * 4,
+        "position": [torch.tensor([[0.0, 0.0, 2.0]])] * 4,
+        "done": [torch.zeros(1, dtype=torch.bool)] * 4,
+        "collision": [torch.zeros(1, dtype=torch.bool)] * 4,
         "target_velocity": [torch.zeros(1, 3)] * 4,
         "episode_id": [torch.zeros(1, dtype=torch.long)] * 4,
         "obstacle_vector": [vectors] * 4, "margin": [torch.full((1,), 0.3)] * 4,
@@ -187,7 +404,11 @@ def test_avoidance_speed_and_jerk_use_policy_time_units():
     torch.testing.assert_close(losses["obstacle_avoidance"], (expected_speed * (1 - clearance[:, 1:]).relu().square()).mean())
     torch.testing.assert_close(losses["collision"], (expected_speed * F.softplus(-32 * clearance[:, 1:])).mean())
     torch.testing.assert_close(losses["jerk"], torch.tensor(0.75))
-    assert set(losses) == {"velocity", "velocity_prediction", "obstacle_avoidance", "collision", "acceleration", "jerk", "total"}
+    assert set(losses) == {
+        "velocity", "velocity_prediction", "obstacle_avoidance", "collision", "acceleration", "jerk",
+        "height_boundary", "total", "velocity_valid_samples", "velocity_sample_fraction",
+        "velocity_short_terminal_samples",
+    }
 
 
 def test_pre_step_lookahead_preserves_gradient_for_a_crossed_obstacle():
@@ -199,6 +420,8 @@ def test_pre_step_lookahead_preserves_gradient_for_a_crossed_obstacle():
     post_vectors = obstacle - (start[:, None] + velocity[:, None] * (times + 0.1))
     base = {
         "velocity": [torch.zeros(1, 3)], "target_velocity": [torch.zeros(1, 3)],
+        "position": [torch.tensor([[0.0, 0.0, 2.0]])],
+        "done": [torch.zeros(1, dtype=torch.bool)], "collision": [torch.zeros(1, dtype=torch.bool)],
         "episode_id": [torch.zeros(1, dtype=torch.long)], "margin": [torch.tensor([0.3])],
         "command": [torch.zeros(1, 3)], "previous_command": [torch.zeros(1, 3)],
         "velocity_prediction": [torch.zeros(1, 3)], "observed_velocity": [torch.zeros(1, 3)],
@@ -216,7 +439,7 @@ def test_unlimited_training_and_budget_independent_cosine_period():
     cfg.validate()
     assert cfg.max_iterations is None
     assert cfg.cosine_period_updates == 400
-    assert cfg.velocity_window_steps == 60
+    assert cfg.velocity_window_steps == 20
     assert cfg.timesteps * cfg.policy_dt == 15
     for update in (0, 400, 800, 1200, 1600, 2000, 40000):
         assert cosine_learning_rate(update, cfg) == pytest.approx(0.001)
@@ -236,7 +459,7 @@ class AnalyticEnv:
     def __init__(self):
         self.cfg = SimpleNamespace(seed=7, terrain_seed=0, num_static_obstacles=350,
                                    num_dynamic_obstacles=100, evaluation=False, training_stage=None,
-                                   sim_to_real=SimToRealCfg())
+                                   sim_to_real=SimToRealCfg(), variant="step")
         self.perturbation = PolicyPerturbation(self.cfg.sim_to_real, 2, "cpu", 7, nominal_action_delay=1)
         self.zhang_parameters = nominal_parameters(2)
         self.position = torch.zeros(2, 3)
@@ -285,6 +508,7 @@ class AnalyticEnv:
                       "executed_action": command.clone(), "actuator": command.clone(),
                       "bounds": torch.zeros(2, dtype=torch.bool)}
         done = torch.tensor([self.total_steps % 2 == 0, False])
+        transition["collision"] = done.clone()
         if done[0]:
             self.position[0] = torch.tensor([0.0, 0.0, 2.0])
             self.velocity[0] = 0
@@ -344,6 +568,19 @@ def test_stage_handoff_preserves_weights_optimizer_and_counts_actual_transitions
         assert all(int(value["step"]) == index + 1 for value in trainer.optimizer.state.values())
         checkpoint = tmp_path / stage / "checkpoint_final.pt"
         previous_weights = {name: value.clone() for name, value in trainer.model.state_dict().items()}
+
+
+def test_stage_handoff_rejects_another_comparison_variant(tmp_path):
+    env = AnalyticEnv()
+    env.cfg.training_stage = "pretrain_s1"
+    first = ZhangTrainer(env, ZhangTrainCfg(timesteps=2, max_iterations=1), tmp_path / "first")
+    first.run()
+    env.cfg.training_stage = "pretrain_s2"
+    env.cfg.variant = "truncated_window"
+    second = ZhangTrainer(env, ZhangTrainCfg(variant="truncated_window", timesteps=2, max_iterations=1),
+                          tmp_path / "second")
+    with pytest.raises(ValueError, match="variant"):
+        second.load_stage_checkpoint(tmp_path / "first" / "checkpoint_final.pt")
 
 
 def test_bptt_curriculum_resets_temporal_history_without_recreating_optimizer(tmp_path):

@@ -24,7 +24,7 @@
 cd /home/tong/tongworkspace/free/isaaclab-navrl
 .venv/bin/python scripts/run_acceptance.py \
   --method zhang --output logs/curriculum/sim2real_zhang_seed0 --train_seed 0 \
-  --train_args --timesteps 150 --velocity_window_s 6.0 --max_grad_norm 5
+  --train_args --variant step --timesteps 150 --max_grad_norm 5
 ```
 
 将 `--method` 设为 `navrl` 可运行 NavRL。Zhang 超参数只传给 Zhang 入口。有限步调试使用各训练脚本的 `--max_iterations`，不计入正式验收。
@@ -42,9 +42,9 @@ cd /home/tong/tongworkspace/free/isaaclab-navrl
 | 观测 | 8 维状态、1×36×4 静态 LiDAR、5×10 动态物体真值 | 深度图池化为 1×12×16，加 10 维状态 |
 | 动作 | 每轴 [-2,2] m/s 目标速度 | 六维网络输出解码为三维世界加速度，无每轴速度限制 |
 
-两任务保留 Hummingbird USD、Lee 控制律和 RotorGroup 电机响应。Zhang 相机默认采样 160×120 像素，内参随分辨率缩放以保留原视场，再完成逆深度变换、噪声和 12×16 池化。动态物体同时进入相机、碰撞和损失。
+两任务保留 Hummingbird USD、Lee 控制律和 RotorGroup 电机响应。两环境的深度相机默认采样 160×120 像素，内参随分辨率缩放以保留原视场，再完成逆深度变换、噪声和 12×16 池化。NavRL 策略仍使用原 LiDAR 特征。动态物体同时进入相机、碰撞检测和损失。
 
-Zhang 保留速度匹配、避障、碰撞、加速度、Jerk 和速度预测辅助损失。学习率预训练默认为 0.001，微调默认为 0.00005；余弦周期为 400 次更新。全局梯度范数裁剪为 5。网络使用激活检查点减少显存。
+Zhang 保留速度匹配、避障、碰撞、加速度、Jerk 和速度预测辅助损失，并增加仅在上下高度边界附近激活的平滑损失。默认 `step` 使用逐策略步速度项；`continuous`、`dcol`、`truncated_window` 为用户指定的对照，见 [四方案比较](docs/ZHANG_FOUR_VARIANTS.md)。学习率预训练默认为 0.001，微调默认为 0.00005；余弦周期为 400 次更新。全局梯度范数裁剪为 5。网络使用激活检查点减少显存。
 
 ## 扰动与日志
 

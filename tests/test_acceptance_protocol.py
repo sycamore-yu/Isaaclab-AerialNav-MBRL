@@ -25,6 +25,7 @@ def report_fixture(stage="pretrain_s1", parent=None):
     final = stage == "finetune_s2"
     return {
         "method": "zhang",
+        "variant": "step",
         "status": "completed",
         "stage": stage,
         "num_envs": 1024,
@@ -79,6 +80,16 @@ class AcceptanceProtocolTests(unittest.TestCase):
             {"timesteps": 150, "lr": 0.001, "coef_d_jerk": 0.0},
         )
 
+    def test_variant_and_boundary_arguments_remain_fixed_across_stages(self):
+        values = parse_train_args(["--variant", "truncated_window", "--coef_height_boundary", "1",
+                                   "--boundary_margin", "0.5", "--boundary_scale", "0.5"])
+        for stage in STAGES:
+            command = self.command(stage=stage, train_args=values)
+            self.assertEqual(command[command.index("--variant") + 1], "truncated_window")
+            self.assertEqual(command[command.index("--coef_height_boundary") + 1], "1.0")
+        with self.assertRaises(ValueError):
+            parse_train_args(["--variant", "unknown"])
+
     def test_reject_process_overrides_and_bad_values(self):
         cases = [
             ["--checkpoint", "/old/run.pt"], ["--max_updates", "2000"], ["--stage", "finetune_s2"],
@@ -122,6 +133,7 @@ class AcceptanceProtocolTests(unittest.TestCase):
         fixture = report_fixture()
         mutations = [
             (("stage",), "finetune_s2"), (("stage_passed",), False), (("status",), "running"),
+            (("variant",), "continuous"),
             (("num_envs",), 128), (("max_updates",), 2000), (("parent_checkpoint",), "/old/run.pt"),
             (("curriculum", "stage_config", "static_obstacles"), 350),
             (("curriculum", "active_dynamic_obstacles"), 100),

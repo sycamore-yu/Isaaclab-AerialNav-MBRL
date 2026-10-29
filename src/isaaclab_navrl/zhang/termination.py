@@ -8,6 +8,34 @@ boundaries; these intermediate checks need no feature encoding or reward logs.
 import torch
 
 
+def termination_mask(terms, *, collision_terminates=True):
+    """Keep bounds and invalid states terminal when collisions are continuous."""
+    terminated = terms["bounds"] | terms["invalid"]
+    if collision_terminates:
+        terminated = terminated | terms["collision"]
+    return terminated
+
+
+@torch.no_grad()
+def latch_first_event(event_code, event_time, terms, elapsed_s):
+    """Record the first episode event, with the original same-substep priority."""
+    code = torch.zeros_like(event_code)
+    code[terms["reached"]] = 1
+    code[terms["bounds"]] = 3
+    code[terms["collision"]] = 2
+    code[terms["invalid"]] = 4
+    first = (event_code == 0) & (code != 0)
+    event_code[first] = code[first]
+    event_time[first] = elapsed_s[first]
+
+
+@torch.no_grad()
+def reset_first_event(event_code, event_time, env_ids):
+    """Clear only the episodes being reset."""
+    event_code[env_ids] = 0
+    event_time[env_ids] = 0
+
+
 def first_events(root_state, target, lidar_distance, motion):
     position = root_state[:, :3]
     distance = (target - position).norm(dim=-1, keepdim=True)

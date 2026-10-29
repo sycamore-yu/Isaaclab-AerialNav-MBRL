@@ -8,6 +8,7 @@ from isaaclab.envs import DirectRLEnv
 from isaaclab.utils.math import quat_apply, quat_from_euler_xyz
 
 from isaaclab_navrl.control import LeeRotorController
+from isaaclab_navrl.zhang.termination import latch_first_event, reset_first_event, termination_mask
 
 from .curriculum import TrainingCurriculum, active_obstacle_indices
 from .randomization import PolicyPerturbation
@@ -204,9 +205,9 @@ class NavRLEnv(DirectRLEnv):
         self._update_dynamic_obstacles()
         terms = self._finish_policy_terms(self._compute_terms())
         self.nonfinite_events += terms["invalid"].sum()
-        terminated = terms["collision"] | terms["bounds"] | terms["invalid"]
+        terminated = self._termination_mask(terms)
         timed_out = self.episode_length_buf >= self.max_episode_length
-        first = terms["reached"] & ~terminated & (self.first_reach_step == 0)
+        first = self._first_arrival_mask(terms, terminated)
         self.first_reach_step[first] = self.episode_length_buf[first]
         state = self.root_state()
         # These values belong to the completed transition, before same-step autoreset.
@@ -223,6 +224,12 @@ class NavRLEnv(DirectRLEnv):
             "action_delay_steps": self.executed_action_lags.clone(),
         }
         return terminated, timed_out
+
+    def _termination_mask(self, terms):
+        return terms["collision"] | terms["bounds"] | terms["invalid"]
+
+    def _first_arrival_mask(self, terms, terminated):
+        return terms["reached"] & ~terminated & (self.first_reach_step == 0)
 
     def _finish_policy_terms(self, terms):
         return terms
@@ -291,6 +298,12 @@ class ZhangNavRLEnv(NavRLEnv):
         self._event_code = torch.zeros(self.num_envs, dtype=torch.int8, device=self.device)
         self._event_time = torch.zeros(self.num_envs, device=self.device)
         self._substep_collision = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+        self._collision_position = torch.zeros(self.num_envs, 3, device=self.device)
+        self._collision_substep = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
+        self._dynamic_positions_by_substep = (
+            self.motion.position.new_zeros((self.cfg.decimation, *self.motion.position.shape))
+            if self.cfg.variant == "dcol" else None
+        )
         self._substep_bounds = torch.zeros_like(self._substep_collision)
         self._substep_invalid = torch.zeros_like(self._substep_collision)
         self.filtered_command = torch.zeros(self.num_envs, 3, device=self.device)
@@ -298,6 +311,20 @@ class ZhangNavRLEnv(NavRLEnv):
     def _reset_idx(self, env_ids):
         super()._reset_idx(env_ids)
         self.filtered_command[env_ids] = 0
+        reset_first_event(self._event_code, self._event_time, env_ids)
+        self._substep_collision[env_ids] = False
+        self._collision_position[env_ids] = 0
+        self._collision_substep[env_ids] = 0
+        self._substep_bounds[env_ids] = False
+        self._substep_invalid[env_ids] = False
+
+    def _termination_mask(self, terms):
+        return termination_mask(terms, collision_terminates=self.cfg.variant != "continuous")
+
+    def _first_arrival_mask(self, terms, terminated):
+        # The latched physics-substep outcome also excludes later arrivals
+        # after a nonterminal collision in the continuous variant.
+        return (self._event_code == 1) & (self.first_reach_step == 0)
 
     def apply_zhang_camera_randomization(self, env_ids):
         camera = self.scene["depth_camera"]
@@ -330,10 +357,16 @@ class ZhangNavRLEnv(NavRLEnv):
         self.command = self.executed_actions
         self._physical_substep = 0
         self._policy_start_time = self.episode_length_buf.float() * self.step_dt
-        self._event_code.zero_()
         self._substep_collision.zero_()
+        self._collision_position.zero_()
+        self._collision_substep.zero_()
         self._substep_bounds.zero_()
         self._substep_invalid.zero_()
+        if self.cfg.variant == "dcol":
+            shape = (self.cfg.decimation, *self.motion.position.shape)
+            if self._dynamic_positions_by_substep.shape != shape:
+                # The legacy curriculum can change the shared obstacle count.
+                self._dynamic_positions_by_substep = self.motion.position.new_zeros(shape)
 
     def _compute_first_events(self):
         from isaaclab_navrl.zhang.termination import first_events
@@ -347,16 +380,19 @@ class ZhangNavRLEnv(NavRLEnv):
     def _record_substep(self, terms):
         # A 10 Hz policy can cross the collision band between observations.
         # Evaluate the unchanged NavRL rules at every completed PhysX step.
-        code = torch.zeros_like(self._event_code)
-        code[terms["reached"]] = 1
-        code[terms["bounds"]] = 3
-        code[terms["collision"]] = 2
-        code[terms["invalid"]] = 4
-        first = (self._event_code == 0) & (code != 0)
-        self._event_code[first] = code[first]
-        self._event_time[first] = self._policy_start_time[first] + self._physical_substep * self.physics_dt
-        arrival = first & (code == 1) & (self.first_reach_step == 0)
-        self.first_reach_step[arrival] = (self._policy_start_time[arrival] / self.step_dt).round().long() + 1
+        elapsed_s = self._policy_start_time + self._physical_substep * self.physics_dt
+        latch_first_event(self._event_code, self._event_time, terms, elapsed_s)
+        # Keep this policy step's first collision even if the episode's first
+        # outcome was already a success. Capture before the aggregate is set.
+        first_collision = terms["collision"] & ~self._substep_collision
+        self._collision_position.copy_(torch.where(
+            first_collision[:, None], self.root_state()[:, :3], self._collision_position
+        ))
+        self._collision_substep.copy_(torch.where(
+            first_collision, self._physical_substep, self._collision_substep
+        ))
+        if self.cfg.variant == "dcol":
+            self._dynamic_positions_by_substep[self._physical_substep - 1].copy_(self.motion.position)
         self._substep_collision |= terms["collision"]
         self._substep_bounds |= terms["bounds"]
         self._substep_invalid |= terms["invalid"]
@@ -375,6 +411,10 @@ class ZhangNavRLEnv(NavRLEnv):
         self._event_time[timed_out_first] = self.episode_length_buf[timed_out_first].float() * self.step_dt
         self.extras["transition"]["first_event_code"] = self._event_code.clone()
         self.extras["transition"]["first_event_time_s"] = self._event_time.clone()
+        self.extras["transition"]["collision_position"] = self._collision_position.clone()
+        self.extras["transition"]["collision_substep"] = self._collision_substep.clone()
+        if self.cfg.variant == "dcol":
+            self.extras["transition"]["dynamic_positions_by_substep"] = self._dynamic_positions_by_substep.clone()
         self.extras["transition"]["actuator"] = self.filtered_command.clone()
         return terminated, timeout
 

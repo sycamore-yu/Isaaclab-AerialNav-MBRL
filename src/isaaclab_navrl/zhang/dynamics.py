@@ -73,9 +73,14 @@ def point_mass_step(state, command, rotation, parameters, dt, grad_decay):
     return PointMassState(position, velocity, acceleration, actuator)
 
 
-def policy_transition(state, command, rotation, parameters, cfg):
+def policy_transition(state, command, rotation, parameters, cfg, *, record_positions=False):
+    positions = []
     for _ in range(round(cfg.policy_dt / cfg.physics_dt)):
         state = point_mass_step(state, command, rotation, parameters, cfg.physics_dt, cfg.grad_decay)
+        if record_positions:
+            positions.append(state.position)
+    if record_positions:
+        return state, torch.stack(positions, dim=1)
     return state
 
 

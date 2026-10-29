@@ -18,8 +18,9 @@ def main():
     parser.add_argument("--checkpoint", type=Path, help="Previous stage checkpoint from this experiment")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--terrain_seed", type=int, default=0)
+    parser.add_argument("--variant", choices=("step", "continuous", "dcol", "truncated_window"), default="step")
     parser.add_argument("--timesteps", type=int, default=150)
-    parser.add_argument("--velocity_window_s", type=float, default=6.0)
+    parser.add_argument("--velocity_window_s", type=float, default=2.0)
     parser.add_argument("--lr", type=float, default=None, help="Default: 0.001 pretraining, 0.00005 fine-tuning")
     parser.add_argument("--cosine_period_updates", type=int, default=400)
     parser.add_argument("--max_grad_norm", type=float, default=5.0)
@@ -28,6 +29,9 @@ def main():
     parser.add_argument("--coef_collide", type=float, default=7.5)
     parser.add_argument("--coef_d_acc", type=float, default=0.01)
     parser.add_argument("--coef_d_jerk", type=float, default=0.001)
+    parser.add_argument("--coef_height_boundary", type=float, default=1.0)
+    parser.add_argument("--boundary_margin", type=float, default=0.5)
+    parser.add_argument("--boundary_scale", type=float, default=0.5)
     add_launcher_args(parser)
     parser.set_defaults(visualizer=["none"])
     args = parser.parse_args()
@@ -53,6 +57,7 @@ def main():
 
     stage = STAGE_CONFIGS[args.stage]
     cfg = ZhangNavRLEnvCfg()
+    cfg.variant = args.variant
     cfg.scene.num_envs = args.num_envs
     cfg.seed, cfg.terrain_seed = args.seed, args.terrain_seed
     cfg.num_static_obstacles = stage["static_obstacles"]
@@ -62,17 +67,20 @@ def main():
     cfg.sim_to_real.enabled = stage["randomization"]
     cfg.sim.device = args.device
     cfg.configure_scene()
-    fields = ("timesteps", "max_iterations", "stop_after_acceptance", "velocity_window_s", "lr", "max_grad_norm",
+    fields = ("variant", "timesteps", "max_iterations", "stop_after_acceptance", "velocity_window_s", "lr", "max_grad_norm",
               "grad_decay", "coef_obj_avoidance", "coef_collide", "coef_d_acc", "coef_d_jerk",
-              "cosine_period_updates", "seed")
+              "coef_height_boundary", "boundary_margin", "boundary_scale", "cosine_period_updates", "seed")
     train_cfg = ZhangTrainCfg(**{name: getattr(args, name) for name in fields})
     train_cfg.validate()
     torch.manual_seed(args.seed)
     args.log_dir.mkdir(parents=True, exist_ok=True)
     write_json(args.log_dir / "config.json", {
-        "method": "zhang", "train": asdict(train_cfg),
+        "method": "zhang", "variant": args.variant, "train": asdict(train_cfg),
         "environment": {"num_envs": args.num_envs, "seed": args.seed, "terrain_seed": args.terrain_seed,
                         "stage": args.stage, **stage, "curriculum": STAGE_CONFIGS,
+                        "variant": args.variant, "drone_collision_response": args.variant != "continuous",
+                        "dynamic_obstacle_collision_response": False,
+                        "collision_terminates": args.variant != "continuous",
                         "physics_dt": cfg.sim.dt, "policy_dt": cfg.sim.dt * cfg.decimation,
                         "depth_camera": {"width": cfg.scene.depth_camera.pattern_cfg.width,
                                          "height": cfg.scene.depth_camera.pattern_cfg.height,

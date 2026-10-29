@@ -159,38 +159,6 @@ class NavRLEnvCfg(DirectRLEnvCfg):
             # adapter must not clip a +10% coefficient back to the nominal limit.
             actuator.thrust_range = (0.0, ROTOR_CONFIG["force_constants"][0] * 838**2 * thrust_scale_max)
 
-    def dynamic_capacity(self) -> int:
-        return 120 if self.training_curriculum and self.training_stage is None else self.num_dynamic_obstacles
-
-
-@configclass
-class ZhangEventsCfg(NavigationEventsCfg):
-    parameters = EventTermCfg(
-        func="isaaclab_navrl.zhang.events:randomize_zhang_parameters", mode="reset",
-    )
-    disturbance = EventTermCfg(
-        func="isaaclab_navrl.zhang.events:update_zhang_disturbance", mode="interval",
-        interval_range_s=(0.1, 0.1), is_global_time=True, params={"interval_s": 0.1},
-    )
-
-
-@configclass
-class ZhangNavRLEnvCfg(NavRLEnvCfg):
-    method = "zhang"
-    decimation = 10
-    events = ZhangEventsCfg()
-
-    def __post_init__(self):
-        self.sim.dt = 0.01
-        self.sim.render_interval = 10
-        super().__post_init__()
-
-    def configure_scene(self):
-        super().configure_scene()
-        self.scene.lidar.update_period = self.sim.dt
-        self.scene.drone.class_type = ResolvableString(
-            "isaaclab_navrl.tasks.navigation.disturbed_multirotor:DisturbedMultirotor"
-        )
         # NavRL ros1/map_manager/cfg/dynamic_map_param.yaml and quadcopter.urdf.
         target = MultiMeshRayCasterCfg.RaycastTargetCfg
         meshes = [
@@ -204,7 +172,7 @@ class ZhangNavRLEnvCfg(NavRLEnvCfg):
         self.scene.depth_camera = BatchedDepthCameraCfg(
             prim_path="{ENV_REGEX_NS}/Hummingbird/base_link",
             spawn=None,
-            update_period=0.1,
+            update_period=self.sim.dt * self.decimation,
             seed=self.seed + 101,
             pixel_noise_std=(
                 0.0 if self.evaluation else
@@ -224,4 +192,45 @@ class ZhangNavRLEnvCfg(NavRLEnvCfg):
             max_distance=24.0,
             depth_clipping_behavior="max",
             data_types=["distance_to_image_plane"],
+        )
+
+    def dynamic_capacity(self) -> int:
+        return 120 if self.training_curriculum and self.training_stage is None else self.num_dynamic_obstacles
+
+
+@configclass
+class ZhangEventsCfg(NavigationEventsCfg):
+    parameters = EventTermCfg(
+        func="isaaclab_navrl.zhang.events:randomize_zhang_parameters", mode="reset",
+    )
+    disturbance = EventTermCfg(
+        func="isaaclab_navrl.zhang.events:update_zhang_disturbance", mode="interval",
+        interval_range_s=(0.1, 0.1), is_global_time=True, params={"interval_s": 0.1},
+    )
+
+
+@configclass
+class ZhangNavRLEnvCfg(NavRLEnvCfg):
+    method = "zhang"
+    variant: str = "step"
+    decimation = 10
+    events = ZhangEventsCfg()
+
+    def __post_init__(self):
+        self.sim.dt = 0.01
+        self.sim.render_interval = 10
+        super().__post_init__()
+
+    def configure_scene(self):
+        if self.variant not in ("step", "continuous", "dcol", "truncated_window"):
+            raise ValueError(f"Unknown Zhang variant: {self.variant}")
+        super().configure_scene()
+        # UsdFileCfg's original None preserves the asset's collision attributes.
+        # Reassign on every configuration pass so a previous variant cannot leak.
+        self.scene.drone.spawn.collision_props = (
+            UsdPhysicsCollisionCfg(collision_enabled=False) if self.variant == "continuous" else None
+        )
+        self.scene.lidar.update_period = self.sim.dt
+        self.scene.drone.class_type = ResolvableString(
+            "isaaclab_navrl.tasks.navigation.disturbed_multirotor:DisturbedMultirotor"
         )

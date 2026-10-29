@@ -20,6 +20,7 @@ STAGE_CONFIG = {
     "finetune_s2": {"static_obstacles": 400, "dynamic_obstacles": 100, "randomization": True},
 }
 TRAIN_ARG_TYPES = {
+    "variant": str,
     "timesteps": int,
     "velocity_window_s": float,
     "lr": float,
@@ -29,11 +30,14 @@ TRAIN_ARG_TYPES = {
     "coef_collide": float,
     "coef_d_acc": float,
     "coef_d_jerk": float,
+    "coef_height_boundary": float,
+    "boundary_margin": float,
+    "boundary_scale": float,
     "cosine_period_updates": int,
 }
 
 
-def parse_train_args(tokens: list[str]) -> dict[str, int | float]:
+def parse_train_args(tokens: list[str]) -> dict[str, str | int | float]:
     """Accept only Zhang hyperparameters; process and curriculum flags stay fixed."""
     values = {}
     index = 1 if tokens and tokens[0] == "--" else 0
@@ -53,9 +57,12 @@ def parse_train_args(tokens: list[str]) -> dict[str, int | float]:
             value = TRAIN_ARG_TYPES[key](raw_value)
         except ValueError as exc:
             raise ValueError(f"Invalid value for {option}: {raw_value}") from exc
-        if not math.isfinite(value):
+        if key == "variant":
+            if value not in ("step", "continuous", "dcol", "truncated_window"):
+                raise ValueError(f"Unknown Zhang variant: {value}")
+        elif not math.isfinite(value):
             raise ValueError(f"{option} must be finite")
-        if key.startswith("coef_") or key == "grad_decay":
+        elif key.startswith("coef_") or key in ("grad_decay", "boundary_margin"):
             if value < 0:
                 raise ValueError(f"{option} must be nonnegative")
         elif value <= 0:
@@ -75,7 +82,7 @@ def build_command(
     seed: int,
     device: str,
     finetune_lr: float,
-    train_args: dict[str, int | float],
+    train_args: dict[str, str | int | float],
     parent_checkpoint: Path | None,
     executable: str = sys.executable,
 ) -> list[str]:
@@ -108,6 +115,7 @@ def validate_stage_result(
     stage: str,
     num_envs: int,
     parent_checkpoint: Path | None,
+    variant: str = "step",
 ) -> list[str]:
     """Validate one real training report against the fixed acceptance protocol."""
     errors = []
@@ -118,6 +126,8 @@ def validate_stage_result(
 
     expected = STAGE_CONFIG[stage]
     expect(result.get("method") == method, "method does not match the launched trainer")
+    if method == "zhang":
+        expect(result.get("variant") == variant, "Zhang variant does not match the launched experiment")
     expect(result.get("status") == "completed", "training status is not completed")
     expect(result.get("stage") == stage, "training stage does not match")
     expect(result.get("num_envs") == num_envs and num_envs >= 1024, "num_envs must match and be at least 1024")
@@ -162,7 +172,7 @@ def write_json(path: Path, value: dict[str, Any]) -> None:
     temporary.replace(path)
 
 
-def run_pipeline(args: argparse.Namespace, train_args: dict[str, int | float]) -> int:
+def run_pipeline(args: argparse.Namespace, train_args: dict[str, str | int | float]) -> int:
     output = Path(args.output).expanduser().resolve()
     output.mkdir(parents=True, exist_ok=False)
     methods = ("zhang", "navrl") if args.method == "both" else (args.method,)
@@ -182,7 +192,8 @@ def run_pipeline(args: argparse.Namespace, train_args: dict[str, int | float]) -
     summary_path = output / "training_result.json"
     write_json(summary_path, summary)
     environment = os.environ.copy()
-    environment.update(OPENBLAS_NUM_THREADS="1", OMNI_KIT_ACCEPT_EULA="YES", PYTHONUNBUFFERED="1")
+    environment.update(OPENBLAS_NUM_THREADS="1", OMP_NUM_THREADS="1", MKL_NUM_THREADS="1",
+                       OMNI_KIT_ACCEPT_EULA="YES", PYTHONUNBUFFERED="1")
     scripts_dir = Path(__file__).resolve().parent
     current_method: dict[str, Any] | None = None
     current_stage: dict[str, Any] | None = None
@@ -237,6 +248,7 @@ def run_pipeline(args: argparse.Namespace, train_args: dict[str, int | float]) -
                     errors += validate_stage_result(
                         current_stage["result"], method=method, stage=stage,
                         num_envs=args.num_envs, parent_checkpoint=parent_checkpoint,
+                        variant=train_args.get("variant", "step"),
                     )
                 checkpoint = log_dir / "checkpoint_stage.pt"
                 if not checkpoint.is_file():
