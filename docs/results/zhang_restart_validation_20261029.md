@@ -66,4 +66,6 @@
 
 ## 待完成证据
 
+wave2首批六组均已在实际完整update后通过核对，详细[启动回执与固定快照](zhang_restart_wave2_launch_20261029.md)记录五组Zhang和一个PPO；另外六个候选仍排队。核对包括新源hash、配置、执行动作和非有限计数，PPO不提供Zhang专用梯度计数。共同38,400转移预算处尚无自然报告可用于成功率排名。
+
 实际启动回执为主目录`logs/curriculum/zhang_restart_controls_wave2_20261029.launch.json`，运行状态以该目录的`queue.json`和各阶段原始JSON为准。首轮完整update检查仅证明配置、执行动作和数值链可运行。N256属于screening；正式验收仍需至少N1024、随机初始化、完整五阶段，最终400静态/100动态/扰动开启环境达到80%自然首次到达率。见[实验矩阵](zhang_restart_experiment_matrix_20261029.md)、[课程](../TRAINING_CURRICULUM.md)和[Recovery协议](../migration/RECOVERY_LADDER_20261029.md)。

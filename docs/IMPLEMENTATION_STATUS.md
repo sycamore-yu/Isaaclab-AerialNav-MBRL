@@ -4,6 +4,8 @@
 
 最新fresh筛选队列于2026-10-29 13:57:52 UTC启动：主目录`logs/curriculum/zhang_restart_controls_wave2_20261029/`，N256、seed0、12组计划、最多6组并发，训练源码固定`6a5eb1d`，dispatcher固定`42e47bc`。逐组初始化，当前阶段首个完整update和实时显存通过后才派发下一组；未启动者保持queued。前一个两组队列因停止信号结束，检查点和统计保留，见[中断记录](results/zhang_restart_interrupted_run_20261029.md)；wave2没有加载它们的权重。实际启动及验收状态只以新队列回执和原始训练报告为准。
 
+本轮首批六组完整更新验证、早期统计、参数变化与投影诊断见[wave2实际启动记录](results/zhang_restart_wave2_launch_20261029.md)及同名JSON。14:05:58 UTC快照为六组running、六组queued，均未通过S0；后续查看实时日志。
+
 ## 首轮新机制验证（历史证据）
 
 新机制前基线 f6d5fd4 已冻结；七组旧实验已停止并归档，见 [归档记录](results/zhang_pre_new_mechanisms_archive_20261029.md)。该历史轮次增加 S0、连续越界不重置、非饱和边界高度损失、可选运行统计归一化、Plateau、参数监控、稳定模型恢复，以及 SHAC / AHAC-derived DCOL 适配。旧 `variant=truncated_window` 仍被移除；最新恢复的对照使用 `variant=dcol` 加独立的 `velocity_loss_mode=truncated_window`，约束见 [truncated/PPO 对照](ZHANG_TRUNCATED_PPO_CONTROLS_20261029.md)。
