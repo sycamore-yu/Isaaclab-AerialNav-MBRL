@@ -46,3 +46,16 @@
 - `logs/benchmark/camera_d160_b64_fourtrain_1024.json`
 
 三份修改文件的 Ruff 与 `git diff --check` 通过。
+
+## 后续：合并未命中初始化
+
+相机射线 kernel 现在直接为未命中像素写入与官方填充 kernel 相同的 `inf`，
+删除每批独立的填充调用。命中分支、射线坐标变换、几何查询与池化不变；
+未激活环境仍直接返回。每批 Warp kernel 调用数从 4 减到 3。
+
+该改动另行完成 65 环境、批次 64+1 的同一七场景真实 parity 检查，全部原始
+深度与池化输出误差仍为 0，局部重置保持其他环境结果。
+证据：`logs/sim_to_real_checks/camera_160x120_batch64_miss_fusion_parity.json`。
+
+这个合并尚未测出独立性能增益，不能将前述 16→64 的测量归因于它。
+原四组正式运行与后续 h5 运行均在改动前已载入相机代码。

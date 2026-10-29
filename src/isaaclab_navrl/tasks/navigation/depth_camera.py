@@ -93,6 +93,11 @@ def _raycast_shared_meshes(
     if found:
         ray_hits[env, ray] = closest_point
         ray_distance[env, ray] = closest
+    else:
+        # Match the native fill kernel without a separate launch or an
+        # initial write for hits. Inactive environments returned above.
+        ray_hits[env, ray] = wp.vec3f(wp.inf, wp.inf, wp.inf)
+        ray_distance[env, ray] = wp.inf
 
 
 class BatchedDepthCamera(MultiMeshRayCasterCamera):
@@ -195,7 +200,6 @@ class BatchedDepthCamera(MultiMeshRayCasterCamera):
         self.ray_hits_w = ProxyArray(wp.empty(shape, dtype=wp.vec3f, device=self._device))
         self._batch_distance = wp.empty(shape, dtype=wp.float32, device=self._device)
         self._batch_depth = wp.empty((self._batch_size, *self.image_shape, 1), dtype=wp.float32, device=self._device)
-        self._dummy_normal = wp.empty((1, 1), dtype=wp.vec3f, device=self._device)
         self._pose_ray = wp.zeros((self._num_envs, 1), dtype=wp.vec3f, device=self._device)
         self._pose_start = wp.empty_like(self._pose_ray)
         self._pose_direction = wp.empty_like(self._pose_ray)
@@ -295,11 +299,6 @@ class BatchedDepthCamera(MultiMeshRayCasterCamera):
                              _slice(self._data.quat_w_world.warp, begin, end),
                              self._batch_starts_w, self._batch_directions_w],
                     device=self._device,
-                )
-                wp.launch(
-                    camera_kernels.fill_ray_hits_distance_inf_kernel,
-                    dim=(count, self.num_rays), inputs=[mask, False],
-                    outputs=[self.ray_hits_w.warp, self._batch_distance, self._dummy_normal], device=self._device,
                 )
                 wp.launch(
                     _raycast_shared_meshes,
