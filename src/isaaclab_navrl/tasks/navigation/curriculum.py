@@ -7,6 +7,7 @@ import torch
 from .task_logic import obstacle_categories
 
 STAGE_CONFIGS = {
+    "pretrain_s0": {"static_obstacles": 300, "dynamic_obstacles": 0, "randomization": False},
     "pretrain_s1": {"static_obstacles": 300, "dynamic_obstacles": 60, "randomization": False},
     "pretrain_s2": {"static_obstacles": 400, "dynamic_obstacles": 120, "randomization": False},
     "finetune_s1": {"static_obstacles": 300, "dynamic_obstacles": 60, "randomization": True},

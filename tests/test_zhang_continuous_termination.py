@@ -1,5 +1,6 @@
-"""Collision continuation preserves the first episode outcome and reset scope."""
+"""Collision/bounds continuation preserves the first outcome and reset scope."""
 
+import pytest
 import torch
 
 from isaaclab_navrl.tasks.navigation.curriculum import TrainingCurriculum
@@ -13,26 +14,39 @@ def event_terms(count, **events):
     return terms
 
 
-def test_only_collision_becomes_nonterminal():
+def test_collision_and_bounds_can_continue_but_invalid_always_terminates():
     terms = event_terms(5, collision=[0, 3], bounds=[1, 3], invalid=[2], reached=[4])
+    original = {name: value.clone() for name, value in terms.items()}
     torch.testing.assert_close(termination_mask(terms), torch.tensor([True, True, True, True, False]))
     torch.testing.assert_close(
         termination_mask(terms, collision_terminates=False), torch.tensor([False, True, True, True, False])
     )
+    torch.testing.assert_close(
+        termination_mask(terms, bounds_terminates=False), torch.tensor([True, False, True, True, False])
+    )
+    torch.testing.assert_close(
+        termination_mask(terms, collision_terminates=False, bounds_terminates=False),
+        torch.tensor([False, False, True, False, False]),
+    )
+    for name, value in terms.items():
+        torch.testing.assert_close(value, original[name])
 
 
-def test_collision_then_arrival_remains_first_collision():
+@pytest.mark.parametrize(("event", "expected"), [("collision", 2), ("bounds", 3)])
+def test_failure_then_recovery_and_arrival_remains_first_failure(event, expected):
     code, elapsed = torch.zeros(1, dtype=torch.int8), torch.zeros(1)
-    latch_first_event(code, elapsed, event_terms(1, collision=[0]), torch.tensor([1.25]))
+    latch_first_event(code, elapsed, event_terms(1, **{event: [0]}), torch.tensor([1.25]))
+    latch_first_event(code, elapsed, event_terms(1), torch.tensor([1.5]))
     latch_first_event(code, elapsed, event_terms(1, reached=[0]), torch.tensor([2.5]))
-    torch.testing.assert_close(code, torch.tensor([2], dtype=torch.int8))
+    torch.testing.assert_close(code, torch.tensor([expected], dtype=torch.int8))
     torch.testing.assert_close(elapsed, torch.tensor([1.25]), rtol=0, atol=0)
 
 
-def test_arrival_then_collision_remains_first_arrival():
+@pytest.mark.parametrize("event", ["collision", "bounds"])
+def test_arrival_then_failure_remains_first_arrival(event):
     code, elapsed = torch.zeros(1, dtype=torch.int8), torch.zeros(1)
     latch_first_event(code, elapsed, event_terms(1, reached=[0]), torch.tensor([1.25]))
-    latch_first_event(code, elapsed, event_terms(1, collision=[0]), torch.tensor([2.5]))
+    latch_first_event(code, elapsed, event_terms(1, **{event: [0]}), torch.tensor([2.5]))
     torch.testing.assert_close(code, torch.tensor([1], dtype=torch.int8))
     torch.testing.assert_close(elapsed, torch.tensor([1.25]), rtol=0, atol=0)
 
@@ -55,18 +69,23 @@ def test_partial_reset_clears_only_selected_episode_outcomes():
     torch.testing.assert_close(elapsed, torch.tensor([4.0, 2.0, 4.0]), rtol=0, atol=0)
 
 
-def test_continuous_collision_counts_as_failure_at_natural_timeout():
-    curriculum = TrainingCurriculum(1, "cpu", stage="pretrain_s1")
+@pytest.mark.parametrize("event", ["collision", "bounds"])
+def test_continuous_failure_is_counted_only_at_natural_timeout(event):
+    curriculum = TrainingCurriculum(1, "cpu", stage="pretrain_s0")
     code, elapsed = torch.zeros(1, dtype=torch.int8), torch.zeros(1)
-    for step, terms in enumerate((event_terms(1, collision=[0]), event_terms(1, reached=[0]), event_terms(1)), 1):
+    terms_sequence = (event_terms(1, **{event: [0]}), event_terms(1), event_terms(1, reached=[0]), event_terms(1))
+    for step, terms in enumerate(terms_sequence, 1):
         latch_first_event(code, elapsed, terms, torch.tensor([step * 0.1]))
         curriculum.observe({
             "first_event_code": code.clone(), "first_event_time_s": elapsed.clone(),
-            "terminated": termination_mask(terms, collision_terminates=False),
-            "timeout": torch.tensor([step == 3]), "episode_return": torch.zeros(1), "step": torch.tensor([step]),
+            "terminated": termination_mask(terms, collision_terminates=False, bounds_terminates=False),
+            "timeout": torch.tensor([step == 4]), "episode_return": torch.zeros(1), "step": torch.tensor([step]),
         })
+        if step < 4:
+            assert curriculum.pop_report(update=1) is None
     report = curriculum.pop_report(update=1)
-    assert report["counts"]["collision"] == 1
+    assert report["episodes"] == 1 and report["counts"][event] == 1
     assert report["success_rate"] == 0.0
-    assert report["collision_rate"] == 1.0
+    assert report[f"{event}_rate"] == 1.0
     assert report["timeout_rate"] == 0.0
+    assert curriculum.pop_report(update=1) is None

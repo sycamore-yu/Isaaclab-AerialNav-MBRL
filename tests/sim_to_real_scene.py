@@ -141,8 +141,15 @@ def check_zhang_collision_mode(env):
             assert int(info["transition"]["first_event_code"][0]) == 1
             assert int(env.first_reach_step[0]) > 0
             injected[0] = "bounds"
+            before_bounds = env.episode_id[0].clone()
+            _, _, terminated, timeout, info = step()
+            assert not bool(terminated[0] | timeout[0])
+            torch.testing.assert_close(env.episode_id[0], before_bounds, rtol=0, atol=0)
+            assert int(info["transition"]["first_event_code"][0]) == 1
+            injected[0] = "invalid"
             _, _, terminated, _, _ = step()
             assert bool(terminated[0])
+            assert int(env.episode_id[0]) == int(before_bounds) + 1
             injected[0] = None
             env.episode_length_buf[0] = env.max_episode_length - 1
             _, _, terminated, timeout, info = step()
@@ -167,7 +174,7 @@ def check_zhang_collision_mode(env):
             torch.testing.assert_close(first_transition["dynamic_positions_by_substep"], first_dynamic, rtol=0, atol=0)
         return {"variant": env.cfg.variant, "collision_terminates": not continuous,
                 "first_outcome_preserved": True, "reset_clears_outcome": True,
-                "synthetic_detector_events": True, "policy_steps": 5 if continuous else 2,
+                "synthetic_detector_events": True, "policy_steps": 6 if continuous else 2,
                 "collision_capture": {
                     "first_substep": 1, "first_time_s": env.physics_dt,
                     "first_position_m": first_position.tolist(),
@@ -187,7 +194,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--method", choices=("navrl", "zhang"), required=True)
     parser.add_argument("--enabled", action="store_true")
-    parser.add_argument("--variant", choices=("step", "continuous", "dcol", "truncated_window"), default="step")
+    parser.add_argument("--variant", choices=("step", "continuous", "dcol"), default="step")
     parser.add_argument("--output", type=Path, required=True)
     add_launcher_args(parser)
     parser.set_defaults(visualizer=["none"])

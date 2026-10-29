@@ -224,7 +224,7 @@ class ZhangNavRLEnvCfg(NavRLEnvCfg):
         super().__post_init__()
 
     def configure_scene(self):
-        if self.variant not in ("step", "continuous", "dcol", "truncated_window"):
+        if self.variant not in ("step", "continuous", "dcol"):
             raise ValueError(f"Unknown Zhang variant: {self.variant}")
         super().configure_scene()
         # UsdFileCfg's original None preserves the asset's collision attributes.

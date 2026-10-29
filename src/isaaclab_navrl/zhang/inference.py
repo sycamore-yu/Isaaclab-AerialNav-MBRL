@@ -4,18 +4,25 @@ import torch
 
 from .config import ZhangTrainCfg
 from .model import ZhangPolicy, decode_action, policy_state
+from .normalization import PolicyObservationNormalizer
 
 
 class ZhangInference:
     def __init__(self, env, checkpoint):
         payload = torch.load(checkpoint, map_location=env.device, weights_only=True)
-        if payload["method"] != "zhang" or payload["format_version"] != 2:
+        if payload["method"] != "zhang" or payload["format_version"] not in (2, 3):
             raise ValueError("Not a supported Zhang checkpoint")
         self.cfg = ZhangTrainCfg(**payload["train_cfg"])
         self.cfg.validate()
         self.env = env
         self.model = ZhangPolicy().to(env.device).eval()
         self.model.load_state_dict(payload["model_state_dict"], strict=True)
+        self.normalizer = PolicyObservationNormalizer(
+            self.cfg.observation_normalization, self.cfg.normalization_variance_floor, device=env.device
+        ).eval()
+        if payload["format_version"] == 3:
+            self.normalizer.load_state_dict(payload["normalizer_state_dict"], strict=True)
+        self.normalization_snapshot = self.normalizer.begin_rollout()
         self.hidden = torch.zeros(env.num_envs, 192, device=env.device)
         self.episode_id = torch.full((env.num_envs,), -1, device=env.device, dtype=torch.long)
 
@@ -34,7 +41,10 @@ class ZhangInference:
             observation["position"], observation["velocity"], observation["quaternion"],
             observation["target"], parameters["max_speed"], parameters["margin"],
         )
-        output, self.hidden = self.model(observation["policy_depth_features"], state, self.hidden)
+        depth, state = self.normalizer.normalize(
+            observation["policy_depth_features"], state, self.normalization_snapshot
+        )
+        output, self.hidden = self.model(depth, state, self.hidden)
         command, _ = decode_action(output, heading, parameters["thr_est_error"])
         return command
 

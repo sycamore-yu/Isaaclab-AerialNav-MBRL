@@ -1,0 +1,391 @@
+{
+  "created_at": "2026-10-29T09:53:25.759630+00:00",
+  "formal_acceptance": false,
+  "previous_baseline": "f6d5fd4",
+  "unit_suites": {
+    "unit": {
+      "junit": "logs/new_mechanisms_checks/unit.xml",
+      "sha256": "0e9159b07a25fdf509379aee016809832b628dea1ec45df2314b4aeef5f82ecb",
+      "tests": "233",
+      "errors": "0",
+      "failures": "0",
+      "skipped": "0"
+    },
+    "restore": {
+      "junit": "logs/new_mechanisms_checks/restore.xml",
+      "sha256": "0bfb1f4f51a5a6bed30b4a6a7d2b2c9b691579455f2b4c70c7a0c63c06f745cb",
+      "tests": "16",
+      "errors": "0",
+      "failures": "0",
+      "skipped": "0"
+    },
+    "summary": {
+      "junit": "logs/new_mechanisms_checks/summary.xml",
+      "sha256": "fcd1304742dc29353d5ea5169f3a0eb84857a4dad914549856c2f2901f828354",
+      "tests": "10",
+      "errors": "0",
+      "failures": "0",
+      "skipped": "0"
+    },
+    "stage_lr": {
+      "junit": "logs/new_mechanisms_checks/stage_lr.xml",
+      "sha256": "a3202082e6f6c4489d27c9b0db91c8f192c58e8e9bcce52bc08ae19dc45017df",
+      "tests": "3",
+      "errors": "0",
+      "failures": "0",
+      "skipped": "0"
+    }
+  },
+  "physx_training_checks": {
+    "smokes_v1/dcol_rms_plateau": {
+      "directory": "logs/new_mechanisms_checks/smokes_v1/dcol_rms_plateau",
+      "status": "completed",
+      "num_envs": 64,
+      "stage": "pretrain_s0",
+      "horizons": [
+        150,
+        150
+      ],
+      "completed_updates": 2,
+      "environment_steps": 19200,
+      "max_executed_action_error": 0.0,
+      "nonfinite_grad_events": 0,
+      "nonfinite_state_events": 0,
+      "parent_checkpoint": null,
+      "checkpoint_sha256": "e9f8c47eb8e788dc8207ad04f00fef0264c533b10fcc9a3301332d72bc840e27",
+      "normalizer_count": 19200.0,
+      "critic_fits": null,
+      "randomization": false
+    },
+    "smokes_v1/continuous": {
+      "directory": "logs/new_mechanisms_checks/smokes_v1/continuous",
+      "status": "completed",
+      "num_envs": 64,
+      "stage": "pretrain_s0",
+      "horizons": [
+        150,
+        150
+      ],
+      "completed_updates": 2,
+      "environment_steps": 19200,
+      "max_executed_action_error": 0.0,
+      "nonfinite_grad_events": 0,
+      "nonfinite_state_events": 0,
+      "parent_checkpoint": null,
+      "checkpoint_sha256": "f216e92f5ad9e3805245aa679a68b38956f7b4e5e5b98839b3a1ef71a82292fd",
+      "normalizer_count": 0.0,
+      "critic_fits": null,
+      "randomization": false
+    },
+    "smokes_v1/shac": {
+      "directory": "logs/new_mechanisms_checks/smokes_v1/shac",
+      "status": "completed",
+      "num_envs": 64,
+      "stage": "pretrain_s0",
+      "horizons": [
+        32,
+        32
+      ],
+      "completed_updates": 2,
+      "environment_steps": 4096,
+      "max_executed_action_error": 0.0,
+      "nonfinite_grad_events": 0,
+      "nonfinite_state_events": 0,
+      "parent_checkpoint": null,
+      "checkpoint_sha256": "3dde8f8b5e0e83e5b153facf57b1d699285329ea38bc178dcb2086e0bb54bee5",
+      "normalizer_count": 0.0,
+      "critic_fits": 2,
+      "randomization": false
+    },
+    "smokes_v1/ahac": {
+      "directory": "logs/new_mechanisms_checks/smokes_v1/ahac",
+      "status": "completed",
+      "num_envs": 64,
+      "stage": "pretrain_s0",
+      "horizons": [
+        32,
+        36
+      ],
+      "completed_updates": 2,
+      "environment_steps": 4352,
+      "max_executed_action_error": 0.0,
+      "nonfinite_grad_events": 0,
+      "nonfinite_state_events": 0,
+      "parent_checkpoint": null,
+      "checkpoint_sha256": "fd66591cdbfb3323ee8eef3cbc16a1aa048f95729c2b10455005e6f616601043",
+      "normalizer_count": 0.0,
+      "critic_fits": 2,
+      "randomization": false
+    },
+    "shac_stage_transition": {
+      "directory": "logs/new_mechanisms_checks/shac_stage_transition",
+      "status": "completed",
+      "num_envs": 64,
+      "stage": "pretrain_s1",
+      "horizons": [
+        32
+      ],
+      "completed_updates": 3,
+      "environment_steps": 6144,
+      "max_executed_action_error": 0.0,
+      "nonfinite_grad_events": 0,
+      "nonfinite_state_events": 0,
+      "parent_checkpoint": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/new_mechanisms_checks/smokes_v1/shac/checkpoint_final.pt",
+      "checkpoint_sha256": "18c76f3505780ecffb236a775b875aaa12f7e5fc643b1dffb6fba14c65d2875b",
+      "normalizer_count": 0.0,
+      "critic_fits": 3,
+      "randomization": false
+    },
+    "ahac_randomized": {
+      "directory": "logs/new_mechanisms_checks/ahac_randomized",
+      "status": "completed",
+      "num_envs": 64,
+      "stage": "finetune_s1",
+      "horizons": [
+        32,
+        25
+      ],
+      "completed_updates": 2,
+      "environment_steps": 3648,
+      "max_executed_action_error": 0.0,
+      "nonfinite_grad_events": 0,
+      "nonfinite_state_events": 0,
+      "parent_checkpoint": null,
+      "checkpoint_sha256": "f2eabfa70f01fb3afcabfef03f5cd1a944022b75f0fba3e9bc86ff01bb1ea6f6",
+      "normalizer_count": 3648.0,
+      "critic_fits": 2,
+      "randomization": true
+    }
+  },
+  "scene_checks": {
+    "continuous": {
+      "source": "logs/new_mechanisms_checks/continuous_scene_v2.json",
+      "sha256": "e0d266ae73cb64bb44b3136c22abfd2fd452aac9ef3a280ecc5759b40b671f5e",
+      "status": "passed",
+      "real_static_collision": "observed",
+      "physx_drone_contacts_disabled": true,
+      "failure_checks": {
+        "synthetic_detector_events": {
+          "collision": [
+            2
+          ],
+          "invalid": [
+            3
+          ]
+        },
+        "real_pose_bounds": {
+          "lower_lane": 0,
+          "lower_z_m": 0.15,
+          "upper_lane": 1,
+          "upper_z_m": 4.3
+        },
+        "first_failure": {
+          "episode_id_before": [
+            0,
+            0,
+            0
+          ],
+          "episode_id_after": [
+            0,
+            0,
+            0
+          ],
+          "first_event_codes": [
+            3,
+            3,
+            2
+          ],
+          "first_event_times_s": [
+            0.009999999776482582,
+            0.009999999776482582,
+            0.009999999776482582
+          ],
+          "forward_displacement_m": [
+            0.0749979019165039,
+            0.0749959945678711,
+            0.0749959945678711
+          ],
+          "terminated": [
+            false,
+            false,
+            false
+          ]
+        },
+        "recovery": {
+          "actual_reached": true,
+          "episode_id_unchanged": true,
+          "first_event_codes": [
+            3,
+            3,
+            2
+          ],
+          "prior_failure_not_overwritten": true
+        },
+        "reset_checks": {
+          "invalid_resets": true,
+          "timeout_resets": true,
+          "unaffected_lane_keeps_episode": true,
+          "first_outcome_survives_to_timeout": true,
+          "reset_clears_first_event": true,
+          "old_snapshot_immutable": true
+        }
+      },
+      "depth_camera": {
+        "source_resolution_hw": [
+          120,
+          160
+        ],
+        "policy_shape": [
+          64,
+          1,
+          12,
+          16
+        ],
+        "last_raw_batch_shape": [
+          16,
+          1,
+          120,
+          160
+        ],
+        "finite": true,
+        "tracked_dynamic_bodies": 0,
+        "mesh_transform_info": {
+          "mode": "aggregate_physx_view",
+          "body_count": 0,
+          "mesh_order_body_paths": [],
+          "aggregate_body_paths": [],
+          "identity_row_order": true,
+          "mapping": []
+        }
+      }
+    },
+    "dcol": {
+      "source": "logs/new_mechanisms_checks/dcol_scene_v2.json",
+      "sha256": "d644ba0477b41d53fac4244701ee1caba026b6ace2cf8cdb456ba5771f5f7a3a",
+      "status": "passed",
+      "real_static_collision": "observed",
+      "physx_drone_contacts_disabled": false,
+      "failure_checks": {
+        "synthetic_detector_events": {
+          "collision": [
+            2
+          ],
+          "invalid": [
+            3
+          ]
+        },
+        "real_pose_bounds": {
+          "lower_lane": 0,
+          "lower_z_m": 0.15,
+          "upper_lane": 1,
+          "upper_z_m": 4.3
+        },
+        "first_failure": {
+          "episode_id_before": [
+            0,
+            0,
+            0
+          ],
+          "episode_id_after": [
+            1,
+            1,
+            1
+          ],
+          "first_event_codes": [
+            3,
+            3,
+            2
+          ],
+          "first_event_times_s": [
+            0.009999999776482582,
+            0.009999999776482582,
+            0.009999999776482582
+          ],
+          "forward_displacement_m": [
+            0.0749979019165039,
+            0.0749959945678711,
+            0.0749959945678711
+          ],
+          "terminated": [
+            true,
+            true,
+            true
+          ]
+        },
+        "empty_dynamic_substep_shape": [
+          10,
+          0,
+          3
+        ],
+        "recovery": {
+          "actual_reached": true,
+          "episode_id_unchanged": true,
+          "first_event_codes": [
+            1,
+            1,
+            1
+          ],
+          "prior_failure_not_overwritten": false
+        },
+        "reset_checks": {
+          "invalid_resets": true,
+          "timeout_resets": true,
+          "unaffected_lane_keeps_episode": true,
+          "first_outcome_survives_to_timeout": true,
+          "reset_clears_first_event": true,
+          "old_snapshot_immutable": true
+        }
+      },
+      "depth_camera": {
+        "source_resolution_hw": [
+          120,
+          160
+        ],
+        "policy_shape": [
+          64,
+          1,
+          12,
+          16
+        ],
+        "last_raw_batch_shape": [
+          16,
+          1,
+          120,
+          160
+        ],
+        "finite": true,
+        "tracked_dynamic_bodies": 0,
+        "mesh_transform_info": {
+          "mode": "aggregate_physx_view",
+          "body_count": 0,
+          "mesh_order_body_paths": [],
+          "aggregate_body_paths": [],
+          "identity_row_order": true,
+          "mapping": []
+        }
+      }
+    }
+  },
+  "notes": [
+    "Finite checks and synthetic reports do not count toward acceptance.",
+    "Initial scene exit-code-only attempts had no verdict; only scene_v2 JSON is evidence."
+  ],
+  "graceful_stop": {
+    "signal": "SIGTERM",
+    "status": "stopped",
+    "update": 1,
+    "environment_steps": 2048,
+    "consistent_checkpoint": true,
+    "checkpoint": "logs/new_mechanisms_checks/graceful_stop/checkpoint_stopped.pt",
+    "sha256": "f9836d0feffd08e62d3ec25ab0f77cdb24226923e5f692a62a781cd18f2718ae"
+  },
+  "ruff": {
+    "changed_files_passed": true,
+    "files": 31,
+    "full_repo_preexisting_violations": 14,
+    "unchanged_files": [
+      "tests/physx_closed_loop_compare.py",
+      "tests/test_original_rotor_integration.py"
+    ]
+  }
+}

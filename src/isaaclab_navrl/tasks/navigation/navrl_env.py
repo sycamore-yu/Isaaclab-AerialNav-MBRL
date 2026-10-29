@@ -150,7 +150,8 @@ class NavRLEnv(DirectRLEnv):
             self.physics_dt if self.cfg.method == "zhang" else self.step_dt, self.cfg.dynamic_speed_range,
         )
         self.cfg.num_dynamic_obstacles = count
-        self._dynamic_pose[0, :, :3] = self._dynamic_pose.new_tensor((0.0, 0.0, -1000.0))
+        if self.dynamic_collection is not None:
+            self._dynamic_pose[0, :, :3] = self._dynamic_pose.new_tensor((0.0, 0.0, -1000.0))
         self._write_dynamic_obstacles()
 
     def advance_curriculum(self):
@@ -319,11 +320,14 @@ class ZhangNavRLEnv(NavRLEnv):
         self._substep_invalid[env_ids] = False
 
     def _termination_mask(self, terms):
-        return termination_mask(terms, collision_terminates=self.cfg.variant != "continuous")
+        return termination_mask(
+            terms, collision_terminates=self.cfg.variant != "continuous",
+            bounds_terminates=self.cfg.variant != "continuous",
+        )
 
     def _first_arrival_mask(self, terms, terminated):
         # The latched physics-substep outcome also excludes later arrivals
-        # after a nonterminal collision in the continuous variant.
+        # after a nonterminal collision or bounds failure in the continuous variant.
         return (self._event_code == 1) & (self.first_reach_step == 0)
 
     def apply_zhang_camera_randomization(self, env_ids):

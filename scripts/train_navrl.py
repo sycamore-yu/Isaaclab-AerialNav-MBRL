@@ -21,8 +21,8 @@ def main():
                         help="Optional update limit for a smoke run; default unlimited")
     parser.add_argument("--stop_after_acceptance", action="store_true",
                         help="Finish when this training stage reaches its success threshold")
-    parser.add_argument("--stage", default="pretrain_s1",
-                        choices=("pretrain_s1", "pretrain_s2", "finetune_s1", "finetune_s2"))
+    parser.add_argument("--stage", default="pretrain_s0",
+                        choices=("pretrain_s0", "pretrain_s1", "pretrain_s2", "finetune_s1", "finetune_s2"))
     parser.add_argument("--checkpoint", type=Path, help="Checkpoint from the preceding training stage")
     parser.add_argument("--lr", type=float, help="Override this stage's learning rate")
     parser.add_argument("--seed", type=int, default=0)
@@ -34,10 +34,10 @@ def main():
         parser.error("num_envs and max_iterations must be positive")
     if args.lr is not None and not 0.0 < args.lr < float("inf"):
         parser.error("lr must be finite and positive")
-    if args.stage == "pretrain_s1" and args.checkpoint is not None:
-        parser.error("pretrain_s1 must start from random initialization, without a checkpoint")
-    if args.stage != "pretrain_s1" and args.max_iterations is None and args.checkpoint is None:
-        parser.error("Unlimited training after pretrain_s1 requires the preceding stage's checkpoint")
+    if args.stage == "pretrain_s0" and args.checkpoint is not None:
+        parser.error("pretrain_s0 must start from random initialization, without a checkpoint")
+    if args.stage != "pretrain_s0" and args.max_iterations is None and args.checkpoint is None:
+        parser.error("Unlimited training after pretrain_s0 requires the preceding stage's checkpoint")
     log_dir = args.log_dir.resolve()
     if log_dir.exists() and any(log_dir.iterdir()):
         parser.error(f"Each training stage requires a new or empty output directory: {log_dir}")

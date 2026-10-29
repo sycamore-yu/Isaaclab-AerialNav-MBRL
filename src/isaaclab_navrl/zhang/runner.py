@@ -1,4 +1,4 @@
-"""BPTT optimization against measured PhysX trajectories, without PPO."""
+"""BPTT and cost actor-critic optimization of measured PhysX trajectories."""
 
 import json
 import math
@@ -15,10 +15,14 @@ from isaaclab_navrl.tasks.navigation.curriculum import STAGE_CONFIGS
 from isaaclab_navrl.tasks.navigation.randomization import DifferentiableDelay
 from isaaclab_navrl.training import record_curriculum, write_json
 
+from .actor_critic import ActorCriticSettings, CostActorCritic, short_horizon_cost_objective
+from .critic_state import CriticHistory, critic_observation
 from .diagnostics import GradientDiagnostic
 from .dynamics import PointMassState, align_state, align_transition, policy_transition
-from .losses import zhang_losses
+from .losses import zhang_transition_costs
 from .model import ZhangPolicy, decode_action, policy_state
+from .normalization import PolicyObservationNormalizer
+from .optimization import OptimizerStepMonitor, RecoveryConfig, RecoveryController, make_plateau_scheduler
 
 
 def cosine_learning_rate(update, cfg):
@@ -63,6 +67,34 @@ class ZhangTrainer:
         self.log_dir = Path(log_dir).resolve()
         self.model = ZhangPolicy().to(env.device)
         self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=cfg.lr)
+        self.normalizer = PolicyObservationNormalizer(
+            cfg.observation_normalization, cfg.normalization_variance_floor, device=env.device
+        )
+        self.optimizer_monitor = OptimizerStepMonitor(self.model)
+        self.scheduler = make_plateau_scheduler(
+            self.optimizer, cfg.lr_schedule, factor=cfg.plateau_factor, patience=cfg.plateau_patience,
+            threshold=cfg.plateau_threshold, cooldown=cfg.plateau_cooldown, min_lr=cfg.minimum_lr,
+        )
+        self.recovery = RecoveryController(
+            env.cfg.training_stage or f"dynamic_{env.cfg.num_dynamic_obstacles}",
+            RecoveryConfig(enabled=cfg.recovery_enabled, min_lr=cfg.minimum_lr),
+        )
+        self.lr_scale = 1.0
+        self.lr_cap = cfg.lr
+        self.actor_critic = None
+        self.critic_monitor = None
+        self._pending_critic_state = None
+        self.horizon_controller = None
+        if cfg.algorithm == "ahac":
+            from .actor_critic import AdaptiveHorizonController, AHACSettings
+
+            self.horizon_controller = AdaptiveHorizonController(AHACSettings(
+                initial_horizon=cfg.ahac_initial_horizon, min_horizon=cfg.ahac_min_horizon,
+                max_horizon=cfg.ahac_max_horizon, risk_clearance=cfg.ahac_risk_clearance,
+                risk_scale=cfg.ahac_risk_scale, risk_budget=cfg.ahac_risk_budget, dual_lr=cfg.ahac_dual_lr,
+            ))
+        self.stop_requested = None
+        self.last_rollout_steps = None
         self.nonfinite_grad_events = 0
         self.completed_updates = 0
         self.environment_steps = 0
@@ -71,6 +103,54 @@ class ZhangTrainer:
         self.parent_checkpoint = None
         self.elapsed_s = 0.0
         self.velocity_history = None
+
+    def request_stop(self, reason="operator"):
+        """Finish one atomic training update before exporting a stopped checkpoint."""
+        self.stop_requested = str(reason)
+
+    def _learning_rate(self):
+        if self.cfg.lr_schedule == "cosine":
+            value = cosine_learning_rate(self.schedule_updates, self.cfg) * self.lr_scale
+            value = max(self.cfg.minimum_lr, min(value, self.lr_cap))
+            for group in self.optimizer.param_groups:
+                group["lr"] = value
+        return self.optimizer.param_groups[0]["lr"]
+
+    def _initialize_rollout(self):
+        self.env.reset()
+        observation = self.env.get_zhang_observation()
+        zero = torch.zeros_like(observation["velocity"])
+        state = PointMassState(observation["position"].detach(), observation["velocity"].detach(), zero, zero)
+        hidden = zero.new_zeros(self.env.num_envs, 192)
+        action_history = DifferentiableDelay(self.env.perturbation.action_buffer.history_length)
+        observation_history = DifferentiableDelay(self.env.perturbation.observation_buffer.history_length)
+        critic_history = CriticHistory(self.cfg.velocity_window_steps, zero)
+        self.velocity_history = None
+        return observation, zero, state, hidden, zero, action_history, observation_history, critic_history
+
+    def _critic_observation(self, state, observation, hidden, previous_command,
+                            critic_history, action_history, observation_history):
+        return critic_observation(
+            state, observation, hidden, previous_command, self.env.zhang_parameters,
+            critic_history, action_history, observation_history,
+            self.env.episode_length_buf, self.env.max_episode_length,
+            self.env.perturbation.action_buffer.time_lags,
+        )
+
+    def _initialize_critic(self, example):
+        if self.cfg.algorithm == "bptt" or self.actor_critic is not None:
+            return
+        settings = ActorCriticSettings(
+            algorithm=self.cfg.algorithm, discount=self.cfg.discount, td_lambda=self.cfg.td_lambda,
+            critic_lr=self.cfg.critic_lr, critic_iterations=self.cfg.critic_iterations,
+            critic_max_iterations=self.cfg.critic_max_iterations, seed=self.cfg.seed + 2718,
+            critic_min_iterations=min(6, self.cfg.critic_max_iterations),
+        )
+        self.actor_critic = CostActorCritic(example.shape[-1], settings, device=self.env.device)
+        self.critic_monitor = OptimizerStepMonitor(self.actor_critic.critics)
+        if self._pending_critic_state is not None:
+            self.actor_critic.load_state_dict(self._pending_critic_state)
+            self._pending_critic_state = None
 
     def _dcol_gap(self, query, radius, obstacle_positions=None):
         """True dynamic-body DCOL with the original actual-mesh static clearance."""
@@ -85,10 +165,12 @@ class ZhangTrainer:
     def load_stage_checkpoint(self, path):
         """Continue the same experiment after rebuilding its stage-specific terrain."""
         payload = torch.load(path, map_location=self.env.device, weights_only=True)
-        if payload["format_version"] != 2 or payload["method"] != "zhang":
+        if payload["format_version"] != 3 or payload["method"] != "zhang":
             raise ValueError("Stage transitions require this experiment's Zhang checkpoint")
-        if payload["train_cfg"].get("variant") != self.cfg.variant:
-            raise ValueError("Stage transitions cannot change the Zhang comparison variant")
+        allowed_stage_changes = {"lr", "max_iterations", "stop_after_acceptance", "gradient_diagnostic_updates"}
+        for name, value in asdict(self.cfg).items():
+            if name not in allowed_stage_changes and payload["train_cfg"].get(name) != value:
+                raise ValueError(f"Stage transitions cannot change {name}")
         stages = list(STAGE_CONFIGS)
         index = stages.index(self.env.cfg.training_stage)
         if index == 0 or payload["environment"]["training_stage"] != stages[index - 1]:
@@ -97,11 +179,24 @@ class ZhangTrainer:
             raise ValueError("Formal training requires a checkpoint that passed the preceding stage")
         self.model.load_state_dict(payload["model_state_dict"], strict=True)
         self.optimizer.load_state_dict(payload["optimizer_state_dict"])
+        self.normalizer.load_state_dict(payload["normalizer_state_dict"], strict=True)
+        self._pending_critic_state = payload["actor_critic_state_dict"]
+        if self.horizon_controller is not None:
+            self.horizon_controller.load_state_dict(payload["horizon_controller_state_dict"])
         self.completed_updates = payload["completed_updates"]
         self.environment_steps = payload["environment_steps"]
         self.elapsed_s = payload["elapsed_s"]
         self.nonfinite_grad_events = payload["nonfinite_grad_events"]
         self.schedule_updates = 0 if self.env.cfg.training_stage == "finetune_s1" else payload["schedule_updates"]
+        self.lr_scale = payload["lr_scale"]
+        self.lr_cap = payload["lr_cap"]
+        # A harder stage has a different report distribution. Start a fresh
+        # Plateau/recovery report history; retain model/optimizer/normalization.
+        if (self.env.cfg.training_stage == "finetune_s1"
+                or self.cfg.lr != payload["train_cfg"]["lr"]):
+            self.lr_scale, self.lr_cap = 1.0, self.cfg.lr
+            for group in self.optimizer.param_groups:
+                group["lr"] = self.cfg.lr
         self.parent_checkpoint = str(Path(path).resolve())
         torch.set_rng_state(payload["torch_rng_state"].cpu())
         if "cuda_rng_state" in payload and torch.device(self.env.device).type == "cuda":
@@ -109,10 +204,19 @@ class ZhangTrainer:
 
     def _checkpoint(self, path):
         payload = {
-            "format_version": 2, "method": "zhang", "variant": self.cfg.variant,
+            "format_version": 3, "method": "zhang", "variant": self.cfg.variant,
+            "algorithm": self.cfg.algorithm, "stage_log_dir": str(self.log_dir),
             "fresh": self.parent_checkpoint is None,
             "model_state_dict": self.model.state_dict(),
             "optimizer_state_dict": self.optimizer.state_dict(),
+            "normalizer_state_dict": self.normalizer.state_dict(),
+            "scheduler_state_dict": self.scheduler.state_dict() if self.scheduler is not None else None,
+            "recovery_state_dict": self.recovery.state_dict(),
+            "lr_scale": self.lr_scale, "lr_cap": self.lr_cap,
+            "actor_critic_state_dict": self.actor_critic.state_dict() if self.actor_critic is not None else None,
+            "horizon_controller_state_dict": (
+                self.horizon_controller.state_dict() if self.horizon_controller is not None else None
+            ),
             "train_cfg": asdict(self.cfg), "completed_updates": self.completed_updates,
             "environment_steps": self.environment_steps,
             "num_envs": self.env.num_envs, "elapsed_s": self.elapsed_s,
@@ -131,16 +235,94 @@ class ZhangTrainer:
         }
         if torch.device(self.env.device).type == "cuda":
             payload["cuda_rng_state"] = torch.cuda.get_rng_state(self.env.device)
-        torch.save(payload, path)
+        path = Path(path)
+        temporary = path.with_suffix(path.suffix + ".tmp")
+        torch.save(payload, temporary)
+        temporary.replace(path)
+
+    def _restore_stable(self, path):
+        """Restore learned state only; never rewind training/report counters or RNG."""
+        path = Path(path).resolve()
+        if not path.is_relative_to(self.log_dir):
+            raise ValueError("Recovery checkpoint must belong to this stage's log directory")
+        payload = torch.load(path, map_location=self.env.device, weights_only=True)
+        if (payload.get("format_version") != 3 or payload.get("method") != "zhang"
+                or payload.get("stage_log_dir") != str(self.log_dir)
+                or payload["environment"]["training_stage"] != self.env.cfg.training_stage
+                or payload["environment"]["dynamic_obstacles"] != self.env.cfg.num_dynamic_obstacles
+                or payload["train_cfg"] != asdict(self.cfg)):
+            raise ValueError("Stable recovery requires the exact same run, stage and configuration")
+        current_lrs = [group["lr"] for group in self.optimizer.param_groups]
+        self.model.load_state_dict(payload["model_state_dict"], strict=True)
+        self.optimizer.load_state_dict(payload["optimizer_state_dict"])
+        self.normalizer.load_state_dict(payload["normalizer_state_dict"], strict=True)
+        if self.actor_critic is not None:
+            progress = self.actor_critic.state_dict()
+            self.actor_critic.load_state_dict({
+                **payload["actor_critic_state_dict"], "completed_fits": progress["completed_fits"],
+                "shuffle_rng_state": progress["shuffle_rng_state"],
+            })
+        if self.horizon_controller is not None:
+            self.horizon_controller.load_state_dict({
+                **payload["horizon_controller_state_dict"],
+                "completed_updates": self.horizon_controller.completed_updates,
+            })
+        for group, value in zip(self.optimizer.param_groups, current_lrs, strict=True):
+            group["lr"] = value
+        # Keep the current scheduler, recovery decisions, LR scale/cap, RNG and
+        # accumulated experience. The caller resets environment and all memory.
+
+    def _report_controls(self, report, writer):
+        if report is None:
+            return False
+        previous_lr = self.optimizer.param_groups[0]["lr"]
+        if self.scheduler is not None:
+            self.scheduler.step(report["success_rate"])
+        scheduler_reduced = self.optimizer.param_groups[0]["lr"] < previous_lr
+        if scheduler_reduced:
+            self.lr_cap = min(self.lr_cap, self.optimizer.param_groups[0]["lr"])
+        decision = self.recovery.observe({**report, "stage": report.get("stage", self.recovery.stage)})
+        restored = False
+        if decision.action == "save_stable":
+            checkpoint = self.log_dir / f"checkpoint_stable_{self.recovery.stage}.pt"
+            self._checkpoint(checkpoint)
+            self.recovery.acknowledge("save_stable", str(checkpoint))
+        elif decision.action == "reduce_lr":
+            # A Plateau reduction on this very report satisfies the first
+            # recovery action. Do not lower the same LR twice on one report.
+            if not scheduler_reduced:
+                for group in self.optimizer.param_groups:
+                    group["lr"] = max(decision.min_lr, group["lr"] * decision.lr_factor)
+                self.lr_scale *= decision.lr_factor
+            self.lr_cap = min(self.lr_cap, self.optimizer.param_groups[0]["lr"])
+            self.recovery.acknowledge("reduce_lr")
+        elif decision.action == "restore":
+            self._restore_stable(decision.checkpoint)
+            self.recovery.acknowledge("restore")
+            restored = True
+        event = {**asdict(decision), "lr_before": previous_lr,
+                 "lr_after": self.optimizer.param_groups[0]["lr"], "scheduler_reduced": scheduler_reduced,
+                 "state": self.recovery.state, "restore_count": self.recovery.restore_count,
+                 "environment_steps": self.environment_steps}
+        with (self.log_dir / "optimization_events.jsonl").open("a") as stream:
+            stream.write(json.dumps(event, allow_nan=False) + "\n")
+        writer.add_scalar("Optim/next_learning_rate", event["lr_after"], self.completed_updates)
+        writer.add_scalar("Recovery/restore_count", self.recovery.restore_count, self.completed_updates)
+        if decision.action != "none" or scheduler_reduced:
+            print("OPTIM_CONTROL " + json.dumps(event), flush=True)
+        return restored
 
     def _result(self, status, checkpoint=None, error=None):
         result = {
-            "method": "zhang", "variant": self.cfg.variant, "status": status,
+            "method": "zhang", "variant": self.cfg.variant, "algorithm": self.cfg.algorithm, "status": status,
             "fresh": self.parent_checkpoint is None,
             "stage": self.env.cfg.training_stage, "stage_updates": self.stage_updates,
             "parent_checkpoint": self.parent_checkpoint,
             "num_envs": self.env.num_envs, "completed_updates": self.completed_updates,
-            "max_updates": self.cfg.max_iterations, "rollout_steps": self.cfg.timesteps,
+            "max_updates": self.cfg.max_iterations,
+            "rollout_steps": self.last_rollout_steps,
+            "configured_rollout_steps": self.cfg.timesteps,
+            "adaptive_horizon": self.cfg.algorithm == "ahac",
             "checkpoint": str(checkpoint) if checkpoint is not None else None,
             "elapsed_s": self.elapsed_s, "nonfinite_grad_events": self.nonfinite_grad_events,
             "nonfinite_events": int(self.env.nonfinite_events),
@@ -156,20 +338,20 @@ class ZhangTrainer:
                 and self.env.cfg.num_dynamic_obstacles == 100 and self.env.cfg.sim_to_real.enabled
             ),
             "stage_passed": bool(self.env.curriculum is not None and self.env.curriculum.stage_passed),
+            "recovery_restore_count": self.recovery.restore_count,
+            "stop_requested": self.stop_requested,
             "error": error,
         }
         write_json(self.log_dir / "training_result.json", result)
         return result
 
     def run(self):
-        self.env.reset()
-        observation = self.env.get_zhang_observation()
-        zero = torch.zeros_like(observation["velocity"])
-        state = PointMassState(observation["position"].detach(), observation["velocity"].detach(), zero, zero)
-        hidden = zero.new_zeros(self.env.num_envs, 192)
-        previous_command = zero
-        action_history = DifferentiableDelay(self.env.perturbation.action_buffer.history_length)
-        observation_history = DifferentiableDelay(self.env.perturbation.observation_buffer.history_length)
+        (observation, zero, state, hidden, previous_command, action_history,
+         observation_history, critic_history) = self._initialize_rollout()
+        if self.cfg.algorithm != "bptt":
+            self._initialize_critic(self._critic_observation(
+                state, observation, hidden, previous_command, critic_history, action_history, observation_history
+            ))
         lookahead = torch.linspace(0, self.cfg.policy_dt, 10, device=self.env.device)[None, :, None]
         writer = SummaryWriter(str(self.log_dir / "tensorboard"))
         if self.cfg.variant == "dcol":
@@ -198,13 +380,23 @@ class ZhangTrainer:
                 hidden = hidden.detach()
                 action_history.detach()
                 observation_history.detach()
+                critic_history.detach()
                 previous_command = previous_command.detach()
+                normalization_snapshot = self.normalizer.begin_rollout()
+                rollout_steps = (self.horizon_controller.horizon if self.horizon_controller is not None
+                                 else self.cfg.timesteps)
+                self.last_rollout_steps = rollout_steps
                 history = defaultdict(list)
                 terminated_count = torch.zeros((), device=self.env.device, dtype=torch.long)
                 execution_error = torch.zeros((), device=self.env.device)
-                for _ in range(self.cfg.timesteps):
+                for rollout_step in range(rollout_steps):
                     # EventManager resets mutate its tensors; the rollout graph owns immutable snapshots.
                     parameters = {name: value.detach().clone() for name, value in self.env.zhang_parameters.items()}
+                    if self.actor_critic is not None:
+                        history["critic_observation"].append(self._critic_observation(
+                            state, observation, hidden, previous_command, critic_history,
+                            action_history, observation_history,
+                        ).detach())
                     _, heading, target_velocity, rotation = policy_state(
                         state.position, state.velocity, observation["quaternion"], observation["target"],
                         parameters["max_speed"], parameters["margin"],
@@ -219,9 +411,12 @@ class ZhangTrainer:
                         parameters["max_speed"], parameters["margin"],
                     )
                     # Camera output is a reused buffer and must not overwrite saved CNN inputs.
-                    output, hidden = self.model.forward_checkpointed(
-                        observation["policy_depth_features"].detach().clone(), features, hidden
+                    depth = observation["policy_depth_features"].detach().clone()
+                    normalized_depth, normalized_features = self.normalizer.normalize(
+                        depth, features, normalization_snapshot
                     )
+                    self.normalizer.observe(depth, features.detach())
+                    output, hidden = self.model.forward_checkpointed(normalized_depth, normalized_features, hidden)
                     command, velocity_prediction = decode_action(output, heading, parameters["thr_est_error"])
                     # Source main_cuda records p + v * sub_div before env.run, including terminating steps.
                     query = state.position[:, None] + state.velocity[:, None] * lookahead
@@ -285,21 +480,57 @@ class ZhangTrainer:
                     previous_command = torch.where(done[:, None], torch.zeros_like(command), command)
                     action_history.reset(done)
                     observation_history.reset(done)
+                    if self.actor_critic is not None:
+                        critic_history.push(terminal_state.velocity, target_velocity, done)
+                        next_critic_observation = self._critic_observation(
+                            state, next_observation, hidden, previous_command, critic_history,
+                            action_history, observation_history,
+                        )
+                        next_value = self.actor_critic.bootstrap_value(next_critic_observation.detach())
+                        history["critic_next_value"].append(next_value)
+                        # Intermediate actor bootstraps are used only on reset
+                        # boundaries and are detached. Only the ordinary final
+                        # endpoint needs the frozen critic's live input graph.
+                        if rollout_step == rollout_steps - 1:
+                            live_value = self.actor_critic.actor_value(next_critic_observation)
+                            actor_next_value = torch.where(done, live_value.detach(), live_value)
+                        else:
+                            actor_next_value = next_value
+                        history["actor_next_value"].append(actor_next_value)
                     observation = next_observation
                     terminated_count += done.sum()
-                losses, self.velocity_history = zhang_losses(history, self.cfg, self.velocity_history)
+                losses, self.velocity_history, transition_cost = zhang_transition_costs(
+                    history, self.cfg, self.velocity_history
+                )
+                actor_loss = losses["total"]
+                algorithm_metrics = {}
+                if self.actor_critic is not None:
+                    actor_terms = short_horizon_cost_objective(
+                        transition_cost, torch.stack(history["actor_next_value"]), torch.stack(history["done"]),
+                        discount=self.cfg.discount,
+                    )
+                    actor_loss = actor_terms["objective"]
+                    algorithm_metrics.update({f"ActorCritic/{name}": float(value.detach())
+                                              for name, value in actor_terms.items()})
+                risk = None
+                if self.horizon_controller is not None:
+                    risk = self.horizon_controller.risk(torch.stack(history["dcol_gap"]))
+                    risk_penalty = self.horizon_controller.penalty(risk)
+                    actor_loss = actor_loss + risk_penalty
+                    algorithm_metrics["AHAC/constraint_penalty"] = float(risk_penalty.detach())
+                algorithm_metrics["actor_objective"] = float(actor_loss.detach())
                 if not bool(torch.isfinite(losses["total"])):
                     raise FloatingPointError("Non-finite Zhang rollout loss")
+                if not bool(torch.isfinite(actor_loss)):
+                    raise FloatingPointError("Non-finite Zhang actor objective")
                 if float(execution_error) > 1e-6:
                     raise RuntimeError(f"PhysX and differentiable model executed different delayed actions: {execution_error}")
-                learning_rate = cosine_learning_rate(self.schedule_updates, self.cfg)
-                for group in self.optimizer.param_groups:
-                    group["lr"] = learning_rate
+                learning_rate = self._learning_rate()
                 self.optimizer.zero_grad(set_to_none=True)
                 gradient_diagnostic = None
                 if initial_updates + update + 1 in self.cfg.gradient_diagnostic_updates:
                     gradient_diagnostic = GradientDiagnostic(self.model, losses, self.cfg)
-                losses["total"].backward()
+                actor_loss.backward()
                 if gradient_diagnostic is not None:
                     gradient_diagnostic.check_total_gradient()
                 try:
@@ -308,21 +539,37 @@ class ZhangTrainer:
                 except RuntimeError:
                     self.nonfinite_grad_events += 1
                     raise
+                self.optimizer_monitor.before_step()
                 self.optimizer.step()
+                optimizer_metrics = self.optimizer_monitor.after_step()
                 gradient_record = None
                 if gradient_diagnostic is not None:
                     gradient_record = gradient_diagnostic.finish(self.optimizer, grad_norm, self.cfg.max_grad_norm)
                     del gradient_diagnostic
+                if self.actor_critic is not None:
+                    self.critic_monitor.before_step()
+                    critic_metrics = self.actor_critic.fit(
+                        torch.stack(history["critic_observation"]), transition_cost.detach(),
+                        torch.stack(history["critic_next_value"]), torch.stack(history["done"]),
+                    )
+                    algorithm_metrics.update({f"ActorCritic/{name}": value for name, value in critic_metrics.items()})
+                    algorithm_metrics.update({f"Critic/{name}": value
+                                              for name, value in self.critic_monitor.after_step().items()})
+                if self.horizon_controller is not None:
+                    algorithm_metrics.update(self.horizon_controller.update(risk.detach()))
                 self.stage_updates = update + 1
                 self.completed_updates = initial_updates + self.stage_updates
-                self.environment_steps += self.cfg.timesteps * self.env.num_envs
+                self.environment_steps += rollout_steps * self.env.num_envs
                 self.schedule_updates += 1
                 self.elapsed_s = previous_elapsed_s + time.perf_counter() - started
                 metrics = {name: float(value.detach()) for name, value in losses.items()}
+                metrics.update(optimizer_metrics)
+                metrics.update(algorithm_metrics)
                 metrics.update(rollout_diagnostics(history))
                 metrics.update(update=self.completed_updates, learning_rate=learning_rate, grad_norm=float(grad_norm),
                                elapsed_s=self.elapsed_s, update_s=time.perf_counter() - update_started,
                                completed_episodes=int(terminated_count),
+                               rollout_steps=rollout_steps, environment_steps=self.environment_steps,
                                executed_action_max_error=float(execution_error))
                 if gradient_record is not None:
                     heights = torch.stack(history["position"]).detach()[..., 2]
@@ -345,21 +592,27 @@ class ZhangTrainer:
                 for name, value in metrics.items():
                     writer.add_scalar(name, value, self.completed_updates)
                 print("ZHANG_UPDATE " + json.dumps(metrics), flush=True)
-                record_curriculum(self.env.curriculum, self.completed_updates, self.log_dir, writer, self._checkpoint)
+                report = record_curriculum(
+                    self.env.curriculum, self.completed_updates, self.log_dir, writer, self._checkpoint
+                )
+                if self._report_controls(report, writer):
+                    (observation, zero, state, hidden, previous_command, action_history,
+                     observation_history, critic_history) = self._initialize_rollout()
                 if self.completed_updates == 1 or self.completed_updates % 100 == 0:
                     self._checkpoint(self.log_dir / "checkpoint_latest.pt")
                 if self.env.curriculum is not None and self.env.curriculum.ready_to_advance:
                     self.env.advance_curriculum()
-                    observation = self.env.get_zhang_observation()
-                    zero = torch.zeros_like(observation["velocity"])
-                    state = PointMassState(observation["position"].detach(), observation["velocity"].detach(), zero, zero)
-                    hidden = zero.new_zeros(self.env.num_envs, 192)
-                    previous_command = zero
-                    action_history = DifferentiableDelay(self.env.perturbation.action_buffer.history_length)
-                    observation_history = DifferentiableDelay(self.env.perturbation.observation_buffer.history_length)
-                    self.velocity_history = None
+                    self.recovery.reset_stage(f"dynamic_{self.env.cfg.num_dynamic_obstacles}")
+                    (observation, zero, state, hidden, previous_command, action_history,
+                     observation_history, critic_history) = self._initialize_rollout()
                     print(f"CURRICULUM -> {self.env.cfg.num_dynamic_obstacles} at update {self.completed_updates}", flush=True)
                 result = self._result("running")
+                if self.stop_requested is not None:
+                    checkpoint = self.log_dir / "checkpoint_stopped.pt"
+                    self._checkpoint(checkpoint)
+                    result = self._result("stopped", checkpoint)
+                    print("TRAINING_RESULT " + json.dumps(result), flush=True)
+                    return result
                 if self.cfg.stop_after_acceptance and result["stage_passed"]:
                     break
             if self.env.curriculum is not None and self.env.curriculum.stage_passed:

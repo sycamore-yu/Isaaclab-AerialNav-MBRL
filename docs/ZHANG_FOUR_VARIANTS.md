@@ -1,4 +1,9 @@
-# Zhang 四方案比较
+# Zhang 四方案比较（历史记录）
+
+> 本文仅描述冻结于 f6d5fd4 的旧四方案，保留历史损失公式和实验条件。
+> 这些实验均已停止归档，truncated_window 已取消；continuous 现在连高度越界也不重置，
+> 高度项改为非饱和 SmoothL1，课程加入 S0。当前定义见
+> [新机制](ZHANG_NEW_MECHANISMS_20261029.md) 与 [归档记录](results/zhang_pre_new_mechanisms_archive_20261029.md)。
 
 本轮按用户追加要求比较速度损失、碰撞重置与碰撞几何的四种处理方式。正式训练只运行 Zhang。PPO 停止；NavRL 仍接收共用的 160×120 相机默认配置和此前的共享扰动实现。
 

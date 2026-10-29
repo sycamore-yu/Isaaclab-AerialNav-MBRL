@@ -4,12 +4,14 @@ import math
 from dataclasses import dataclass
 from typing import Literal
 
-ZHANG_VARIANTS = ("step", "continuous", "dcol", "truncated_window")
+ZHANG_VARIANTS = ("step", "continuous", "dcol")
+ZHANG_ALGORITHMS = ("bptt", "shac", "ahac")
 
 
 @dataclass
 class ZhangTrainCfg:
-    variant: Literal["step", "continuous", "dcol", "truncated_window"] = "step"
+    variant: Literal["step", "continuous", "dcol"] = "step"
+    algorithm: Literal["bptt", "shac", "ahac"] = "bptt"
     timesteps: int = 150
     max_iterations: int | None = None
     stop_after_acceptance: bool = False
@@ -20,6 +22,27 @@ class ZhangTrainCfg:
     lr: float = 0.001
     cosine_period_updates: int = 400
     min_lr_ratio: float = 0.01
+    lr_schedule: Literal["cosine", "plateau", "constant"] = "cosine"
+    plateau_factor: float = 0.5
+    plateau_patience: int = 5
+    plateau_threshold: float = 0.005
+    plateau_cooldown: int = 2
+    minimum_lr: float = 1e-6
+    observation_normalization: bool = False
+    normalization_variance_floor: float = 1e-4
+    recovery_enabled: bool = True
+    discount: float = 0.99
+    td_lambda: float = 0.95
+    critic_lr: float = 0.0005
+    critic_iterations: int = 16
+    critic_max_iterations: int = 64
+    ahac_min_horizon: int = 16
+    ahac_max_horizon: int = 150
+    ahac_initial_horizon: int = 32
+    ahac_risk_clearance: float = 0.1
+    ahac_risk_scale: float = 0.05
+    ahac_risk_budget: float = 0.1
+    ahac_dual_lr: float = 0.1
     max_grad_norm: float = 5.0
     coef_v: float = 1.0
     coef_v_pred: float = 2.0
@@ -44,6 +67,39 @@ class ZhangTrainCfg:
     def validate(self) -> None:
         if self.variant not in ZHANG_VARIANTS:
             raise ValueError(f"variant must be one of {ZHANG_VARIANTS}")
+        if self.algorithm not in ZHANG_ALGORITHMS:
+            raise ValueError(f"algorithm must be one of {ZHANG_ALGORITHMS}")
+        if self.algorithm != "bptt" and self.variant != "dcol":
+            raise ValueError("The SHAC/AHAC comparisons require the dcol configuration")
+        if self.algorithm != "bptt" and self.gradient_diagnostic_updates:
+            raise ValueError("Seven-term gradient diagnostics currently require the unbootstrapped BPTT objective")
+        if self.lr_schedule not in ("cosine", "plateau", "constant"):
+            raise ValueError("lr_schedule must be cosine, plateau, or constant")
+        if any(type(value) is not bool for value in (self.observation_normalization, self.recovery_enabled)):
+            raise ValueError("normalization and recovery switches must be boolean")
+        if any(not math.isfinite(value) or value <= 0 for value in (
+            self.lr, self.minimum_lr, self.normalization_variance_floor, self.critic_lr
+        )):
+            raise ValueError("learning rates and normalization variance floor must be finite and positive")
+        if not 0 < self.min_lr_ratio <= 1 or not 0 < self.plateau_factor < 1:
+            raise ValueError("Invalid scheduler factor")
+        if not 0 <= self.discount < 1 or not 0 <= self.td_lambda <= 1:
+            raise ValueError("discount must be in [0,1) and td_lambda in [0,1]")
+        if any(type(value) is not int or value < 0 for value in (self.plateau_patience, self.plateau_cooldown)):
+            raise ValueError("plateau report patience and cooldown must be nonnegative integers")
+        if not math.isfinite(self.plateau_threshold) or self.plateau_threshold < 0:
+            raise ValueError("plateau_threshold must be finite and nonnegative")
+        if any(type(value) is not int or value < 1 for value in (
+            self.critic_iterations, self.critic_max_iterations,
+            self.ahac_min_horizon, self.ahac_max_horizon, self.ahac_initial_horizon
+        )):
+            raise ValueError("critic iterations and AHAC horizons must be positive integers")
+        if not 2 <= self.ahac_min_horizon <= self.ahac_initial_horizon <= self.ahac_max_horizon:
+            raise ValueError("AHAC requires 2 <= min <= initial <= max horizon")
+        if any(not math.isfinite(value) or value <= 0 for value in (
+            self.ahac_risk_scale, self.ahac_risk_budget, self.ahac_dual_lr
+        )) or not math.isfinite(self.ahac_risk_clearance) or self.ahac_risk_clearance < 0:
+            raise ValueError("Invalid AHAC DCOL risk parameters")
         if self.physics_dt != 0.01 or self.policy_dt != 0.1:
             raise ValueError("The approved task requires 100 Hz physics and a 10 Hz policy")
         if self.timesteps < 2 or (self.max_iterations is not None and self.max_iterations < 1):

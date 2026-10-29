@@ -89,7 +89,7 @@ def test_navrl_collision_wins_same_step_and_reset_clears_partial_history():
     assert report["counts"]["collision"] == 3
 
 
-@pytest.mark.parametrize("count", [60, 80, 100, 120])
+@pytest.mark.parametrize("count", [0, 60, 80, 100, 120])
 def test_active_mesh_selection_preserves_each_size_category(count):
     indices = active_obstacle_indices(count, 120)
     _, pool_sizes = dynamic_layout(120, 0)

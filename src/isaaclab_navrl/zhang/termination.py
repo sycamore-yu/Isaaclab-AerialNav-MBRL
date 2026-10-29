@@ -8,9 +8,11 @@ boundaries; these intermediate checks need no feature encoding or reward logs.
 import torch
 
 
-def termination_mask(terms, *, collision_terminates=True):
-    """Keep bounds and invalid states terminal when collisions are continuous."""
-    terminated = terms["bounds"] | terms["invalid"]
+def termination_mask(terms, *, collision_terminates=True, bounds_terminates=True):
+    """Keep invalid states terminal; timeout remains the environment's own flag."""
+    terminated = terms["invalid"].clone()
+    if bounds_terminates:
+        terminated = terminated | terms["bounds"]
     if collision_terminates:
         terminated = terminated | terms["collision"]
     return terminated

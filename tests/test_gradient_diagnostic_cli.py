@@ -5,6 +5,7 @@ import contextlib
 import importlib.util
 import io
 import sys
+import tempfile
 import types
 import unittest
 from pathlib import Path
@@ -27,6 +28,7 @@ app_stub.add_launcher_args = lambda parser: parser.add_argument("--device", defa
 app_stub.launch_simulation = None
 with patch.dict(sys.modules, {"isaaclab": types.ModuleType("isaaclab"), "isaaclab.app": app_stub}):
     trainer = load_script("train_zhang")
+    navrl_trainer = load_script("train_navrl")
 
 
 class ParsedArgs(Exception):
@@ -34,7 +36,7 @@ class ParsedArgs(Exception):
         self.namespace = namespace
 
 
-def parse_training_cli(tokens):
+def parse_training_cli(tokens, module=trainer):
     """Run the real CLI registration/parse, then stop before any training import."""
     original_parse_args = argparse.ArgumentParser.parse_args
 
@@ -44,13 +46,95 @@ def parse_training_cli(tokens):
     with patch.object(argparse.ArgumentParser, "parse_args", capture):
         with patch.object(sys, "argv", ["train_zhang.py", "--log_dir", "/unused/unit-test", *tokens]):
             try:
-                trainer.main()
+                module.main()
             except ParsedArgs as result:
                 return result.namespace
     raise AssertionError("Training CLI did not parse its arguments")
 
 
 class GradientDiagnosticCliTests(unittest.TestCase):
+    def test_new_defaults_keep_bptt_and_normalization_schedule_controls_explicit(self):
+        args = parse_training_cli([])
+        self.assertEqual(args.stage, "pretrain_s0")
+        self.assertEqual(args.algorithm, "bptt")
+        self.assertEqual(args.lr_schedule, "cosine")
+        self.assertIs(args.observation_normalization, False)
+        self.assertIs(args.recovery_enabled, True)
+        self.assertEqual(parse_training_cli([], navrl_trainer).stage, "pretrain_s0")
+        ahac = parse_training_cli(["--algorithm", "ahac", "--variant", "dcol", "--observation_normalization", "1",
+                                  "--recovery_enabled", "0", "--lr_schedule", "constant"])
+        self.assertEqual(ahac.algorithm, "ahac")
+        self.assertIs(ahac.observation_normalization, True)
+        self.assertIs(ahac.recovery_enabled, False)
+        self.assertEqual((ahac.critic_lr, ahac.critic_iterations, ahac.critic_max_iterations), (0.0005, 16, 64))
+        self.assertEqual((ahac.discount, ahac.td_lambda), (0.99, 0.95))
+        self.assertEqual((ahac.ahac_min_horizon, ahac.ahac_initial_horizon, ahac.ahac_max_horizon), (16, 32, 150))
+        self.assertEqual((ahac.ahac_risk_clearance, ahac.ahac_risk_scale, ahac.ahac_risk_budget, ahac.ahac_dual_lr),
+                         (0.1, 0.05, 0.1, 0.1))
+
+    def test_stop_signals_only_request_a_boundary_stop_and_restore_original_handlers(self):
+        first, second = object(), object()
+        handlers = {trainer.signal.SIGINT: first, trainer.signal.SIGTERM: second}
+        requests = []
+        stub = types.SimpleNamespace(request_stop=requests.append)
+
+        def install(signum, handler):
+            previous = handlers[signum]
+            handlers[signum] = handler
+            return previous
+
+        with patch.object(trainer.signal, "signal", side_effect=install):
+            with self.assertRaisesRegex(RuntimeError, "training error"):
+                with trainer.graceful_training_stop(stub):
+                    handlers[trainer.signal.SIGINT](trainer.signal.SIGINT, None)
+                    handlers[trainer.signal.SIGTERM](trainer.signal.SIGTERM, None)
+                    self.assertEqual(requests, [trainer.signal.SIGINT, trainer.signal.SIGTERM])
+                    raise RuntimeError("training error")
+        self.assertIs(handlers[trainer.signal.SIGINT], first)
+        self.assertIs(handlers[trainer.signal.SIGTERM], second)
+
+    def test_binary_flags_and_removed_variant_are_rejected_before_training(self):
+        for flag in ("observation_normalization", "recovery_enabled"):
+            for raw in ("true", "false", "2", "-1", "1.0", "", "+1", " 1"):
+                with self.subTest(flag=flag, raw=raw):
+                    with self.assertRaises(ValueError):
+                        acceptance.parse_train_args([f"--{flag}={raw}"])
+                    with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as error:
+                        parse_training_cli([f"--{flag}={raw}"])
+                    self.assertEqual(error.exception.code, 2)
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            parse_training_cli(["--variant", "truncated_window"])
+
+    def test_only_s0_can_be_fresh_in_unlimited_training_for_both_trainers(self):
+        cases = (["--stage", "pretrain_s0", "--checkpoint", "/unit/old.pt"],
+                 ["--stage", "pretrain_s1"], ["--stage", "finetune_s2"])
+        for module in (trainer, navrl_trainer):
+            for tokens in cases:
+                with self.subTest(module=module.__name__, tokens=tokens):
+                    with patch.object(sys, "argv", ["train.py", "--log_dir", "/unused/unit-test", *tokens]):
+                        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as error:
+                            module.main()
+                    self.assertEqual(error.exception.code, 2)
+
+    def test_finite_later_stage_smoke_is_allowed_before_training_imports(self):
+        class ReachedTrainingImports(Exception):
+            pass
+
+        original_import = __import__
+
+        def intercept(name, *args, **kwargs):
+            if name == "gymnasium":
+                raise ReachedTrainingImports
+            return original_import(name, *args, **kwargs)
+
+        with tempfile.TemporaryDirectory(prefix="stage_smoke_cli_unit_") as temporary:
+            for index, module in enumerate((trainer, navrl_trainer)):
+                tokens = ["train.py", "--log_dir", str(Path(temporary) / str(index)),
+                          "--stage", "pretrain_s1", "--max_iterations", "1"]
+                with patch.object(sys, "argv", tokens), patch("builtins.__import__", side_effect=intercept):
+                    with contextlib.redirect_stdout(io.StringIO()), self.assertRaises(ReachedTrainingImports):
+                        module.main()
+
     def test_training_default_and_explicit_empty_disable_diagnostics(self):
         self.assertEqual(parse_training_cli([]).gradient_diagnostic_updates, ())
         self.assertEqual(parse_training_cli(["--gradient_diagnostic_updates", ""]).gradient_diagnostic_updates, ())

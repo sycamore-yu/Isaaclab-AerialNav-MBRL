@@ -12,13 +12,21 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-STAGES = ("pretrain_s1", "pretrain_s2", "finetune_s1", "finetune_s2")
+STAGES = ("pretrain_s0", "pretrain_s1", "pretrain_s2", "finetune_s1", "finetune_s2")
 STAGE_CONFIG = {
+    "pretrain_s0": {"static_obstacles": 300, "dynamic_obstacles": 0, "randomization": False},
     "pretrain_s1": {"static_obstacles": 300, "dynamic_obstacles": 60, "randomization": False},
     "pretrain_s2": {"static_obstacles": 400, "dynamic_obstacles": 120, "randomization": False},
     "finetune_s1": {"static_obstacles": 300, "dynamic_obstacles": 60, "randomization": True},
     "finetune_s2": {"static_obstacles": 400, "dynamic_obstacles": 100, "randomization": True},
 }
+
+
+def parse_binary_flag(raw: str) -> bool:
+    """Use the same explicit 0/1 grammar as train_zhang.py."""
+    if raw not in ("0", "1"):
+        raise ValueError("expected 0 or 1")
+    return raw == "1"
 
 
 def parse_gradient_diagnostic_updates(raw: str) -> tuple[int, ...]:
@@ -34,9 +42,19 @@ def parse_gradient_diagnostic_updates(raw: str) -> tuple[int, ...]:
     return updates
 
 
-TrainArgValue = str | int | float | tuple[int, ...]
+TrainArgValue = str | int | float | bool | tuple[int, ...]
+TRAIN_ARG_CHOICES = {
+    "variant": ("step", "continuous", "dcol"),
+    "algorithm": ("bptt", "shac", "ahac"),
+    "lr_schedule": ("cosine", "plateau", "constant"),
+}
 TRAIN_ARG_TYPES = {
     "variant": str,
+    "algorithm": str,
+    "lr_schedule": str,
+    "observation_normalization": parse_binary_flag,
+    "normalization_variance_floor": float,
+    "recovery_enabled": parse_binary_flag,
     "timesteps": int,
     "velocity_window_s": float,
     "camera_batch_size": int,
@@ -51,6 +69,18 @@ TRAIN_ARG_TYPES = {
     "boundary_margin": float,
     "boundary_scale": float,
     "cosine_period_updates": int,
+    "critic_lr": float,
+    "critic_iterations": int,
+    "critic_max_iterations": int,
+    "discount": float,
+    "td_lambda": float,
+    "ahac_min_horizon": int,
+    "ahac_max_horizon": int,
+    "ahac_initial_horizon": int,
+    "ahac_risk_clearance": float,
+    "ahac_risk_scale": float,
+    "ahac_risk_budget": float,
+    "ahac_dual_lr": float,
     "gradient_diagnostic_updates": parse_gradient_diagnostic_updates,
 }
 
@@ -75,20 +105,38 @@ def parse_train_args(tokens: list[str]) -> dict[str, TrainArgValue]:
             value = TRAIN_ARG_TYPES[key](raw_value)
         except ValueError as exc:
             raise ValueError(f"Invalid value for {option}: {raw_value}") from exc
-        if key == "variant":
-            if value not in ("step", "continuous", "dcol", "truncated_window"):
-                raise ValueError(f"Unknown Zhang variant: {value}")
-        elif key == "gradient_diagnostic_updates":
-            pass  # The converter above validates the complete tuple.
+        if key in TRAIN_ARG_CHOICES:
+            if value not in TRAIN_ARG_CHOICES[key]:
+                raise ValueError(f"Unknown Zhang {key}: {value}")
+        elif key == "gradient_diagnostic_updates" or isinstance(value, bool):
+            pass  # The converters already validate tuple and explicit 0/1 grammars.
         elif not math.isfinite(value):
             raise ValueError(f"{option} must be finite")
-        elif key.startswith("coef_") or key in ("grad_decay", "boundary_margin"):
+        elif key == "discount":
+            if not 0 <= value < 1:
+                raise ValueError("discount must be in [0, 1) for continuing cost learning")
+        elif key == "td_lambda":
+            if not 0 <= value <= 1:
+                raise ValueError("td_lambda must be in [0, 1]")
+        elif key == "grad_decay":
+            if not 0 < value <= 1:
+                raise ValueError("grad_decay must be in (0, 1]")
+        elif key.startswith("coef_") or key in ("boundary_margin", "ahac_risk_clearance"):
             if value < 0:
                 raise ValueError(f"{option} must be nonnegative")
         elif value <= 0:
             raise ValueError(f"{option} must be positive")
         values[key] = value
         index += 1
+    if values.get("algorithm", "bptt") != "bptt":
+        if values.get("variant", "step") != "dcol":
+            raise ValueError("SHAC/AHAC comparisons require --variant dcol")
+        if values.get("gradient_diagnostic_updates", ()):
+            raise ValueError("Seven-term gradient diagnostics require --algorithm bptt")
+    if values.get("timesteps", 150) < 2:
+        raise ValueError("timesteps must be at least 2")
+    if not 2 <= values.get("ahac_min_horizon", 16) <= values.get("ahac_initial_horizon", 32) <= values.get("ahac_max_horizon", 150):
+        raise ValueError("AHAC requires 2 <= min <= initial <= max horizon")
     return values
 
 
@@ -122,7 +170,10 @@ def build_command(
     if method == "zhang":
         for key, value in train_args.items():
             if key != "lr" or not stage.startswith("finetune_"):
-                formatted = ",".join(str(update) for update in value) if isinstance(value, tuple) else str(value)
+                if isinstance(value, bool):
+                    formatted = str(int(value))
+                else:
+                    formatted = ",".join(str(update) for update in value) if isinstance(value, tuple) else str(value)
                 command += [f"--{key}", formatted]
     if stage.startswith("finetune_"):
         command += ["--lr", str(finetune_lr)]
@@ -137,6 +188,7 @@ def validate_stage_result(
     num_envs: int,
     parent_checkpoint: Path | None,
     variant: str = "step",
+    algorithm: str = "bptt",
 ) -> list[str]:
     """Validate one real training report against the fixed acceptance protocol."""
     errors = []
@@ -149,12 +201,15 @@ def validate_stage_result(
     expect(result.get("method") == method, "method does not match the launched trainer")
     if method == "zhang":
         expect(result.get("variant") == variant, "Zhang variant does not match the launched experiment")
+        expect(result.get("algorithm") == algorithm, "Zhang algorithm does not match the launched experiment")
     expect(result.get("status") == "completed", "training status is not completed")
     expect(result.get("stage") == stage, "training stage does not match")
     expect(result.get("num_envs") == num_envs and num_envs >= 1024, "num_envs must match and be at least 1024")
     expect(result.get("stage_passed") is True, "trainer has not passed the stage")
     expect(result.get("max_updates") is None, "training has a maximum update limit")
     expected_parent = str(parent_checkpoint) if parent_checkpoint is not None else None
+    expect((stage == STAGES[0]) is (parent_checkpoint is None),
+           "formal training must start fresh only at pretrain_s0 and inherit every later stage")
     expect(result.get("parent_checkpoint") == expected_parent, "parent checkpoint is not the previous stage of this run")
     expect(result.get("fresh") is (parent_checkpoint is None), "fresh-run flag disagrees with the checkpoint lineage")
 
@@ -270,6 +325,7 @@ def run_pipeline(args: argparse.Namespace, train_args: dict[str, TrainArgValue])
                         current_stage["result"], method=method, stage=stage,
                         num_envs=args.num_envs, parent_checkpoint=parent_checkpoint,
                         variant=train_args.get("variant", "step"),
+                        algorithm=train_args.get("algorithm", "bptt"),
                     )
                 checkpoint = log_dir / "checkpoint_stage.pt"
                 if not checkpoint.is_file():

@@ -1,9 +1,36 @@
-"""The four named stages gate on completed training episodes, including exactly 80%."""
+"""The five named stages gate on completed training episodes, including exactly 80%."""
 
 import pytest
 import torch
 
 from isaaclab_navrl.tasks.navigation.curriculum import STAGE_CONFIGS, TrainingCurriculum
+
+
+def test_formal_curriculum_starts_without_dynamic_obstacles():
+    assert list(STAGE_CONFIGS.items()) == [
+        ("pretrain_s0", {"static_obstacles": 300, "dynamic_obstacles": 0, "randomization": False}),
+        ("pretrain_s1", {"static_obstacles": 300, "dynamic_obstacles": 60, "randomization": False}),
+        ("pretrain_s2", {"static_obstacles": 400, "dynamic_obstacles": 120, "randomization": False}),
+        ("finetune_s1", {"static_obstacles": 300, "dynamic_obstacles": 60, "randomization": True}),
+        ("finetune_s2", {"static_obstacles": 400, "dynamic_obstacles": 100, "randomization": True}),
+    ]
+    curriculum = TrainingCurriculum(10, "cpu", stage="pretrain_s0")
+    transition = {
+        "first_event_code": torch.tensor([1] * 8 + [3] * 2),
+        "first_event_time_s": torch.full((10,), 4.5),
+        "terminated": torch.zeros(10, dtype=torch.bool), "timeout": torch.zeros(10, dtype=torch.bool),
+        "episode_return": torch.full((10,), 20.0), "step": torch.full((10,), 50),
+    }
+    curriculum.observe(transition)
+    assert curriculum.pop_report(update=1) is None and not curriculum.stage_passed
+    transition.update(timeout=torch.ones(10, dtype=torch.bool), step=torch.full((10,), 100))
+    curriculum.observe(transition)
+    report = curriculum.pop_report(update=2)
+    assert report["episodes"] == 10 and report["success_rate"] == 0.8
+    assert report["static_obstacles"] == 300 and report["dynamic_obstacles"] == 0
+    assert report["randomization"] is False and report["bounds_rate"] == 0.2
+    assert curriculum.stage_passed and not curriculum.acceptance_passed
+    assert not curriculum.ready_to_advance
 
 
 @pytest.mark.parametrize("stage", list(STAGE_CONFIGS))
