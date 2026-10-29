@@ -62,6 +62,11 @@ NavRL 保留已批准的官方 PPO 差异：单一 Adam、平方价值损失、�
 
 ## 正式训练记录
 
-正式 Zhang 启动前的真实 BPTT 检查已完成。本轮有限步检查不计入正式验收。正式运行从新目录和随机权重开始，后续状态记录在该目录的实时 JSON。
+2026-10-29 05:25 UTC，基于提交 `80e0f6e` 同时启动两份正式训练，均为1024环境、随机初始化、无更新上限：
+
+- Zhang：`logs/curriculum/sim2real_zhang_seed0_h150_20261029/`，编排进程PID 561128。H=150，速度窗口6秒，梯度裁剪5，预训练学习率0.001。
+- NavRL：`logs/curriculum/sim2real_navrl_seed0_20261029/`，编排进程PID 561129。使用现有官方PPO配置。
+
+两份编排均按四阶段协议运行。Zhang 的有限步检查权重没有加载到正式训练中。启动命令、提交和进程信息保存在各根目录旁的 `.launch.json`；阶段标准输出位于 `<根目录>/<方法>/<阶段>.stdout.log`，实时结果位于 `<根目录>/<方法>/<阶段>/training_result.json`。启动时尚未通过任何阶段；后续以真实JSON为准。
 
 TensorBoard 地址为 `http://100.92.244.71:6012/`，日志根目录为 `logs/curriculum/`。两任务按阶段记录 `Train/<stage>/success_rate`、`collision_rate`、`bounds_rate`、`timeout_rate`、`invalid_rate`、`success_time_mean_s`、`episode_return_mean`、`episode_length_mean` 和 `reward_per_step_mean`。Zhang 另记录原损失、梯度范数、有效速度窗口比例、更新耗时与执行动作误差。
