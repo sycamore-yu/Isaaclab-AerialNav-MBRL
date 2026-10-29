@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-已完成真实PhysX环境检查、N256有限更新容量检查、最终v6静态几何300/400地图验证，以及一次整合回归：366项通过、2项跳过、522个子测试通过；37个修改过的Python文件Ruff通过。尚未启动新比较，也没有训练验收通过的结论。历史失败保留，启动证据在实际发生后追加。
+已完成真实PhysX环境检查、N256有限更新容量检查、最终v6静态几何300/400地图验证，以及一次整合回归：366项通过、2项跳过、522个子测试通过；37个修改过的Python文件Ruff通过。训练功能提交为`51b9c55`，实际冻结训练源码为`6a5eb1d`。13:38启动的两组比较在收到SIGTERM后正常保存并退出，见[中断记录](zhang_restart_interrupted_run_20261029.md)。13:57:52 UTC在全新wave2目录再次随机初始化，最多六组并发；首轮运行身份检查陆续写入`logs/curriculum/zhang_restart_controls_wave2_20261029/launch_validation.json`。没有训练验收通过的结论。历史失败和中断均保留。
 
 工作树验证根目录：`/home/tong/tongworkspace/free/.worktrees/isaaclab-navrl/restart-controls-20261029/logs/restart_checks/`。容量检查根目录：`/home/tong/tongworkspace/free/isaaclab-navrl/logs/smoke/restart_controls_20261029/`。下表路径相对对应根目录。
 
@@ -23,6 +23,7 @@
 | `final_validation/all_unit.log/xml`及`manifest.json` | 366通过、2跳过、522个子测试，56.70 s | 一次整合执行；全部待提交源码。四个未修改参考测试使用本工作树逐字副本放在上游NavRL的同级临时测试目录，以保留原相对路径；显式PYTHONPATH指向本工作树，没有使用另一会话后来修改的主目录测试。 |
 | `final_validation/ruff.log`及manifest | 37个Python文件通过 | 全部修改/新增Python文件，未自动修改代码。 |
 | `queue_validation/unit.log/xml`及manifest | 15通过，0.09 s | 后续新增容量队列：12组fresh命令、布尔参数、当前阶段首update门控、显存/槽位边界、实际Zhang汇总身份；不启动仿真。队列脚本及测试两文件Ruff通过。 |
+| `queue_expansion_validation/manifest.json`及pytest/ruff/help日志 | 16通过，0.15 s；Ruff通过 | 后续扩大可选槽位至1–6、显存边界与独立冻结训练源码命令；CLI帮助核实新参数。dispatcher提交`42e47bc`，训练源码仍为`6a5eb1d`。 |
 
 本地 stdlib 交叉检查另有协议24、CLI15、配置11、汇总12项通过；12组计划、60条阶段命令和11组Zhang配置通过检查，未启动仿真。配置身份缺失或不匹配均排除同预算比较；PPO单独汇总。上述不同轮次不能相加冒作一次整套通过。
 
@@ -65,4 +66,4 @@
 
 ## 待完成证据
 
-实际源码提交、fresh筛选启动manifest仍须按真实回执更新。N256属于screening；正式验收仍需至少N1024、随机初始化、完整五阶段，最终400静态/100动态/扰动开启环境达到80%自然首次到达率。见[实验矩阵](zhang_restart_experiment_matrix_20261029.md)、[课程](../TRAINING_CURRICULUM.md)和[Recovery协议](../migration/RECOVERY_LADDER_20261029.md)。
+实际启动回执为主目录`logs/curriculum/zhang_restart_controls_wave2_20261029.launch.json`，运行状态以该目录的`queue.json`和各阶段原始JSON为准。首轮完整update检查仅证明配置、执行动作和数值链可运行。N256属于screening；正式验收仍需至少N1024、随机初始化、完整五阶段，最终400静态/100动态/扰动开启环境达到80%自然首次到达率。见[实验矩阵](zhang_restart_experiment_matrix_20261029.md)、[课程](../TRAINING_CURRICULUM.md)和[Recovery协议](../migration/RECOVERY_LADDER_20261029.md)。
