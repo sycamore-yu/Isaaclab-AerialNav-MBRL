@@ -13,6 +13,7 @@ from types import SimpleNamespace
 
 from isaaclab.app import add_launcher_args, launch_simulation
 
+from isaaclab_navrl.physics import parse_physics_args, select_physics
 from isaaclab_navrl.source import verify_training_import
 from isaaclab_navrl.training import STAGES, write_json
 
@@ -38,7 +39,7 @@ def main():
     parser.add_argument("--terrain_seed", type=int, default=0)
     add_launcher_args(parser)
     parser.set_defaults(visualizer=["none"])
-    args = parser.parse_args()
+    args = parse_physics_args(parser)
     if args.num_envs < 1 or (args.max_iterations is not None and args.max_iterations < 1):
         parser.error("num_envs and max_iterations must be positive")
     if args.lr is not None and not 0.0 < args.lr < float("inf"):
@@ -60,6 +61,7 @@ def main():
     env = None
     result = {
         "method": "navrl",
+        "physics": args.physics_preset,
         "status": "running",
         "fresh": parent_checkpoint is None,
         "stage": args.stage,
@@ -129,6 +131,7 @@ def main():
         cfg.num_dynamic_obstacles = stage_config["dynamic_obstacles"]
         cfg.sim_to_real.enabled = stage_config["randomization"]
         cfg.sim.device = args.device
+        select_physics(cfg, args.physics_preset)
         cfg.configure_scene()
         from importlib.metadata import version
 
@@ -158,6 +161,7 @@ def main():
         sim_to_real_config = asdict(cfg.sim_to_real)
         run_config = {
             "method": "navrl",
+            "physics": args.physics_preset,
             "fresh": parent_checkpoint is None,
             "stage": args.stage,
             "parent_checkpoint": parent_checkpoint,
@@ -218,6 +222,7 @@ def main():
                             str(temporary),
                             infos={
                                 "method": "navrl",
+                                "physics": args.physics_preset,
                                 "stage": args.stage,
                                 "fresh": parent_checkpoint is None,
                                 "parent_checkpoint": parent_checkpoint,

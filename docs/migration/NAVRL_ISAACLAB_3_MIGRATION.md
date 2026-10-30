@@ -1,11 +1,11 @@
 # NavRL → Isaac Lab 3.0：迁移决策与验收
 
-状态：**NavRL 任务与 RSL-RL 训练入口已实现；小规模 PhysX 场景及受控闭环对照已通过；正式训练与成功率验收待完成**。修订：2026-10-29。具体已通过与待验证项目见 [实现与验证状态](IMPLEMENTATION_STATUS.md)。
+状态：**NavRL 任务与 RSL-RL 训练入口已实现；正式训练与成功率验收以原始运行记录为准**。2026-10-30 增加 PhysX / Newton 后端选择，配置与验证见 [Newton 适配说明](NEWTON_BACKEND_20261030.md)。下文早期 PhysX 对照保留为历史证据；具体已通过与待验证项目见 [实现与验证状态](../IMPLEMENTATION_STATUS.md)。
 采用以下固定控制链：
 
 ```text
 NavRL 3 维速度策略 → OmniDrones LeePositionController
-→ OmniDrones RotorGroup → Isaac Lab Multirotor 合力矩 → PhysX
+→ OmniDrones RotorGroup → Articulation + WrenchComposer → PhysX / Newton
 ```
 
 每个物理步同时执行
@@ -13,7 +13,7 @@ NavRL 3 维速度策略 → OmniDrones LeePositionController
 
 目标版本为
 [Isaac Lab v3.0.0](https://github.com/isaac-sim/IsaacLab/tree/v3.0.0)、
-Isaac Sim 6.2、PhysX。原始基线为
+Isaac Sim 6.2、PhysX / Newton 1.6.1。原始基线为
 [Zhefan-Xu/NavRL](https://github.com/Zhefan-Xu/NavRL)
 
 
@@ -22,21 +22,21 @@ Isaac Sim 6.2、PhysX。原始基线为
 | 范围 | 决策 | 理由 |
 |---|---|---|
 | 环境 | 独立 NavRL 任务，采用 `DirectRLEnv` | 保持原版步进、奖励和重置逻辑 |
-| 并行仿真 | 使用 `InteractiveScene` 管理多架无人机；共用一份静态地形和一组动态障碍物 | 保留原版共享世界训练 |
+| 并行仿真 | 使用 `InteractiveScene` 管理多架无人机；共用静态地形和同一份动态轨迹。PhysX 使用全局动态刚体，Newton 使用每世界同步运动学副本 | 保留共享场景语义，适应 MuJoCo Warp 禁止全局动态刚体的限制 |
 | 碰撞过滤 | 不同并行无人机之间过滤物理碰撞；它们仍共同使用静态地形与动态障碍物 | 保持原版跨环境碰撞隔离，不改变共享地图 |
-| 动力学 | 使用 `isaaclab_contrib.assets.Multirotor` 的机体合力矩；原版 `RotorGroup` 更新电机状态和旋翼关节速度，`Thruster` 仅作为零延迟推力接口 | 保留原版电机和旋翼转动动力学；已通过受控 PhysX 闭环对照 |
+| 动力学 | 原版 `RotorGroup` 更新电机状态和旋翼关节速度；相同分配矩阵生成机体合力矩，通过后端工厂的 `Articulation` / `WrenchComposer` 作用于 `base_link` 质心 | 移除绑定 PhysX 的 contrib `Multirotor`，保留原版控制与电机响应；原受控 PhysX 对照仍作为参考 |
 | 无人机 USD | 继续使用 OmniDrones 原版 Hummingbird USD，保留质量、惯量、旋翼位置与关节结构 | 维持原版物理资产 |
 | 高层动作 | 保留 NavRL 的 3 维目标速度与目标坐标系变换 | 原版策略动作的物理意义不变 |
 | 底层控制 | 直接复用 OmniDrones `LeePositionController` 的速度控制模式、参数及控制分配 | 保留原策略控制律 |
 | 观测 | 保留 8 维状态、1×36×4 LiDAR、最近 5 个动态障碍物各 10 维真实状态 | 保留原策略输入；动态物体真值允许输入策略 |
-| 动态障碍物 | 共用全局动态物体；维持原始运动、尺寸、速度采样和几何碰撞判定 | 保留同一动态场景和奖励输入 |
+| 动态障碍物 | 维持原始运动、尺寸、速度采样和几何碰撞判定；Newton 的各物理副本每步广播同一位姿，相机网格仍共享 | 保留同一动态场景和奖励输入 |
 | 静态障碍物 | 保留原始高度场生成算法、种子与几何分布 | NavRL 的 Orbit 地形生成器曾经过定制 |
 | 强化学习 | 改为 Isaac Lab 官方集成的 **RSL-RL PPO**，不再运行旧版自定义 PPO 训练循环 | 使用标准训练器、记录及检查点格式 |
 | 网络与检查点 | Actor/Critic 必须继续共享原版 CNN、动态障碍编码器及融合特征；保持 Beta 分布，转换旧检查点 | 保留原始网络参数共享语义 |
 | 奖励与成功率 | 保留 NavRL 原始奖励、终止条件及 `reach_goal` 记录方法 | 保持任务目标和原始评估口径 |
 | 验证 | 已完成受控 PhysX 施力对照；后续验证传感器、奖励、检查点、共享场景与训练 | 按第六节验收 |
 
-本次迁移保留原版动态物体真值输入、奖励及任务定义；使用 PhysX，
+本次迁移保留原版动态物体真值输入、奖励及任务定义；后端预设选择 PhysX 或 Newton / MuJoCo Warp。
 
 ## 二、动作与控制器：保持 NavRL 原样
 

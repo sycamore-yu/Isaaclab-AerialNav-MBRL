@@ -1,13 +1,12 @@
 """Direct starts preserve fresh lineage without certifying skipped curriculum stages."""
 
-import argparse
 import json
 import runpy
 import subprocess
 from pathlib import Path
 
 import pytest
-from test_acceptance_protocol import protocol, report_fixture
+from test_acceptance_protocol import pipeline_args, protocol, report_fixture
 
 ROOT = Path(__file__).resolve().parents[1]
 QUEUE = runpy.run_path(str(ROOT / "scripts/run_comparison_queue.py"))
@@ -40,7 +39,7 @@ def test_direct_pipeline_starts_random_then_inherits_only_its_own_checkpoints(tm
 
     monkeypatch.setattr(protocol.subprocess, "run", simulate)
     output = tmp_path / "fresh"
-    args = argparse.Namespace(
+    args = pipeline_args(
         method="zhang",
         screening=True,
         output=str(output),

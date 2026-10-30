@@ -1,4 +1,4 @@
-"""Shared NavRL world with official PhysX stepping and two action semantics."""
+"""Shared NavRL world with backend-selectable stepping and two action semantics."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from isaaclab.utils.math import (
     quat_from_euler_xyz,
     quat_mul,
 )
+from isaaclab_tasks.utils.hydra import resolve_presets
 
 from isaaclab_navrl.control import LeeRotorController
 from isaaclab_navrl.zhang.termination import latch_first_event, reset_first_event, termination_mask
@@ -27,6 +28,8 @@ class NavRLEnv(DirectRLEnv):
     """The original NavRL observation/reward task on Isaac Lab 3.0."""
 
     def __init__(self, cfg, render_mode=None, **kwargs):
+        # Direct gym.make callers use the same task default as the public CLI.
+        resolve_presets(cfg)
         if cfg.evaluation:
             cfg.sim_to_real.enabled = False
         cfg.configure_scene()
@@ -70,8 +73,10 @@ class NavRLEnv(DirectRLEnv):
         )
         self.dynamic_collection = self.scene["dynamic_obstacles"] if cfg.num_dynamic_obstacles else None
         if self.dynamic_collection is not None:
-            if self.dynamic_collection.data.body_pose_w.torch.shape[0] != 1:
-                raise RuntimeError("The global dynamic obstacles were unexpectedly replicated.")
+            instances = self.dynamic_collection.data.body_pose_w.torch.shape[0]
+            expected = self.num_envs if self.drone.__backend_name__ == "newton" else 1
+            if instances != expected:
+                raise RuntimeError(f"Dynamic obstacle instances: expected {expected}, got {instances}.")
             self._dynamic_pose = self.dynamic_collection.data.body_pose_w.torch.clone()
             self.set_active_obstacles(cfg.num_dynamic_obstacles)
         self.target_pos = torch.zeros(self.num_envs, 3, device=self.device)
@@ -167,7 +172,11 @@ class NavRLEnv(DirectRLEnv):
         return super().reset(*args, **kwargs)
 
     def step(self, actions):
-        result = super().step(actions)
+        try:
+            result = super().step(actions)
+        finally:
+            # Only in-step autoresets may publish completed-episode logs.
+            self._stepping = False
         if self.curriculum is not None:
             self.curriculum.observe(result[-1]["transition"])
         return result
@@ -186,7 +195,7 @@ class NavRLEnv(DirectRLEnv):
         )
         self.cfg.num_dynamic_obstacles = count
         if self.dynamic_collection is not None:
-            self._dynamic_pose[0, :, :3] = self._dynamic_pose.new_tensor((0.0, 0.0, -1000.0))
+            self._dynamic_pose[:, :, :3] = self._dynamic_pose.new_tensor((0.0, 0.0, -1000.0))
         self._write_dynamic_obstacles()
 
     def advance_curriculum(self):
@@ -219,7 +228,7 @@ class NavRLEnv(DirectRLEnv):
     def _write_dynamic_obstacles(self):
         if self.dynamic_collection is None:
             return
-        self._dynamic_pose[0, self._active_obstacle_ids, :3] = self.motion.position
+        self._dynamic_pose[:, self._active_obstacle_ids, :3] = self.motion.position
         # Kinematic poses are authoritative; visual motion never changes the collision rule.
         self.dynamic_collection.write_body_pose_to_sim_index(body_poses=self._dynamic_pose)
         self.dynamic_collection.write_data_to_sim()
@@ -564,7 +573,7 @@ class ZhangNavRLEnv(NavRLEnv):
         yaw_vector = yaw_alpha * forward + (1.0 - yaw_alpha) * desired_forward
         yaw = torch.atan2(yaw_vector[:, 1], yaw_vector[:, 0]).unsqueeze(-1)
         self.controller.compute(state, state[:, 7:10], acceleration_world=self.filtered_command, yaw_world=yaw)
-        self.controller.apply(self.drone)
-        self.drone.set_disturbance_acceleration(
-            disturbance_acceleration(state[:, 7:10], state[:, 3:7], self.zhang_parameters)
+        self.controller.apply(
+            self.drone,
+            disturbance_acceleration(state[:, 7:10], state[:, 3:7], self.zhang_parameters),
         )

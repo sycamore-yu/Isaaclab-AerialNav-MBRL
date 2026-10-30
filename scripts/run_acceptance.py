@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from isaaclab_navrl.physics import parse_physics_args
 from isaaclab_navrl.source import freeze_source, verify_source
 from isaaclab_navrl.training import STAGE_CONFIG, STAGES, write_json
 from isaaclab_navrl.zhang.cli import TrainArgValue, parse_train_args
@@ -47,6 +48,7 @@ def build_command(
     report_episodes: int | None = None,
     fresh_stage: bool = False,
     fixed_stage: bool = False,
+    physics: str = "isaacsim_physx",
 ) -> list[str]:
     command = [
         executable,
@@ -63,6 +65,7 @@ def build_command(
         str(seed),
         "--device",
         device,
+        f"physics={physics}",
     ]
     if not fixed_stage:
         command += ["--stop_after_acceptance"]
@@ -209,6 +212,7 @@ def run_pipeline(args: argparse.Namespace, train_args: dict[str, TrainArgValue])
         "screening": screening,
         "stage_thresholds_passed": False,
         "method": args.method,
+        "physics": args.physics_preset,
         "num_envs": args.num_envs,
         "report_episodes": getattr(args, "report_episodes", None) or args.num_envs,
         "train_seed": args.train_seed,
@@ -274,6 +278,7 @@ def run_pipeline(args: argparse.Namespace, train_args: dict[str, TrainArgValue])
                     report_episodes=getattr(args, "report_episodes", None),
                     fresh_stage=stage == start_stage and start_stage != STAGES[0],
                     fixed_stage=fixed_stage,
+                    physics=args.physics_preset,
                 )
                 current_stage = {
                     "stage": stage,
@@ -419,7 +424,7 @@ def main() -> int:
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--finetune_lr", type=float, default=5e-5)
     parser.add_argument("--train_args", nargs=argparse.REMAINDER, default=[])
-    args = parser.parse_args()
+    args = parse_physics_args(parser)
     try:
         selected_stages(args.start_stage, screening=args.screening, method=args.method, fixed_stage=args.fixed_stage)
     except ValueError as exc:

@@ -1,4 +1,4 @@
-"""Train one Zhang BPTT, SHAC, or AHAC curriculum stage on Isaac Lab 3.0 PhysX."""
+"""Train one Zhang BPTT, SHAC, or AHAC curriculum stage on Isaac Lab 3.0."""
 
 import argparse
 import os
@@ -8,6 +8,7 @@ from pathlib import Path
 
 from isaaclab.app import add_launcher_args, launch_simulation
 
+from isaaclab_navrl.physics import parse_physics_args, select_physics
 from isaaclab_navrl.source import verify_training_import
 from isaaclab_navrl.training import STAGE_CONFIG, STAGES, graceful_training_stop, write_json
 from isaaclab_navrl.zhang.cli import add_train_args, parse_train_args
@@ -34,7 +35,7 @@ def main():
     add_train_args(parser)
     add_launcher_args(parser)
     parser.set_defaults(visualizer=["none"])
-    args = parser.parse_args()
+    args = parse_physics_args(parser)
     overrides = {
         key: getattr(args, key)
         for key in ("num_dynamic_obstacles", "target_speed_min", "target_speed_max")
@@ -98,12 +99,14 @@ def main():
     cfg.sim_to_real.enabled = stage["randomization"]
     cfg.sim.device = args.device
     cfg.depth_camera_batch_size = args.camera_batch_size
+    select_physics(cfg, args.physics_preset)
     cfg.configure_scene()
     train_values = {
         field.name: getattr(args, field.name) for field in fields(ZhangTrainCfg) if hasattr(args, field.name)
     }
     train_cfg = ZhangTrainCfg(
         **train_values,
+        physics=args.physics_preset,
         physics_dt=cfg.sim.dt,
         policy_dt=cfg.sim.dt * cfg.decimation,
         height_target_range=cfg.height_target_range,
@@ -115,6 +118,7 @@ def main():
         args.log_dir / "config.json",
         {
             "method": "zhang",
+            "physics": args.physics_preset,
             "variant": args.variant,
             "algorithm": args.algorithm,
             "train": asdict(train_cfg),
@@ -126,6 +130,7 @@ def main():
             "static_obstacle_distance": "signed_heightfield_occupancy_exit_proxy",
             "static_projection": "float64_selected_face_refinement_float32_storage",
             "environment": {
+                "physics": args.physics_preset,
                 "num_envs": args.num_envs,
                 "seed": args.seed,
                 "terrain_seed": args.terrain_seed,

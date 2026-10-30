@@ -6,7 +6,6 @@ See LICENSE-OmniDrones (MIT).
 
 from __future__ import annotations
 
-import math
 from pathlib import Path
 
 import torch
@@ -40,16 +39,14 @@ def rotor_allocation(device="cpu"):
 
 
 def make_drone_cfg(prim_path):
-    """Unchanged USD, with the aggregate-wrench configuration verified in PhysX."""
+    """Load the same mechanical model through Isaac Lab's backend factory."""
     import isaaclab.sim as sim_utils
-    from isaaclab_contrib.actuators import ThrusterCfg
-    from isaaclab_contrib.assets import MultirotorCfg
+    from isaaclab.actuators import ImplicitActuatorCfg
+    from isaaclab.assets import ArticulationCfg
+    from isaaclab_newton.sim.schemas import NewtonArticulationCfg
     from isaaclab_physx.sim.schemas import PhysxArticulationCfg, PhysxRigidBodyCfg
 
-    max_force = ROTOR_CONFIG["force_constants"][0] * 838**2
-    kf_rps = ROTOR_CONFIG["force_constants"][0] * (2 * math.pi) ** 2
-    hover_rps = math.sqrt(MASS * GRAVITY / 4 / kf_rps)
-    return MultirotorCfg(
+    return ArticulationCfg(
         prim_path=prim_path,
         spawn=sim_utils.UsdFileCfg(
             usd_path=str(Path(__file__).parent / "assets" / "hummingbird.usd"),
@@ -62,35 +59,30 @@ def make_drone_cfg(prim_path):
                 max_angular_velocity=1000.0,
                 max_depenetration_velocity=1.0,
             ),
-            articulation_props=PhysxArticulationCfg(
-                enabled_self_collisions=False,
-                solver_position_iteration_count=4,
-                solver_velocity_iteration_count=0,
-            ),
+            articulation_props=[
+                PhysxArticulationCfg(
+                    enabled_self_collisions=False,
+                    solver_position_iteration_count=4,
+                    solver_velocity_iteration_count=0,
+                ),
+                NewtonArticulationCfg(self_collision_enabled=False),
+            ],
         ),
-        init_state=MultirotorCfg.InitialStateCfg(
+        init_state=ArticulationCfg.InitialStateCfg(
             pos=(0.0, 0.0, 2.0),
             rot=(0.0, 0.0, 0.0, 1.0),
             lin_vel=(0.0, 0.0, 0.0),
             ang_vel=(0.0, 0.0, 0.0),
-            rps={f"rotor_{i}": hover_rps for i in range(4)},
         ),
         actuators={
-            "thrusters": ThrusterCfg(
-                dt=0.016,
-                thrust_range=(0.0, max_force),
-                max_thrust_rate=1e5,
-                thrust_const_range=(kf_rps, kf_rps),
-                tau_inc_range=(0.0, 0.0),
-                tau_dec_range=(0.0, 0.0),
-                torque_to_thrust_ratio=ROTOR_CONFIG["moment_constants"][0] / ROTOR_CONFIG["force_constants"][0],
-                use_discrete_approximation=True,
-                integration_scheme="euler",
-                thruster_names_expr=[f"rotor_{i}" for i in range(4)],
+            # RotorGroup supplies the motor dynamics and body wrench. The USD
+            # rotor joints remain passive; their speeds are written by name.
+            "rotors": ImplicitActuatorCfg(
+                joint_names_expr=["rotor_.*_joint"],
+                stiffness=0.0,
+                damping=0.0,
             )
         },
-        rotor_directions=ROTOR_CONFIG["directions"].copy(),
-        allocation_matrix=rotor_allocation().tolist(),
     )
 
 
@@ -190,7 +182,8 @@ class LeeRotorController:
         self.thrusts = torch.empty(num_envs, 4, device=device)
         self.moments = torch.empty_like(self.thrusts)
         self.commands = torch.empty_like(self.thrusts)
-        self._thrust_order = None
+        self.allocation = rotor_allocation(device)
+        self._base_body_ids = None
         self._joint_order = None
         self.reset(torch.arange(num_envs, device=device))
 
@@ -236,11 +229,24 @@ class LeeRotorController:
         self.thrusts, self.moments = self._motor_step(self.rotor_parameters, self.commands)
         return self.commands
 
-    def apply(self, drone):
-        if self._thrust_order is None:
-            self._thrust_order = [int(name.removeprefix("rotor_")) for name in drone.thruster_names]
+    def apply(self, drone, disturbance_acceleration_w=None):
+        """Apply the RotorGroup wrench at the named base link's centre of mass."""
+        if self._base_body_ids is None:
+            self._base_body_ids = [drone.body_names.index("base_link")]
             self._joint_order = [drone.joint_names.index(f"rotor_{i}_joint") for i in range(4)]
-        drone.set_thrust_target(self.thrusts[:, self._thrust_order])
+        wrench = (self.allocation @ self.thrusts.T).T
+        force = wrench[:, :3]
+        if disturbance_acceleration_w is not None:
+            from isaaclab.utils.math import quat_apply_inverse
+
+            mass = drone.data.body_mass.torch.sum(-1, keepdim=True)
+            force = force + quat_apply_inverse(drone.data.root_quat_w.torch, disturbance_acceleration_w * mass)
+        drone.permanent_wrench_composer.set_forces_and_torques_index(
+            forces=force[:, None, :].contiguous(),
+            torques=wrench[:, None, 3:].contiguous(),
+            body_ids=self._base_body_ids,
+            is_global=False,
+        )
         joint_velocity = drone.data.joint_vel.torch.clone()
         joint_velocity[:, self._joint_order] = self.throttle * self.directions * self.rotation_velocities
         drone.write_joint_velocity_to_sim_index(velocity=joint_velocity)

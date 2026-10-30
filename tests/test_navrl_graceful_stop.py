@@ -170,6 +170,7 @@ class Harness:
         self.signal_during_final_save = signal_during_final_save
         self.events = []
         self.cfg = EnvironmentConfig()
+        self.selected_physics = None
         self.curriculum = Curriculum(self)
         self.env_closed = False
         self.runner = None
@@ -188,7 +189,15 @@ class Harness:
         self.runner = Runner(self)
         return self.runner
 
-    def run(self, *, max_iterations=4, stage="pretrain_s0", checkpoint=None, stop_after_acceptance=False):
+    def run(
+        self,
+        *,
+        max_iterations=4,
+        stage="pretrain_s0",
+        checkpoint=None,
+        stop_after_acceptance=False,
+        physics="isaacsim_physx",
+    ):
         tokens = [
             "train_navrl.py",
             "--log_dir",
@@ -199,12 +208,25 @@ class Harness:
             str(max_iterations),
             "--stage",
             stage,
+            f"physics={physics}",
         ]
         if checkpoint is not None:
             tokens += ["--checkpoint", str(checkpoint)]
         if stop_after_acceptance:
             tokens += ["--stop_after_acceptance"]
+
+        def resolve_presets(cfg, *, selected):
+            assert cfg is self.cfg and selected == (physics,)
+            self.selected_physics = selected[0]
+
+        def launch(cfg, args):
+            assert cfg is self.cfg and self.selected_physics == physics
+            # A non-None launcher override would discard the resolved task preset.
+            assert getattr(args, "physics", None) is None
+            return contextlib.nullcontext()
+
         imports = {
+            "isaaclab_tasks.utils.hydra": types.SimpleNamespace(resolve_presets=resolve_presets),
             "gymnasium": types.SimpleNamespace(
                 make=lambda *_args, **_kwargs: types.SimpleNamespace(unwrapped=self.env)
             ),
@@ -241,7 +263,7 @@ class Harness:
         rng_state = random.getstate()
         try:
             with patch("builtins.__import__", side_effect=intercept), patch.object(sys, "argv", tokens):
-                with patch.object(trainer, "launch_simulation", side_effect=lambda *_args: contextlib.nullcontext()):
+                with patch.object(trainer, "launch_simulation", side_effect=launch):
                     with contextlib.redirect_stdout(io.StringIO()):
                         trainer.main()
         finally:
@@ -320,12 +342,15 @@ class NavrlGracefulStopTests(unittest.TestCase):
     def test_normal_update_limit_and_parent_handoff_keep_counts_and_stage_learning_rate(self):
         with tempfile.TemporaryDirectory(prefix="navrl_complete_") as temporary:
             first = Harness(Path(temporary) / "s0")
-            first.run(max_iterations=2)
+            first.run(max_iterations=2, physics="newton_mjwarp")
             parent = Path(first.result()["checkpoint"])
             second = Harness(Path(temporary) / "s1")
-            second.run(max_iterations=1, stage="pretrain_s1", checkpoint=parent)
+            second.run(max_iterations=1, stage="pretrain_s1", checkpoint=parent, physics="newton_mjwarp")
             for harness in (first, second):
                 self.assertEqual(harness.result()["status"], "completed")
+                self.assertEqual(harness.result()["physics"], "newton_mjwarp")
+                payload = json.loads(Path(harness.result()["checkpoint"]).read_text())
+                self.assertEqual(payload["infos"]["physics"], "newton_mjwarp")
                 self.assertIsNone(harness.result()["stop_requested"])
                 self.assertEqual(Path(harness.result()["checkpoint"]).name, "checkpoint_final.pt")
                 self.assert_closed(harness)

@@ -12,16 +12,19 @@ from isaaclab.app import add_launcher_args, launch_simulation
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=Path("logs/smoke/scene_isolation.json"))
+    parser.add_argument("--backend", choices=("isaacsim_physx", "newton_mjwarp"), default="isaacsim_physx")
     add_launcher_args(parser)
     parser.set_defaults(visualizer=["none"])
     args = parser.parse_args()
     import gymnasium as gym
     import torch
+    from isaaclab_tasks.utils.hydra import resolve_presets
 
     import isaaclab_navrl.tasks  # noqa: F401
     from isaaclab_navrl.tasks.navigation.config.hummingbird.env_cfg import NavRLEnvCfg
 
     cfg = NavRLEnvCfg()
+    resolve_presets(cfg, selected=(args.backend,))
     cfg.training_curriculum = False
     cfg.num_dynamic_obstacles = 100
     cfg.scene.num_envs = 2
@@ -49,12 +52,19 @@ def main():
                 max_difference = max(max_difference, float((state[0] - state[1]).abs().max()))
                 torch.testing.assert_close(state[0], state[1], atol=2e-5, rtol=1e-5)
                 torch.testing.assert_close(observation["policy"][0], observation["policy"][1], atol=2e-5, rtol=1e-5)
+                obstacle_poses = env.dynamic_collection.data.body_pose_w.torch
+                torch.testing.assert_close(obstacle_poses, obstacle_poses[:1].expand_as(obstacle_poses), atol=1e-6, rtol=0)
+                torch.testing.assert_close(
+                    obstacle_poses[0, env._active_obstacle_ids, :3], env.motion.position, atol=1e-6, rtol=0
+                )
             result = {
+                "physics": args.backend,
                 "num_envs": 2,
                 "steps": 64,
                 "initial_positions_identical": True,
                 "cross_environment_collisions_filtered": True,
                 "same_world_observations_identical": True,
+                "obstacle_instances_follow_shared_motion": True,
                 "max_state_difference": max_difference,
                 "shared_dynamic_collection_shape": list(env.dynamic_collection.data.body_pose_w.torch.shape),
             }

@@ -1,13 +1,41 @@
 """Pure configuration checks; no simulator or training is performed."""
 
+import argparse
+import contextlib
+import io
 import json
 import unittest
 from dataclasses import asdict
 
+from isaaclab_navrl.physics import parse_physics_args
 from isaaclab_navrl.zhang.config import ZhangTrainCfg
 
 
 class ZhangTrainConfigTests(unittest.TestCase):
+    def test_physics_selector_preserves_training_remainder_and_checkpoint_identity(self):
+        parser = argparse.ArgumentParser(allow_abbrev=False)
+        parser.add_argument("--train_args", nargs=argparse.REMAINDER, default=[])
+        self.assertEqual(parse_physics_args(parser, []).physics_preset, "isaacsim_physx")
+        args = parse_physics_args(parser, ["--train_args", "--timesteps", "150", "physics=newton_mjwarp"])
+        self.assertEqual(args.physics_preset, "newton_mjwarp")
+        self.assertFalse(hasattr(args, "physics"))
+        self.assertEqual(args.train_args, ["--timesteps", "150"])
+        cfg = ZhangTrainCfg(physics=args.physics_preset)
+        cfg.validate()
+        restored = ZhangTrainCfg(**json.loads(json.dumps(asdict(cfg))))
+        restored.validate()
+        self.assertEqual(restored.physics, "newton_mjwarp")
+        self.assertIsNone(restored.max_iterations)
+        self.assertFalse(restored.stop_after_acceptance)
+
+    def test_invalid_physics_selector_cannot_silently_launch_physx(self):
+        for tokens in (["physics=newton"], ["physics=newton_mjwarp", "physics=isaacsim_physx"]):
+            with self.subTest(tokens=tokens), contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit):
+                    parse_physics_args(argparse.ArgumentParser(), tokens)
+        with self.assertRaisesRegex(ValueError, "physics"):
+            ZhangTrainCfg(physics="newton").validate()
+
     def test_restart_defaults_and_ahac_expansion_limit_are_explicit(self):
         cfg = ZhangTrainCfg()
         cfg.validate()

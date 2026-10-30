@@ -180,7 +180,8 @@ def capture_nominal_dynamics(env, env_ids):
     env.nominal_body_mass = drone.data.body_mass.torch.clone()
     env.nominal_body_inertia = drone.data.body_inertia.torch.clone()
     env.nominal_dynamics = {
-        "source": "loaded PhysX asset before randomization",
+        "source": "loaded asset before randomization",
+        "physics_backend": drone.__backend_name__,
         "body_names": list(drone.body_names),
         "body_mass_kg": env.nominal_body_mass[0].cpu().tolist(),
         "body_inertia_kg_m2": env.nominal_body_inertia[0].cpu().tolist(),
@@ -206,5 +207,3 @@ def reset_sim_to_real(env, env_ids):
     env.inertia_scale[ids] = (
         inertias[ids, base][:, diag].sum(-1) / env.nominal_body_inertia[ids, base][:, diag].sum(-1)
     )[:, None]
-    if env.cfg.method == "zhang":
-        env.drone.total_mass[ids] = masses[ids].sum(-1, keepdim=True)

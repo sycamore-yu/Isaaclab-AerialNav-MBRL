@@ -9,6 +9,8 @@ from pathlib import Path
 
 from isaaclab.app import add_launcher_args, launch_simulation
 
+from isaaclab_navrl.physics import parse_physics_args, select_physics
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -17,7 +19,7 @@ def main():
     parser.add_argument("--dynamic_obstacles", type=int, choices=(60, 100, 120), default=100)
     add_launcher_args(parser)
     parser.set_defaults(visualizer=["none"])
-    args = parser.parse_args()
+    args = parse_physics_args(parser)
     if args.camera_batch_size < 3:
         parser.error("camera_batch_size must be at least 3 to test partial resets")
     batch_size = args.camera_batch_size
@@ -39,11 +41,13 @@ def main():
     cfg.evaluation = True
     cfg.sim.device = args.device
     cfg.depth_camera_batch_size = batch_size
+    select_physics(cfg, args.physics_preset)
     cfg.configure_scene()
     cfg.scene.reference_depth = cfg.scene.depth_camera.copy()
     cfg.scene.reference_depth.class_type = ResolvableString("isaaclab.sensors:MultiMeshRayCasterCamera")
     result = {
         "status": "running",
+        "physics": args.physics_preset,
         "num_envs": num_envs,
         "camera_batch_size": batch_size,
         "dynamic_obstacles": args.dynamic_obstacles,
@@ -78,12 +82,15 @@ def main():
         }
 
     with launch_simulation(cfg, args):
-        from isaaclab_navrl.tasks.navigation import depth_camera as depth_module
+        from isaaclab_navrl.tasks.navigation import sensor_mixins
 
         env = gym.make("Isaac-NavRL-Zhang-Hummingbird-Direct-v0", cfg=cfg).unwrapped
         try:
             env.reset()
             camera, reference = env.scene["depth_camera"], env.scene["reference_depth"]
+            native_mesh_update = type(reference)._update_mesh_transforms
+            result["reference_sensor"] = f"{type(reference).__module__}:{type(reference).__name__}"
+            result["camera_sensor"] = f"{type(camera).__module__}:{type(camera).__name__}"
             camera.cfg.pixel_noise_std = 0.0
             assert camera.image_shape == (120, 160)
             assert camera._batch_size == batch_size
@@ -109,11 +116,11 @@ def main():
                     noise_batches.append(None if noise is None else noise.detach().clone())
                     return depth_features(depth, noise)
 
-                depth_module.depth_features = capture
+                sensor_mixins.depth_features = capture
                 try:
                     pooled = camera.data.output["policy_depth"].torch.permute(0, 3, 1, 2).clone()
                 finally:
-                    depth_module.depth_features = depth_features
+                    sensor_mixins.depth_features = depth_features
                 assert [len(batch) for batch in raw_batches] == [batch_size, 1], "Tail batch was not exercised."
                 raw = torch.cat(raw_batches)
                 native = reference.data.output["distance_to_image_plane"].torch.permute(0, 3, 1, 2).clone()
@@ -129,7 +136,7 @@ def main():
                     else None
                 )
                 with wp.ScopedStream(stream) if stream is not None else nullcontext():
-                    super(depth_module.BatchedDepthCamera, camera)._update_mesh_transforms()
+                    native_mesh_update(camera)
                 chosen = slice(None) if selected is None else selected
                 details = {
                     "batch_sizes": [len(batch) for batch in raw_batches],
@@ -203,6 +210,10 @@ def main():
             state = env.root_state()
             forward = quat_apply(state[:, 3:7], state.new_tensor([[1.0, 0.0, 0.0]]).expand(num_envs, -1))
             poses[0, 0, :3] = state[0, :3] + 2.0 * forward[0]
+            # Newton owns one kinematic copy per world. Keep the shared motion
+            # contract when this test writes poses directly instead of stepping.
+            if poses.shape[0] > 1:
+                poses[1:].copy_(poses[:1].expand_as(poses[1:]))
             env.dynamic_collection.write_body_pose_to_sim_index(body_poses=poses)
             env.dynamic_collection.write_data_to_sim()
             moved_raw, moved_pooled = measure("all_dynamic_bodies_moved")
@@ -237,27 +248,54 @@ def main():
             camera.set_intrinsic_matrices(initial_intrinsics)
             reference.set_intrinsic_matrices(initial_intrinsics)
             measure("restored_shared_intrinsics")
-            # Request deliberately reversed owner paths. Read the actual returned
-            # prim_paths again; PhysX is not assumed to preserve request order.
-            create_view = camera._create_tracked_target_view
-            shuffled_request = []
+            if args.physics_preset == "isaacsim_physx":
+                # Request deliberately reversed owner paths. Read the actual returned
+                # prim_paths again; PhysX is not assumed to preserve request order.
+                create_view = camera._create_tracked_target_view
+                shuffled_request = []
 
-            def create_shuffled_view(paths):
-                requested = list(reversed(paths))
-                shuffled_request.extend(requested)
-                return create_view(requested)
+                def create_shuffled_view(paths):
+                    requested = list(reversed(paths))
+                    shuffled_request.extend(requested)
+                    return create_view(requested)
 
-            camera._create_tracked_target_view = create_shuffled_view
-            try:
-                camera._initialize_shared_mesh_tracking()
-            finally:
-                camera._create_tracked_target_view = create_view
-            assert shuffled_request == list(reversed(camera.mesh_transform_info["mesh_order_body_paths"]))
-            result["shuffled_mesh_transform_request"] = {
-                "requested_body_paths": shuffled_request,
-                "actual_tracking": camera.mesh_transform_info,
-            }
-            measure("shuffled_tracked_view_request")
+                camera._create_tracked_target_view = create_shuffled_view
+                try:
+                    camera._initialize_shared_mesh_tracking()
+                finally:
+                    camera._create_tracked_target_view = create_view
+                assert shuffled_request == list(reversed(camera.mesh_transform_info["mesh_order_body_paths"]))
+                result["shuffled_mesh_transform_request"] = {
+                    "requested_body_paths": shuffled_request,
+                    "actual_tracking": camera.mesh_transform_info,
+                }
+                measure("shuffled_tracked_view_request")
+            else:
+                # Site rows identify independent but synchronized world copies.
+                # Reversing them must preserve the shared camera's entire image.
+                original_views = camera._mesh_views
+                expected_sites = [
+                    int(view.numpy().reshape(-1)[-1])
+                    for view, target in zip(original_views, camera._raycast_targets_cfg, strict=True)
+                    if target.track_mesh_transforms
+                ]
+                camera._mesh_views = [
+                    wp.array(view.numpy()[::-1].copy(), dtype=wp.int32, device=camera._device)
+                    if target.track_mesh_transforms
+                    else view
+                    for view, target in zip(original_views, camera._raycast_targets_cfg, strict=True)
+                ]
+                try:
+                    camera._initialize_shared_mesh_tracking()
+                    assert camera.mesh_transform_info["site_indices"] == expected_sites
+                    result["reversed_newton_site_rows"] = {
+                        "expected_site_indices": expected_sites,
+                        "actual_tracking": camera.mesh_transform_info,
+                    }
+                    measure("reversed_newton_site_rows")
+                finally:
+                    camera._mesh_views = original_views
+                    camera._initialize_shared_mesh_tracking()
             result["cached_local_rays_exact"] = True
             result["status"] = "completed"
             persist()
@@ -268,7 +306,7 @@ def main():
             persist()
             raise
         finally:
-            depth_module.depth_features = depth_features
+            sensor_mixins.depth_features = depth_features
             env.close()
 
 
