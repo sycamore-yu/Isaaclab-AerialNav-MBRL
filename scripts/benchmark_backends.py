@@ -203,62 +203,75 @@ def train_child(arguments):
     training = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(training)
 
-    import torch
-
-    import isaaclab_navrl.zhang.runner as runner
-
-    if Path(runner.__file__).resolve() != root / "src/isaaclab_navrl/zhang/runner.py":
-        raise RuntimeError("Benchmark imported the trainer from a different source tree")
-    original_run = runner.ZhangTrainer.run
     process_started = float(os.environ["NAVRL_STAGE_STARTED_MONOTONIC"])
+    original_factory = training.create_navigation_env
 
-    def timed_run(self):
-        device = torch.device(self.env.device)
-        if device.type != "cuda":
-            raise ValueError("The backend comparison requires a CUDA device")
-        timing = {
-            "synchronization": "torch.cuda.synchronize(device) at runner perf_counter boundaries only",
-            "recurrent_state_size": self.model.recurrent_state_size,
-            "model_class": f"{type(self.model).__module__}.{type(self.model).__qualname__}",
-            "model_parameters": sum(parameter.numel() for parameter in self.model.parameters()),
-            "torch": torch.__version__,
-            "torch_cuda": torch.version.cuda,
-            "cudnn": torch.backends.cudnn.version(),
-            "gpu": torch.cuda.get_device_name(device),
-            "device": str(device),
-            "synchronize_calls": 0,
-        }
-        original_clock = runner.time
-
-        class SynchronizedClock:
-            def perf_counter(self):
-                torch.cuda.synchronize(device)
-                timing["synchronize_calls"] += 1
-                value = time.perf_counter()
-                # The trainer's first counter is immediately before its update loop,
-                # after scene/model initialization, reset and logging setup.
-                if "setup_s" not in timing:
-                    timing["setup_s"] = time.monotonic() - process_started
-                return value
-
-            def __getattr__(self, name):
-                return getattr(original_clock, name)
-
-        runner.time = SynchronizedClock()
+    def create_timed_env(*factory_args, **factory_kwargs):
+        # Preserve train_zhang's normal import/bootstrap order. In particular,
+        # SummaryWriter must not be imported before tasks and the environment cfg.
+        env = original_factory(*factory_args, **factory_kwargs)
         try:
-            if self.model.recurrent_state_size != 192:
-                raise ValueError("The baseline requires the existing 192-unit GRU")
-            return original_run(self)
-        finally:
-            runner.time = original_clock
-            try:
-                torch.cuda.synchronize(device)
-            except RuntimeError as exc:
-                timing["final_sync_error"] = str(exc)
-            timing["training_return_process_s"] = time.monotonic() - process_started
-            write_json(parsed.log_dir.parent / "timing.json", timing)
+            import torch
 
-    runner.ZhangTrainer.run = timed_run
+            import isaaclab_navrl.zhang.runner as runner
+
+            if Path(runner.__file__).resolve() != root / "src/isaaclab_navrl/zhang/runner.py":
+                raise RuntimeError("Benchmark imported the trainer from a different source tree")
+            original_run = runner.ZhangTrainer.run
+
+            def timed_run(self):
+                device = torch.device(self.env.device)
+                if device.type != "cuda":
+                    raise ValueError("The backend comparison requires a CUDA device")
+                timing = {
+                    "synchronization": "torch.cuda.synchronize(device) at runner perf_counter boundaries only",
+                    "recurrent_state_size": self.model.recurrent_state_size,
+                    "model_class": f"{type(self.model).__module__}.{type(self.model).__qualname__}",
+                    "model_parameters": sum(parameter.numel() for parameter in self.model.parameters()),
+                    "torch": torch.__version__,
+                    "torch_cuda": torch.version.cuda,
+                    "cudnn": torch.backends.cudnn.version(),
+                    "gpu": torch.cuda.get_device_name(device),
+                    "device": str(device),
+                    "synchronize_calls": 0,
+                }
+                original_clock = runner.time
+
+                class SynchronizedClock:
+                    def perf_counter(self):
+                        torch.cuda.synchronize(device)
+                        timing["synchronize_calls"] += 1
+                        value = time.perf_counter()
+                        # The trainer's first counter is immediately before its update loop,
+                        # after scene/model initialization, reset and logging setup.
+                        if "setup_s" not in timing:
+                            timing["setup_s"] = time.monotonic() - process_started
+                        return value
+
+                    def __getattr__(self, name):
+                        return getattr(original_clock, name)
+
+                runner.time = SynchronizedClock()
+                try:
+                    if self.model.recurrent_state_size != 192:
+                        raise ValueError("The baseline requires the existing 192-unit GRU")
+                    return original_run(self)
+                finally:
+                    runner.time = original_clock
+                    try:
+                        torch.cuda.synchronize(device)
+                    except RuntimeError as exc:
+                        timing["final_sync_error"] = str(exc)
+                    timing["training_return_process_s"] = time.monotonic() - process_started
+                    write_json(parsed.log_dir.parent / "timing.json", timing)
+
+            runner.ZhangTrainer.run = timed_run
+        except BaseException:
+            env.close()
+            raise
+        return env
+
+    training.create_navigation_env = create_timed_env
     sys.argv = [str(entrypoint), *arguments]
     training.main()
 

@@ -75,7 +75,6 @@ def main():
     from isaaclab_navrl.tasks.navigation.config.hummingbird.env_cfg import ZhangNavRLEnvCfg
     from isaaclab_navrl.tasks.navigation.depth_history import OBSERVATION_CONTRACT
     from isaaclab_navrl.zhang.config import ZhangTrainCfg
-    from isaaclab_navrl.zhang.runner import ZhangTrainer
 
     stage = STAGE_CONFIG[args.stage].copy()
     if args.num_dynamic_obstacles is not None:
@@ -172,6 +171,9 @@ def main():
     with launch_simulation(cfg, args):
         env = create_navigation_env("Isaac-NavRL-Zhang-Hummingbird-Direct-v0", cfg, args)
         try:
+            # TensorBoard's native dependencies must load after the PhysX Kit app.
+            from isaaclab_navrl.zhang.runner import ZhangTrainer
+
             run_config.update(runtime_metadata(env))
             run_config["environment"].update(runtime_metadata(env))
             write_json(args.log_dir / "config.json", run_config)
