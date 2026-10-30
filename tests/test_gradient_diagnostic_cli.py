@@ -331,15 +331,8 @@ class GradientDiagnosticCliTests(unittest.TestCase):
                     self.assertEqual(error.exception.code, 2)
 
     def test_finite_later_stage_smoke_is_allowed_before_training_imports(self):
-        class ReachedTrainingImports(Exception):
+        class ReachedSimulationBoundary(Exception):
             pass
-
-        original_import = __import__
-
-        def intercept(name, *args, **kwargs):
-            if name == "gymnasium":
-                raise ReachedTrainingImports
-            return original_import(name, *args, **kwargs)
 
         with tempfile.TemporaryDirectory(prefix="stage_smoke_cli_unit_") as temporary:
             for index, module in enumerate((trainer, navrl_trainer)):
@@ -352,8 +345,14 @@ class GradientDiagnosticCliTests(unittest.TestCase):
                     "--max_iterations",
                     "1",
                 ]
-                with patch.object(sys, "argv", tokens), patch("builtins.__import__", side_effect=intercept):
-                    with contextlib.redirect_stdout(io.StringIO()), self.assertRaises(ReachedTrainingImports):
+                # The migration intentionally defers optional framework imports
+                # until the simulator is running. The validation boundary is
+                # now the launcher, not the first gymnasium import.
+                with (
+                    patch.object(sys, "argv", tokens),
+                    patch.object(module, "launch_simulation", side_effect=ReachedSimulationBoundary),
+                ):
+                    with contextlib.redirect_stdout(io.StringIO()), self.assertRaises(ReachedSimulationBoundary):
                         module.main()
 
     def test_training_default_and_explicit_empty_disable_diagnostics(self):

@@ -16,6 +16,8 @@ import numpy as np
 import torch
 import warp as wp
 
+from isaaclab_navrl.warp_utils import torch_warp_stream
+
 
 @wp.kernel
 def _closest_mesh_point(
@@ -421,7 +423,7 @@ class TerrainDistance:
     def closest_points(self, query):
         points = query.detach().reshape(-1, 3).contiguous()
         output = torch.empty_like(points)
-        stream = wp.stream_from_torch(torch.cuda.current_stream(points.device)) if points.is_cuda else None
+        stream = torch_warp_stream(points.device)
         wp.launch(
             _closest_mesh_point,
             dim=len(points),
@@ -454,7 +456,7 @@ class TerrainDistance:
         height = torch.empty(len(points), device=points.device, dtype=torch.float32)
         exit_valid, used_exit_search = torch.empty_like(inside), torch.empty_like(inside)
         if len(points):
-            stream = wp.stream_from_torch(torch.cuda.current_stream(points.device)) if points.is_cuda else None
+            stream = torch_warp_stream(points.device)
             wp.launch(
                 _signed_mesh_query,
                 dim=len(points),

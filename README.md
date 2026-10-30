@@ -1,8 +1,8 @@
 # NavRL 与 Zhang · Isaac Lab 3.0
 
-本项目在正式 Isaac Lab 3.0.0 中提供两个独立单机导航任务，支持 `physics=isaacsim_physx` 和 `physics=newton_mjwarp`，默认使用 PhysX。并行无人机共用静态地形和动态物体，不相互碰撞。
+本项目基于 Isaac Lab 3.0.0 提供 NavRL 与 Zhang 两个导航任务。支持 PhysX＋Torch、Newton＋Torch 和 Newton＋Warp。项目脚本默认采用 **Newton＋Warp**，也可显式选择其他组合。并行无人机共用静态地图，不相互碰撞。
 
-两后端使用同一份动态障碍轨迹。PhysX 使用全局刚体，Newton / MuJoCo Warp 使用每个世界的同步运动学副本；相机网格仍共享。
+三个组合使用相同的动态障碍运动模型。PhysX 保留全局、无物理碰撞的运动学障碍；Newton 不再为动态障碍创建刚体。Newton 相机从全局运动张量更新共享 Warp 网格，任务的动态碰撞检查仍使用解析几何。
 
 | 方法 | Gym 任务 | 训练方式 |
 |---|---|---|
@@ -68,12 +68,19 @@ NavRL/PPO 使用独立的 `--method navrl` 入口；Zhang 超参数只传给 Zha
 # Newton / MuJoCo Warp
 .venv/bin/isaaclab train --task Isaac-NavRL-Hummingbird-Direct-v0 \
   --num_envs 256 --max_iterations 1 physics=newton_mjwarp
+# Newton＋Warp 前端（本项目脚本的默认组合）
+.venv/bin/isaaclab train --task Isaac-NavRL-Hummingbird-Direct-v0 \
+  --num_envs 256 --max_iterations 1 --frontend warp physics=newton_mjwarp
 .venv/bin/isaaclab play --task Isaac-NavRL-Hummingbird-Direct-v0 \
   --checkpoint /absolute/model.pt --num_envs 2 --device cuda:0 --visualizer none \
   physics=newton_mjwarp
 ```
 
 Zhang 使用独立的 `scripts/train_zhang.py` 或 `scripts/run_acceptance.py --method zhang`。Newton 切换前向仿真，反向仍使用现有可微质点模型，不对 Newton 求解器本身求导。后端配置、接触处理和验证记录见 [Newton 适配说明](docs/migration/NEWTON_BACKEND_20261030.md)。
+
+`scripts/train_zhang.py`、`scripts/train_navrl.py`、`scripts/run_acceptance.py` 等项目入口不指定后端时，默认解析为 `physics=newton_mjwarp --frontend warp`。**Isaac Lab 自带的 `.venv/bin/isaaclab train` 仍默认使用 Torch 前端**，该入口必须显式加 `--frontend warp` 才能采用最快的组合。PhysX 仅支持 Torch 前端。
+
+本项目使用固定 32 环境、H150、20 Hz、300 静态／60 动态障碍进行三组完整训练计时。当前同卡实测吞吐分别为 PhysX＋Torch **216.6**、Newton＋Torch **274.4**、Newton＋Warp **289.6 环境步/秒**。详细机制、有效性检查、结果限制与复测命令见 [Newton 共享几何和 Warp 性能报告](docs/migration/NEWTON_SHARED_GEOMETRY_PERFORMANCE_20261030.md)。
 
 运行环境由 `.venv`、`pyproject.toml` 和 `uv.lock` 固定：Python 3.12、Isaac Lab 3.0.0、Isaac Sim 6.2、Newton 1.6.1、MuJoCo Warp 3.12.0、RSL-RL 5.5.1。
 
@@ -119,6 +126,7 @@ TensorBoard 使用统一的 `Train/success_rate`、`Train/episodes` 等标签。
 - [共享 Sim-to-Real 扰动](docs/SIM_TO_REAL_TRAINING.md)
 - [NavRL 迁移决策](docs/migration/NAVRL_ISAACLAB_3_MIGRATION.md)
 - [PhysX / Newton 后端适配](docs/migration/NEWTON_BACKEND_20261030.md)
+- [Newton 共享几何和 Warp 性能报告](docs/migration/NEWTON_SHARED_GEOMETRY_PERFORMANCE_20261030.md)
 - [Zhang 迁移决策](docs/migration/ZHANG_MIGRATION_DECISIONS_1_4.md)
 - [实现与验证状态](docs/IMPLEMENTATION_STATUS.md)
 - [SHAC/AHAC 适配与边界](docs/migration/SHAC_AHAC_ADAPTATION.md)

@@ -9,7 +9,7 @@
 | `Isaac-NavRL-Hummingbird-Direct-v0` | 三维目标速度，官方 RSL-RL PPO | `isaacsim_physx` / `newton_mjwarp` |
 | `Isaac-NavRL-Zhang-Hummingbird-Direct-v0` | 三维世界加速度，Zhang BPTT / SHAC / AHAC | `isaacsim_physx` / `newton_mjwarp` |
 
-默认预设仍为 `isaacsim_physx`。Isaac Lab 公共 CLI 在启动物理后端前解析预设；直接构造环境时也会解析任务默认值。
+本节记录首次 Newton 迁移时的配置。当时默认预设为 `isaacsim_physx`。后续共享几何优化已将项目脚本默认配置改为 Newton＋Warp。最新机制和性能见 [共享几何优化报告](NEWTON_SHARED_GEOMETRY_PERFORMANCE_20261030.md)。
 
 ```bash
 .venv/bin/isaaclab train \
@@ -37,11 +37,11 @@ Newton 预设使用 `MJWarpSolverCfg(integrator="implicitfast", use_mujoco_conta
 
 该选择是为保留原森林三角网格：安装版 Newton `solver_mujoco.py` 将 MuJoCo mesh geom 转为凸包，不能直接用整片森林的凸包替代原有障碍与通道。任务没有换成近似高度场，没有对原始地形网格做简化。
 
-动态物体仍由同一份 `DynamicObstacleMotion` 驱动，几何碰撞判定与视觉输入沿用原算法。PhysX 保留一组全局 kinematic `RigidObjectCollection`。安装版 MuJoCo Warp 的多世界模式禁止 world -1 中存在刚体，因此 Newton 在各世界建立运动学副本，每个物理步向所有副本广播同一世界位姿；静态地形仍全局共享。克隆初始间距设为 0，使初始障碍位姿一致，无人机间的隔离由 Newton world 提供。局部重置只处理无人机与传感器，不重置任何障碍副本。物理模型规模随环境数和障碍数增加，任务轨迹、网格和观测语义仍共享。
+首次迁移时，Newton 为每个世界建立运动学副本；它们由同一份 `DynamicObstacleMotion` 驱动。**该实现已被取代**。现在 Newton 保留全局纯几何 USD 物体和共享 GPU 运动状态，不再创建任何动态障碍刚体。PhysX 仍保留原全局运动学集合。详见 [共享几何优化报告](NEWTON_SHARED_GEOMETRY_PERFORMANCE_20261030.md)。
 
-Newton 使用 `replicate_physics=True` 走官方 clone context 导入，并开启 `load_visual_shapes=True` 保留禁用碰撞的视觉目标。动态物体显式设置 `MassCfg(mass=1.0)`：无碰撞几何不能提供推断质量，正质量使导入器保留集合 API 所需的自由关节；运动学位姿仍由任务写入，不受该质量影响。
+首次迁移为动态副本显式设置 `MassCfg(mass=1.0)`。共享几何版本已删除动态副本和这部分物理质量设置。无人机仍使用 `replicate_physics=True` 和官方 clone context。
 
-PhysX 和 Newton 的激光/相机复用同一射线、共享 mesh/BVH、深度噪声与池化逻辑，仅分别读取各后端的位姿。具体类分处不同模块，Newton 无需导入 PhysX 的 Kit 组件。Newton 使用官方 Legacy ray-caster 的 site 索引追踪，初始化验证各环境目标位姿相同，随后每个目标只聚合读取首个副本，避免复制相机网格。后端选择不改变 160×120 原始深度、12×16 策略深度、36×4 LiDAR。
+PhysX 和 Newton 仍复用 Warp 射线、mesh/BVH、深度噪声与池化逻辑。共享几何版本的 Newton 不再使用动态障碍 site 索引；它直接将共享运动位置写入相机网格变换缓冲区。此实现保留 160×120 原始深度、12×16 策略深度和 36×4 LiDAR。
 
 项目训练与评测脚本接受相同的 `physics=...` 参数。解析器保存为 `physics_preset`，先消解任务预设，再交给启动器，避免启动器的保留参数 `physics` 用通用默认配置覆盖上述任务设置。运行配置、结果及检查点均记录后端。
 

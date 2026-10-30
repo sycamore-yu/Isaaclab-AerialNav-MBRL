@@ -15,7 +15,7 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
-from isaaclab_navrl.physics import parse_physics_args
+from isaaclab_navrl.physics import DEFAULT_FRONTEND, DEFAULT_PHYSICS, parse_physics_args, validate_runtime
 from isaaclab_navrl.source import RUNTIME_PATHS
 from isaaclab_navrl.training import write_json
 
@@ -39,7 +39,10 @@ def train_tokens(run):
     return tokens
 
 
-def command_for(source, output, plan, run, device, physics="isaacsim_physx"):
+def command_for(source, output, plan, run, device, physics=DEFAULT_PHYSICS, frontend=None):
+    if frontend is None:
+        frontend = "torch" if physics == "isaacsim_physx" else DEFAULT_FRONTEND
+    validate_runtime(physics, frontend)
     command = [
         sys.executable,
         str(source / "scripts/run_acceptance.py"),
@@ -55,6 +58,8 @@ def command_for(source, output, plan, run, device, physics="isaacsim_physx"):
         "--device",
         device,
         f"physics={physics}",
+        "--frontend",
+        frontend,
         "--finetune_lr",
         str(plan.get("finetune_lr", 5e-5)),
     ]
@@ -285,7 +290,8 @@ def main():
             "pid": None,
             "estimated_mib": estimated_mib(run),
             "physics": args.physics_preset,
-            "command": command_for(source, target, plan, run, args.device, args.physics_preset),
+            "frontend": args.frontend,
+            "command": command_for(source, target, plan, run, args.device, args.physics_preset, args.frontend),
         }
 
     previous = read_json(output / "queue.json") if args.resume else None
@@ -323,6 +329,7 @@ def main():
         "gpu": args.gpu,
         "device": args.device,
         "physics": args.physics_preset,
+        "frontend": args.frontend,
         "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
         "slots": args.slots,
         "reserve_mib": args.reserve_mib,

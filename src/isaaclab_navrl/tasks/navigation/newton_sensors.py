@@ -1,10 +1,26 @@
 """Newton navigation sensors without Isaac Sim or PhysX imports."""
 
 import warp as wp
-from isaaclab.sensors.ray_caster import kernels as camera_kernels
 from isaaclab_newton.sensors.ray_caster.legacy_ray_caster import LegacyMultiMeshRayCasterCamera, LegacyRayCaster
 
 from .sensor_mixins import _BatchedDepthCameraMixin, _NavRLRayCasterMixin
+
+
+@wp.kernel(enable_backward=False)
+def _set_shared_obstacle_mesh_poses(
+    positions: wp.array(dtype=wp.vec3f),
+    active_indices: wp.array(dtype=wp.int32),
+    offset: int,
+    mesh_positions: wp.array2d(dtype=wp.vec3f),
+    mesh_orientations: wp.array2d(dtype=wp.quatf),
+):
+    env, column = wp.tid()
+    active = active_indices[column]
+    if active >= 0:
+        mesh_positions[env, offset + column] = positions[active]
+    else:
+        mesh_positions[env, offset + column] = wp.vec3f(0.0, 0.0, -1000.0)
+    mesh_orientations[env, offset + column] = wp.quat_identity()
 
 
 class NewtonNavRLRayCaster(_NavRLRayCasterMixin, LegacyRayCaster):
@@ -12,81 +28,68 @@ class NewtonNavRLRayCaster(_NavRLRayCasterMixin, LegacyRayCaster):
 
 
 class NewtonBatchedDepthCamera(_BatchedDepthCameraMixin, LegacyMultiMeshRayCasterCamera):
-    """Newton depth camera with one aggregate site-pose read per update."""
+    """Newton depth camera using global non-physics USD mesh geometry.
+
+    The physics model contains no obstacle bodies. Warp's existing shared-mesh
+    raycaster receives obstacle transforms directly from DynamicObstacleMotion,
+    without USD writes, site registrations or per-world rigid-body poses.
+    """
+
+    def set_motion(self, motion, active_ids):
+        """Bind authoritative GPU state; called after scene initialization/reset."""
+        import torch
+
+        self._shared_motion = motion
+        columns = len(self._raycast_targets_cfg) - 2
+        if len(active_ids) != len(motion.position) or (len(active_ids) and int(active_ids.max()) >= columns):
+            raise ValueError("Shared obstacle geometry and motion indices disagree")
+        index = torch.full((columns,), -1, device=motion.position.device, dtype=torch.int32)
+        index[active_ids] = torch.arange(len(active_ids), device=index.device, dtype=torch.int32)
+        self._shared_active_indices = wp.from_torch(index)
+        self._shared_active_index_storage = index
+        self._shared_motion_positions = wp.from_torch(motion.position.contiguous(), dtype=wp.vec3f)
+        self.mesh_transform_info["mode"] = "shared_motion_gpu_poses_without_rigid_bodies"
+        self.mesh_transform_info["active_obstacles"] = len(motion.position)
+        self.world_mesh_info["dynamic_meshes"] = columns
 
     def _clear_shared_mesh_tracking(self):
         super()._clear_shared_mesh_tracking()
-        self._shared_mesh_site_indices = None
-        self._shared_mesh_pose = None
-        self._shared_mesh_pos = None
-        self._shared_mesh_quat = None
+        self._shared_motion = None
+        self._shared_active_indices = None
+        self._shared_motion_positions = None
+        self._shared_active_index_storage = None
 
     def _initialize_shared_mesh_tracking(self):
-        """Track the first synchronized body copy in the configured mesh order."""
+        """All global targets are static USD geometry, not tracked physics sites."""
         self._clear_shared_mesh_tracking()
-        sites, mesh_columns, target_paths = [], [], []
-        mesh_column = 0
-        for view, target in zip(self._mesh_views, self._raycast_targets_cfg, strict=True):
-            width = self._num_meshes_per_env[target.prim_expr]
+        for target in self._raycast_targets_cfg:
             if target.track_mesh_transforms:
-                if view is None or width != 1:
-                    raise ValueError(
-                        f"Shared camera target {target.prim_expr!r} must have one body and one mesh column."
-                    )
-                # Newton may resolve a global site or one body copy per world.
-                # Scene updates broadcast the same obstacle pose to every copy;
-                # the shared-camera initialization verifies those poses match.
-                values = view.numpy().reshape(-1)
-                if len(values) not in (1, self._num_envs):
-                    raise ValueError(
-                        f"Newton camera target {target.prim_expr!r} must resolve to one site or one site per environment."
-                    )
-                sites.append(int(values[0]))
-                mesh_columns.append(mesh_column)
-                target_paths.append(target.prim_expr)
-            mesh_column += width
-        count = len(sites)
-        if len(set(sites)) != count:
-            raise ValueError("Shared camera targets must resolve to distinct Newton sites.")
-        offset = mesh_columns[0] if count else 0
-        if mesh_columns != list(range(offset, offset + count)):
-            raise ValueError("Shared tracked camera targets must occupy contiguous mesh columns.")
-        self._shared_mesh_count, self._shared_mesh_offset = count, offset
+                raise ValueError("Newton shared dynamic geometry must not register physics sites")
+            if self._num_meshes_per_env[target.prim_expr] != 1:
+                raise ValueError(f"Expected one shared mesh per target: {target.prim_expr}")
+        self._shared_mesh_count, self._shared_mesh_offset = 0, 2
         self.mesh_transform_info = {
-            "mode": "aggregate_newton_sites",
-            "body_count": count,
-            "mesh_order_body_paths": target_paths,
-            "site_indices": sites,
+            "mode": "shared_motion_gpu_poses_without_rigid_bodies",
+            "body_count": 0,
+            "mesh_order_body_paths": [],
+            "site_indices": [],
             "identity_row_order": True,
-            "mapping": [
-                {"body_path": path, "mesh_column": column, "site_index": site}
-                for path, column, site in zip(target_paths, mesh_columns, sites, strict=True)
-            ],
+            "mapping": [],
         }
-        if count:
-            self._shared_mesh_site_indices = wp.array(sites, dtype=wp.int32, device=self._device)
-            self._shared_mesh_pose = wp.empty(count, dtype=wp.transformf, device=self._device)
-            self._shared_mesh_pos = wp.empty(count, dtype=wp.vec3f, device=self._device)
-            self._shared_mesh_quat = wp.empty(count, dtype=wp.quatf, device=self._device)
         self._shared_mesh_tracking_ready = True
 
     def _update_mesh_transforms(self):
         if not getattr(self, "_shared_mesh_tracking_ready", False):
             raise RuntimeError("Shared camera transform tracking is not initialized.")
-        if self._shared_mesh_site_indices is None:
+        if self._shared_motion_positions is None or self._shared_active_indices.shape[0] == 0:
             return
-        self._update_newton_site_transforms(
-            self._shared_mesh_site_indices, self._shared_mesh_pose, self._shared_mesh_pos, self._shared_mesh_quat
-        )
         wp.launch(
-            camera_kernels.copy_mesh_poses_to_table_kernel,
-            dim=(self._num_envs, self._shared_mesh_count),
+            _set_shared_obstacle_mesh_poses,
+            dim=(self._num_envs, self._shared_active_indices.shape[0]),
             inputs=[
-                self._shared_mesh_pos,
-                self._shared_mesh_quat,
-                self._shared_mesh_count,
-                self._shared_mesh_offset,
-                True,
+                self._shared_motion_positions,
+                self._shared_active_indices,
+                2,
                 self._mesh_positions_w,
                 self._mesh_orientations_w,
             ],

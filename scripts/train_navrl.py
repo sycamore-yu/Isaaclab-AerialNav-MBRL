@@ -13,7 +13,7 @@ from types import SimpleNamespace
 
 from isaaclab.app import add_launcher_args, launch_simulation
 
-from isaaclab_navrl.physics import parse_physics_args, select_physics
+from isaaclab_navrl.physics import create_navigation_env, parse_physics_args, runtime_metadata, select_physics
 from isaaclab_navrl.source import verify_training_import
 from isaaclab_navrl.training import STAGES, write_json
 
@@ -62,6 +62,7 @@ def main():
     result = {
         "method": "navrl",
         "physics": args.physics_preset,
+        "frontend": args.frontend,
         "status": "running",
         "fresh": parent_checkpoint is None,
         "stage": args.stage,
@@ -104,7 +105,6 @@ def main():
 
     write_result(announce=True)
     try:
-        import gymnasium as gym
         import numpy as np
         import torch
         from isaaclab_rl.rsl_rl import RslRlVecEnvWrapper
@@ -162,6 +162,7 @@ def main():
         run_config = {
             "method": "navrl",
             "physics": args.physics_preset,
+            "frontend": args.frontend,
             "fresh": parent_checkpoint is None,
             "stage": args.stage,
             "parent_checkpoint": parent_checkpoint,
@@ -190,7 +191,9 @@ def main():
 
         with launch_simulation(cfg, args), graceful_training_stop(SimpleNamespace(request_stop=request_stop)):
             try:
-                env = gym.make(run_config["task"], cfg=cfg).unwrapped
+                env = create_navigation_env(run_config["task"], cfg, args)
+                run_config.update(runtime_metadata(env))
+                result.update(runtime_metadata(env))
                 write_json(log_dir / "run_config.json", run_config)
                 write_json(log_dir / "nominal_dynamics.json", env.nominal_dynamics)
                 wrapped = RslRlVecEnvWrapper(env, clip_actions=None)
@@ -223,6 +226,7 @@ def main():
                             infos={
                                 "method": "navrl",
                                 "physics": args.physics_preset,
+                                **runtime_metadata(env),
                                 "stage": args.stage,
                                 "fresh": parent_checkpoint is None,
                                 "parent_checkpoint": parent_checkpoint,

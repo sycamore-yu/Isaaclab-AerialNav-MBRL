@@ -37,7 +37,7 @@ class NavRLEnv(DirectRLEnv):
         self.terrain_distance = TerrainDistance.from_stage(self.sim.stage, self.device)
         self.drone = self.scene["drone"]
         self.lidar = self.scene["lidar"]
-        self.controller = LeeRotorController(self.num_envs, self.device, dt=self.physics_dt)
+        self.controller = self._create_controller()
         self.curriculum = (
             TrainingCurriculum(
                 self.num_envs,
@@ -71,13 +71,19 @@ class NavRLEnv(DirectRLEnv):
             self.physics_dt if cfg.method == "zhang" else self.step_dt,
             cfg.dynamic_speed_range,
         )
-        self.dynamic_collection = self.scene["dynamic_obstacles"] if cfg.num_dynamic_obstacles else None
+        self.dynamic_collection = (
+            self.scene["dynamic_obstacles"]
+            if cfg.num_dynamic_obstacles and self.drone.__backend_name__ != "newton"
+            else None
+        )
         if self.dynamic_collection is not None:
             instances = self.dynamic_collection.data.body_pose_w.torch.shape[0]
             expected = self.num_envs if self.drone.__backend_name__ == "newton" else 1
             if instances != expected:
                 raise RuntimeError(f"Dynamic obstacle instances: expected {expected}, got {instances}.")
             self._dynamic_pose = self.dynamic_collection.data.body_pose_w.torch.clone()
+            self.set_active_obstacles(cfg.num_dynamic_obstacles)
+        elif self.drone.__backend_name__ == "newton":
             self.set_active_obstacles(cfg.num_dynamic_obstacles)
         self.target_pos = torch.zeros(self.num_envs, 3, device=self.device)
         self.target_dir = torch.zeros_like(self.target_pos)
@@ -95,6 +101,9 @@ class NavRLEnv(DirectRLEnv):
         self._side_rng = np.random.RandomState(cfg.seed)
         self._terms = None
         self._stepping = False
+
+    def _create_controller(self):
+        return LeeRotorController(self.num_envs, self.device, dt=self.physics_dt)
 
     def _setup_scene(self):
         self.scene.filter_collisions(global_prim_paths=["/World/ground", "/World/defaultGroundPlane"])
@@ -119,12 +128,13 @@ class NavRLEnv(DirectRLEnv):
     def _reset_idx(self, env_ids):
         env_ids = torch.as_tensor(env_ids, device=self.device, dtype=torch.int32)
         if self._stepping:
+            transition = self.extras["transition"]
             self.extras["log"] = {
                 "Episode/return": self.episode_return[env_ids].mean(),
                 "Episode/length": self.episode_length_buf[env_ids].float().mean(),
                 "Episode/first_arrival": (self.first_reach_step[env_ids] > 0).float().mean(),
-                "Episode/reach_goal": self._terms["reached"][env_ids].float().mean(),
-                "Episode/collision": self._terms["collision"][env_ids].float().mean(),
+                "Episode/reach_goal": transition["reached"][env_ids].float().mean(),
+                "Episode/collision": transition["collision"][env_ids].float().mean(),
             }
         # No shared-world object or trajectory is reset here.
         super()._reset_idx(env_ids)
@@ -194,9 +204,15 @@ class NavRLEnv(DirectRLEnv):
             self.cfg.dynamic_speed_range,
         )
         self.cfg.num_dynamic_obstacles = count
+        if getattr(getattr(self, "drone", None), "__backend_name__", None) == "newton":
+            self._bind_shared_dynamic_geometry()
         if self.dynamic_collection is not None:
             self._dynamic_pose[:, :, :3] = self._dynamic_pose.new_tensor((0.0, 0.0, -1000.0))
         self._write_dynamic_obstacles()
+
+    def _bind_shared_dynamic_geometry(self):
+        """Connect one global obstacle process to Newton's camera meshes."""
+        self.scene["depth_camera"].set_motion(self.motion, self._active_obstacle_ids)
 
     def advance_curriculum(self):
         count = self.curriculum.advance()
@@ -420,17 +436,7 @@ class ZhangNavRLEnv(NavRLEnv):
 
     def __init__(self, cfg, render_mode=None, **kwargs):
         super().__init__(cfg, render_mode=render_mode, **kwargs)
-        from isaaclab_navrl.zhang.controller import GraphedLeeRotorController
-
-        if self.physics_dt != 0.01:
-            # Preserve the baseline motor time constant when changing its sample period.
-            for name in ("tau_up", "tau_down"):
-                tau = self.controller.rotor_parameters[name]
-                tau.copy_(1 - (1 - tau).pow(self.physics_dt / 0.01))
-        state = self.root_state()
-        self.controller = GraphedLeeRotorController(
-            self.controller, (state, state[:, 7:10], self.command, self.command[:, :1])
-        )
+        self._configure_controller()
         self._event_code = torch.zeros(self.num_envs, dtype=torch.int8, device=self.device)
         self._event_time = torch.zeros(self.num_envs, device=self.device)
         self._substep_collision = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
@@ -448,6 +454,22 @@ class ZhangNavRLEnv(NavRLEnv):
         self._substep_bounds = torch.zeros_like(self._substep_collision)
         self._substep_invalid = torch.zeros_like(self._substep_collision)
         self.filtered_command = torch.zeros(self.num_envs, 3, device=self.device)
+
+    def _configure_controller(self):
+        from isaaclab_navrl.zhang.controller import GraphedLeeRotorController
+
+        self._rescale_motor_response()
+        state = self.root_state()
+        self.controller = GraphedLeeRotorController(
+            self.controller, (state, state[:, 7:10], self.command, self.command[:, :1])
+        )
+
+    def _rescale_motor_response(self):
+        if self.physics_dt != 0.01:
+            # Preserve the baseline motor time constant when changing its sample period.
+            for name in ("tau_up", "tau_down"):
+                tau = self.controller.rotor_parameters[name]
+                tau.copy_(1 - (1 - tau).pow(self.physics_dt / 0.01))
 
     def _reset_idx(self, env_ids):
         super()._reset_idx(env_ids)

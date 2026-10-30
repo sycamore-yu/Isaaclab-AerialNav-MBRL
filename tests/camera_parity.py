@@ -89,6 +89,30 @@ def main():
             env.reset()
             camera, reference = env.scene["depth_camera"], env.scene["reference_depth"]
             native_mesh_update = type(reference)._update_mesh_transforms
+            if args.physics_preset == "newton_mjwarp":
+                # No RigidBodyAPI is authored on Newton dynamic targets. Feed
+                # both cameras the same global motion, without importing sites.
+                from isaaclab_navrl.tasks.navigation.newton_sensors import _set_shared_obstacle_mesh_poses
+
+                def shared_reference_transforms():
+                    wp.launch(
+                        _set_shared_obstacle_mesh_poses,
+                        dim=(env.num_envs, args.dynamic_obstacles),
+                        inputs=[
+                            camera._shared_motion_positions,
+                            camera._shared_active_indices,
+                            2,
+                            reference._mesh_positions_w,
+                            reference._mesh_orientations_w,
+                        ],
+                        device=env.device,
+                    )
+
+                reference._update_mesh_transforms = shared_reference_transforms
+
+                def native_mesh_update(sensor):
+                    sensor._update_mesh_transforms()
+
             result["reference_sensor"] = f"{type(reference).__module__}:{type(reference).__name__}"
             result["camera_sensor"] = f"{type(camera).__module__}:{type(camera).__name__}"
             camera.cfg.pixel_noise_std = 0.0
@@ -172,7 +196,11 @@ def main():
                             "camera_position": camera.data.pos_w.torch.cpu(),
                             "camera_quaternion": camera.data.quat_w_world.torch.cpu(),
                             "intrinsics": camera.data.intrinsic_matrices.torch.cpu(),
-                            "dynamic_poses": env.dynamic_collection.data.body_pose_w.torch.cpu(),
+                            "dynamic_poses": (
+                                env.dynamic_collection.data.body_pose_w.torch.cpu()
+                                if env.dynamic_collection is not None
+                                else camera._mesh_positions_w.numpy()
+                            ),
                             "selected_env_ids": details["selected_env_ids"],
                         },
                         failure_file,
@@ -200,22 +228,32 @@ def main():
             env.lidar.update(0.1)
             lidar_before = env.lidar.data.ray_hits_w.torch.clone()
 
-            poses = env.dynamic_collection.data.body_pose_w.torch.clone()
-            obstacle_phase = torch.arange(poses.shape[1], device=env.device, dtype=torch.float32) + 0.3
-            poses[0, :, 0] += 0.7 + 0.2 * obstacle_phase.sin()
-            poses[0, :, 1] += 0.6 + 0.2 * obstacle_phase.cos()
-            poses[0, :, 2] += 0.15
-            zero = torch.zeros_like(obstacle_phase)
-            poses[0, :, 3:7] = quat_from_euler_xyz(zero, zero, obstacle_phase * 0.07)
+            shared_geometry = env.dynamic_collection is None
+            poses = (
+                env.motion.position.clone()
+                if shared_geometry
+                else env.dynamic_collection.data.body_pose_w.torch.clone()
+            )
+            obstacle_phase = (
+                torch.arange(
+                    poses.shape[0] if shared_geometry else poses.shape[1], device=env.device, dtype=torch.float32
+                )
+                + 0.3
+            )
+            active_poses = poses if shared_geometry else poses[0, :, :3]
+            active_poses[:, 0] += 0.7 + 0.2 * obstacle_phase.sin()
+            active_poses[:, 1] += 0.6 + 0.2 * obstacle_phase.cos()
+            active_poses[:, 2] += 0.15
             state = env.root_state()
             forward = quat_apply(state[:, 3:7], state.new_tensor([[1.0, 0.0, 0.0]]).expand(num_envs, -1))
-            poses[0, 0, :3] = state[0, :3] + 2.0 * forward[0]
-            # Newton owns one kinematic copy per world. Keep the shared motion
-            # contract when this test writes poses directly instead of stepping.
-            if poses.shape[0] > 1:
-                poses[1:].copy_(poses[:1].expand_as(poses[1:]))
-            env.dynamic_collection.write_body_pose_to_sim_index(body_poses=poses)
-            env.dynamic_collection.write_data_to_sim()
+            active_poses[0] = state[0, :3] + 2.0 * forward[0]
+            if shared_geometry:
+                env.motion.position.copy_(poses)
+            else:
+                zero = torch.zeros_like(obstacle_phase)
+                poses[0, :, 3:7] = quat_from_euler_xyz(zero, zero, obstacle_phase * 0.07)
+                env.dynamic_collection.write_body_pose_to_sim_index(body_poses=poses)
+                env.dynamic_collection.write_data_to_sim()
             moved_raw, moved_pooled = measure("all_dynamic_bodies_moved")
             assert float((moved_raw - tilted_raw).abs().max()) > 0.1, "Moving geometry did not change camera depth."
             env.lidar.update(0.1)
@@ -271,31 +309,9 @@ def main():
                 }
                 measure("shuffled_tracked_view_request")
             else:
-                # Site rows identify independent but synchronized world copies.
-                # Reversing them must preserve the shared camera's entire image.
-                original_views = camera._mesh_views
-                expected_sites = [
-                    int(view.numpy().reshape(-1)[-1])
-                    for view, target in zip(original_views, camera._raycast_targets_cfg, strict=True)
-                    if target.track_mesh_transforms
-                ]
-                camera._mesh_views = [
-                    wp.array(view.numpy()[::-1].copy(), dtype=wp.int32, device=camera._device)
-                    if target.track_mesh_transforms
-                    else view
-                    for view, target in zip(original_views, camera._raycast_targets_cfg, strict=True)
-                ]
-                try:
-                    camera._initialize_shared_mesh_tracking()
-                    assert camera.mesh_transform_info["site_indices"] == expected_sites
-                    result["reversed_newton_site_rows"] = {
-                        "expected_site_indices": expected_sites,
-                        "actual_tracking": camera.mesh_transform_info,
-                    }
-                    measure("reversed_newton_site_rows")
-                finally:
-                    camera._mesh_views = original_views
-                    camera._initialize_shared_mesh_tracking()
+                assert camera.mesh_transform_info["mode"] == "shared_motion_gpu_poses_without_rigid_bodies"
+                assert not any(target.track_mesh_transforms for target in camera._raycast_targets_cfg)
+                measure("shared_newton_global_motion")
             result["cached_local_rays_exact"] = True
             result["status"] = "completed"
             persist()

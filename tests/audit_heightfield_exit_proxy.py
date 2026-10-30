@@ -51,7 +51,7 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     started = time.perf_counter()
-    functions = load_functions(SAMPLER, ("obstacle_height_field", "discrete_obstacles_terrain"))
+    functions = load_functions(SAMPLER, ("obstacle_height_field", "discrete_obstacles_height_field"))
     convert = load_functions(args.converter, ("convert_height_field_to_mesh",))["convert_height_field_to_mesh"]
     # Exact installed wrapper: 40 m / 0.1 + 1 = 401, even border_width=0
     # reserves one border pixel, so the sampler receives size 399*0.1.
@@ -66,7 +66,7 @@ def main():
         obstacle_height_probability=[0.1, 0.15, 0.20, 0.55],
         seed=args.terrain_seed,
     )
-    inner, origin = functions["discrete_obstacles_terrain"](0.0, cfg)
+    inner, origin = functions["discrete_obstacles_height_field"](0.0, cfg)
     assert inner.shape == (399, 399), inner.shape
     heights = np.zeros((401, 401), dtype=np.int16)
     heights[1:-1, 1:-1] = inner

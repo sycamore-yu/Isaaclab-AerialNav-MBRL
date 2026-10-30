@@ -17,6 +17,8 @@ from isaaclab.sensors.sensor_base import SensorBase
 from isaaclab.utils import math as math_utils
 from isaaclab.utils.warp import ProxyArray
 
+from isaaclab_navrl.warp_utils import torch_warp_stream
+
 from .depth_processing import depth_features
 from .lidar_kernels import rotate_directions_with_yaw
 
@@ -114,9 +116,7 @@ class _BatchedDepthCameraMixin:
         """Build a shared-world broad phase without modifying native meshes."""
         self._clear_shared_mesh_tracking()
         super()._initialize_warp_meshes()
-        stream = (
-            wp.stream_from_torch(torch.cuda.current_stream(self._device)) if self._device.startswith("cuda") else None
-        )
+        stream = torch_warp_stream(self._device)
         with wp.ScopedStream(stream) if stream is not None else nullcontext():
             # Preserve the official per-target initialization before validating
             # and replacing only the subsequent transform-refresh path.
@@ -311,9 +311,7 @@ class _BatchedDepthCameraMixin:
         )
 
     def _update_buffers_impl(self, env_mask):
-        stream = (
-            wp.stream_from_torch(torch.cuda.current_stream(self._device)) if self._device.startswith("cuda") else None
-        )
+        stream = torch_warp_stream(self._device)
         with wp.ScopedStream(stream) if stream is not None else nullcontext():
             self._update_frame(env_mask, frame_op=1)
             self._update_mesh_transforms()

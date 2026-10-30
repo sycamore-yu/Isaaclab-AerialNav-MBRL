@@ -8,7 +8,7 @@ from pathlib import Path
 
 from isaaclab.app import add_launcher_args, launch_simulation
 
-from isaaclab_navrl.physics import parse_physics_args, select_physics
+from isaaclab_navrl.physics import create_navigation_env, parse_physics_args, runtime_metadata, select_physics
 from isaaclab_navrl.source import verify_training_import
 from isaaclab_navrl.training import DEFAULT_STAGE, STAGE_CONFIG, STAGES, graceful_training_stop, write_json
 from isaaclab_navrl.zhang.cli import add_train_args, parse_train_args
@@ -72,14 +72,12 @@ def main():
         else (5e-5 if args.stage.startswith("finetune") and not args.fresh_stage else 0.001)
     )
 
-    import gymnasium as gym
     import torch
 
     import isaaclab_navrl.tasks  # noqa: F401
     from isaaclab_navrl.tasks.navigation.config.hummingbird.env_cfg import ZhangNavRLEnvCfg
     from isaaclab_navrl.tasks.navigation.depth_history import OBSERVATION_CONTRACT
     from isaaclab_navrl.zhang.config import ZhangTrainCfg
-    from isaaclab_navrl.zhang.runner import ZhangTrainer
 
     stage = STAGE_CONFIG[args.stage].copy()
     if args.num_dynamic_obstacles is not None:
@@ -117,65 +115,71 @@ def main():
     train_cfg.validate()
     torch.manual_seed(args.seed)
     args.log_dir.mkdir(parents=True, exist_ok=True)
-    write_json(
-        args.log_dir / "config.json",
-        {
-            "method": "zhang",
+    run_config = {
+        "method": "zhang",
+        "physics": args.physics_preset,
+        "frontend": args.frontend,
+        "variant": args.variant,
+        "algorithm": args.algorithm,
+        "train": asdict(train_cfg),
+        "resolved_velocity_loss_mode": train_cfg.resolved_velocity_loss_mode,
+        "algorithm_label": "AHAC-derived metric-clearance and stability feedback"
+        if args.algorithm == "ahac"
+        else args.algorithm,
+        "height_loss_mode": train_cfg.height_loss_mode,
+        "static_obstacle_distance": "signed_heightfield_occupancy_exit_proxy",
+        "static_projection": "float64_selected_face_refinement_float32_storage",
+        "environment": {
             "physics": args.physics_preset,
+            "frontend": args.frontend,
+            "num_envs": args.num_envs,
+            "seed": args.seed,
+            "terrain_seed": args.terrain_seed,
+            "stage": args.stage,
+            **stage,
+            "curriculum": STAGE_CONFIG,
             "variant": args.variant,
-            "algorithm": args.algorithm,
-            "train": asdict(train_cfg),
-            "resolved_velocity_loss_mode": train_cfg.resolved_velocity_loss_mode,
-            "algorithm_label": "AHAC-derived metric-clearance and stability feedback"
-            if args.algorithm == "ahac"
-            else args.algorithm,
-            "height_loss_mode": train_cfg.height_loss_mode,
-            "static_obstacle_distance": "signed_heightfield_occupancy_exit_proxy",
-            "static_projection": "float64_selected_face_refinement_float32_storage",
-            "environment": {
-                "physics": args.physics_preset,
-                "num_envs": args.num_envs,
-                "seed": args.seed,
-                "terrain_seed": args.terrain_seed,
-                "stage": args.stage,
-                **stage,
-                "curriculum": STAGE_CONFIG,
-                "variant": args.variant,
-                "drone_collision_response": args.variant != "continuous",
-                "height_target_range": list(cfg.height_target_range),
-                "target_speed_range": [args.target_speed_min, args.target_speed_max]
-                if args.target_speed_min is not None
-                else [2.25, 9.75],
-                "height_target_source": "current_episode_navigation_goal_z",
-                "capture_terminal_observation": cfg.capture_terminal_observation,
-                "dynamic_obstacle_collision_response": False,
-                "collision_terminates": args.variant != "continuous",
-                "bounds_terminates": args.variant != "continuous",
-                "physics_dt": cfg.sim.dt,
-                "policy_dt": cfg.sim.dt * cfg.decimation,
-                "timing": args.timing,
-                "report_episodes": args.report_episodes or args.num_envs,
-                "lidar_period_s": cfg.scene.lidar.update_period,
-                "depth_period_s": cfg.scene.depth_camera.update_period,
-                "depth_camera": {
-                    "width": cfg.scene.depth_camera.pattern_cfg.width,
-                    "height": cfg.scene.depth_camera.pattern_cfg.height,
-                    "batch_size": cfg.depth_camera_batch_size,
-                    "policy_shape": [12, 16],
-                    "pixel_noise_std": cfg.scene.depth_camera.pixel_noise_std,
-                },
-                "sim_to_real": asdict(cfg.sim_to_real),
-                "observation_contract": OBSERVATION_CONTRACT,
+            "drone_collision_response": args.variant != "continuous",
+            "height_target_range": list(cfg.height_target_range),
+            "target_speed_range": [args.target_speed_min, args.target_speed_max]
+            if args.target_speed_min is not None
+            else [2.25, 9.75],
+            "height_target_source": "current_episode_navigation_goal_z",
+            "capture_terminal_observation": cfg.capture_terminal_observation,
+            "dynamic_obstacle_collision_response": False,
+            "collision_terminates": args.variant != "continuous",
+            "bounds_terminates": args.variant != "continuous",
+            "physics_dt": cfg.sim.dt,
+            "policy_dt": cfg.sim.dt * cfg.decimation,
+            "timing": args.timing,
+            "report_episodes": args.report_episodes or args.num_envs,
+            "lidar_period_s": cfg.scene.lidar.update_period,
+            "depth_period_s": cfg.scene.depth_camera.update_period,
+            "depth_camera": {
+                "width": cfg.scene.depth_camera.pattern_cfg.width,
+                "height": cfg.scene.depth_camera.pattern_cfg.height,
+                "batch_size": cfg.depth_camera_batch_size,
+                "policy_shape": [12, 16],
+                "pixel_noise_std": cfg.scene.depth_camera.pixel_noise_std,
             },
-            "parent_checkpoint": str(args.checkpoint.resolve()) if args.checkpoint else None,
-            "fresh": args.checkpoint is None,
-            "direct_stage_start": args.fresh_stage,
-            "independent_evaluation": False,
+            "sim_to_real": asdict(cfg.sim_to_real),
+            "observation_contract": OBSERVATION_CONTRACT,
         },
-    )
+        "parent_checkpoint": str(args.checkpoint.resolve()) if args.checkpoint else None,
+        "fresh": args.checkpoint is None,
+        "direct_stage_start": args.fresh_stage,
+        "independent_evaluation": False,
+    }
+    write_json(args.log_dir / "config.json", run_config)
     with launch_simulation(cfg, args):
-        env = gym.make("Isaac-NavRL-Zhang-Hummingbird-Direct-v0", cfg=cfg).unwrapped
+        env = create_navigation_env("Isaac-NavRL-Zhang-Hummingbird-Direct-v0", cfg, args)
         try:
+            # TensorBoard's native dependencies must load after the PhysX Kit app.
+            from isaaclab_navrl.zhang.runner import ZhangTrainer
+
+            run_config.update(runtime_metadata(env))
+            run_config["environment"].update(runtime_metadata(env))
+            write_json(args.log_dir / "config.json", run_config)
             write_json(args.log_dir / "nominal_dynamics.json", env.nominal_dynamics)
             trainer = ZhangTrainer(env, train_cfg, args.log_dir)
             trainer.process_started_at = process_started

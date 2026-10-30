@@ -9,7 +9,7 @@ from pathlib import Path
 
 from isaaclab.app import add_launcher_args, launch_simulation
 
-from isaaclab_navrl.physics import parse_physics_args, select_physics
+from isaaclab_navrl.physics import create_navigation_env, parse_physics_args, runtime_metadata, select_physics
 
 
 def main():
@@ -32,7 +32,6 @@ def main():
     if args.output.exists():
         parser.error(f"evaluation output already exists: {args.output}")
 
-    import gymnasium as gym
     import torch
 
     import isaaclab_navrl.tasks  # noqa: F401
@@ -51,7 +50,7 @@ def main():
     cfg.configure_scene()
     task = "Isaac-NavRL-Zhang-Hummingbird-Direct-v0" if args.method == "zhang" else "Isaac-NavRL-Hummingbird-Direct-v0"
     with launch_simulation(cfg, args):
-        env = gym.make(task, cfg=cfg).unwrapped
+        env = create_navigation_env(task, cfg, args)
         try:
             if args.method == "navrl":
                 from isaaclab_navrl.agents.inference import load_navrl_policy
@@ -76,6 +75,7 @@ def main():
             result = {
                 "method": args.method,
                 "physics": args.physics_preset,
+                **runtime_metadata(env),
                 **({"recurrent_model": policy.cfg.recurrent_model} if args.method == "zhang" else {}),
                 "checkpoint": str(args.checkpoint.resolve()),
                 "seed": args.seed,

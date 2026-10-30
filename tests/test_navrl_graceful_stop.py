@@ -1,4 +1,4 @@
-"""Exercise the real PPO entry point with a small runner double, without PhysX."""
+"""Exercise the real PPO entry point with a small runner double, without simulation."""
 
 import contextlib
 import importlib.util
@@ -171,6 +171,7 @@ class Harness:
         self.events = []
         self.cfg = EnvironmentConfig()
         self.selected_physics = None
+        self.factory_calls = 0
         self.curriculum = Curriculum(self)
         self.env_closed = False
         self.runner = None
@@ -197,6 +198,7 @@ class Harness:
         checkpoint=None,
         stop_after_acceptance=False,
         physics="isaacsim_physx",
+        frontend="torch",
     ):
         tokens = [
             "train_navrl.py",
@@ -209,6 +211,8 @@ class Harness:
             "--stage",
             stage,
             f"physics={physics}",
+            "--frontend",
+            frontend,
         ]
         if checkpoint is not None:
             tokens += ["--checkpoint", str(checkpoint)]
@@ -225,11 +229,17 @@ class Harness:
             assert getattr(args, "physics", None) is None
             return contextlib.nullcontext()
 
+        def create_isaaclab_env(task, cfg, args, *, convert_marl_to_single_agent):
+            assert task == "Isaac-NavRL-Hummingbird-Direct-v0"
+            assert cfg is self.cfg and self.selected_physics == physics
+            assert args.physics_preset == physics and args.frontend == frontend
+            assert convert_marl_to_single_agent is False
+            self.factory_calls += 1
+            return types.SimpleNamespace(unwrapped=self.env)
+
         imports = {
             "isaaclab_tasks.utils.hydra": types.SimpleNamespace(resolve_presets=resolve_presets),
-            "gymnasium": types.SimpleNamespace(
-                make=lambda *_args, **_kwargs: types.SimpleNamespace(unwrapped=self.env)
-            ),
+            "isaaclab_rl.entrypoints.common": types.SimpleNamespace(create_isaaclab_env=create_isaaclab_env),
             "numpy": types.SimpleNamespace(random=types.SimpleNamespace(seed=lambda _seed: None)),
             "torch": types.SimpleNamespace(
                 manual_seed=lambda _seed: None,
@@ -279,11 +289,16 @@ class Harness:
 
 class NavrlGracefulStopTests(unittest.TestCase):
     def assert_closed(self, harness):
+        self.assertEqual(harness.factory_calls, 1)
         self.assertTrue(harness.env_closed)
         self.assertTrue(harness.runner.logger.writer.closed)
         self.assertTrue(harness.handlers_restored)
         self.assertEqual(harness.unexpected_signals, [])
         self.assertEqual(list(harness.log_dir.glob("*.tmp.pt")), [])
+        run_config = json.loads((harness.log_dir / "run_config.json").read_text())
+        for metadata in (harness.result(), run_config):
+            self.assertEqual(metadata["frontend"], "torch")
+            self.assertEqual(metadata["environment_class"], "types.SimpleNamespace")
 
     def test_sigint_and_sigterm_finish_the_current_update_and_report_before_saving(self):
         with tempfile.TemporaryDirectory(prefix="navrl_stop_") as temporary:
@@ -306,6 +321,8 @@ class NavrlGracefulStopTests(unittest.TestCase):
                     self.assertEqual(payload["optimizer_updates"], 2)
                     self.assertEqual(payload["infos"]["completed_updates"], 2)
                     self.assertEqual(payload["infos"]["stop_requested"], str(signum))
+                    self.assertEqual(payload["infos"]["frontend"], "torch")
+                    self.assertEqual(payload["infos"]["environment_class"], "types.SimpleNamespace")
                     self.assertEqual(harness.runner.learn_calls, 2)
                     self.assertLess(harness.events.index(("learn_finished", 2)), harness.events.index(("report", 2)))
                     self.assertLess(
@@ -351,6 +368,8 @@ class NavrlGracefulStopTests(unittest.TestCase):
                 self.assertEqual(harness.result()["physics"], "newton_mjwarp")
                 payload = json.loads(Path(harness.result()["checkpoint"]).read_text())
                 self.assertEqual(payload["infos"]["physics"], "newton_mjwarp")
+                self.assertEqual(payload["infos"]["frontend"], "torch")
+                self.assertEqual(payload["infos"]["environment_class"], "types.SimpleNamespace")
                 self.assertIsNone(harness.result()["stop_requested"])
                 self.assertEqual(Path(harness.result()["checkpoint"]).name, "checkpoint_final.pt")
                 self.assert_closed(harness)

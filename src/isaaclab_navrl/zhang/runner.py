@@ -1,4 +1,4 @@
-"""BPTT and cost actor-critic optimization of measured PhysX trajectories."""
+"""BPTT and cost actor-critic optimization of measured simulator trajectories."""
 
 import json
 import math
@@ -11,6 +11,7 @@ from pathlib import Path
 import torch
 from torch.utils.tensorboard import SummaryWriter
 
+from isaaclab_navrl.physics import runtime_metadata
 from isaaclab_navrl.tasks.navigation.depth_history import OBSERVATION_CONTRACT
 from isaaclab_navrl.tasks.navigation.randomization import DifferentiableDelay
 from isaaclab_navrl.training import (
@@ -273,6 +274,7 @@ class ZhangTrainer:
             "format_version": 3,
             "method": "zhang",
             "physics": self.cfg.physics,
+            **runtime_metadata(self.env),
             "variant": self.cfg.variant,
             "algorithm": self.cfg.algorithm,
             "stage_log_dir": str(self.log_dir),
@@ -299,6 +301,7 @@ class ZhangTrainer:
             "parent_checkpoint": self.parent_checkpoint,
             "environment": {
                 "physics": self.cfg.physics,
+                **runtime_metadata(self.env),
                 "seed": self.env.cfg.seed,
                 "terrain_seed": self.env.cfg.terrain_seed,
                 "static_obstacles": self.env.cfg.num_static_obstacles,
@@ -422,6 +425,7 @@ class ZhangTrainer:
         result = {
             "method": "zhang",
             "physics": self.cfg.physics,
+            **runtime_metadata(self.env),
             "variant": self.cfg.variant,
             "algorithm": self.cfg.algorithm,
             "recurrent_model": self.cfg.recurrent_model,

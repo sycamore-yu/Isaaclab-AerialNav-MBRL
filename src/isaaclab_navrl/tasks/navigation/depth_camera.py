@@ -7,6 +7,8 @@ import warp as wp
 from isaaclab.sensors.ray_caster import kernels as camera_kernels
 from isaaclab_physx.sensors.ray_caster.multi_mesh_ray_caster_camera import MultiMeshRayCasterCamera
 
+from isaaclab_navrl.warp_utils import torch_warp_stream
+
 from .sensor_mixins import _BatchedDepthCameraMixin
 
 
@@ -79,9 +81,7 @@ class BatchedDepthCamera(_BatchedDepthCameraMixin, MultiMeshRayCasterCamera):
             raise RuntimeError("Shared camera transform tracking is not initialized.")
         if self._shared_mesh_view is None:
             return
-        stream = (
-            wp.stream_from_torch(torch.cuda.current_stream(self._device)) if self._device.startswith("cuda") else None
-        )
+        stream = torch_warp_stream(self._device)
         with wp.ScopedStream(stream) if stream is not None else nullcontext():
             transforms = self._shared_mesh_view.get_transforms()
             # Retain backing allocations through the asynchronous official copy.

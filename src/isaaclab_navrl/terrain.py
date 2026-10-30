@@ -8,7 +8,6 @@ from __future__ import annotations
 import numpy as np
 from isaaclab.terrains import TerrainGeneratorCfg, TerrainImporterCfg
 from isaaclab.terrains.height_field.hf_terrains_cfg import HfTerrainBaseCfg
-from isaaclab.terrains.height_field.utils import height_field_to_mesh
 from isaaclab.utils import configclass
 
 
@@ -67,8 +66,7 @@ def obstacle_height_field(difficulty, cfg, rng=None):
     return np.rint(heights).astype(np.int16)
 
 
-@height_field_to_mesh
-def discrete_obstacles_terrain(difficulty, cfg):
+def discrete_obstacles_height_field(difficulty, cfg):
     # Orbit seeded MT19937, then sampled the sole sub-terrain and its difficulty.
     # Lab 3.0 instead uses default_rng outside this function; replay the two old
     # draws locally so a terrain seed still denotes exactly the same static map.
@@ -87,6 +85,13 @@ def discrete_obstacles_terrain(difficulty, cfg):
         ]
     )
     return heights, origin
+
+
+def discrete_obstacles_terrain(difficulty, cfg):
+    """Load the official mesh converter only when the scene generates terrain."""
+    from isaaclab.terrains.height_field.utils import height_field_to_mesh
+
+    return height_field_to_mesh(discrete_obstacles_height_field)(difficulty, cfg)
 
 
 @configclass

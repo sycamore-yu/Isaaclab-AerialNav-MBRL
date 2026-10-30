@@ -52,11 +52,27 @@ def main():
                 max_difference = max(max_difference, float((state[0] - state[1]).abs().max()))
                 torch.testing.assert_close(state[0], state[1], atol=2e-5, rtol=1e-5)
                 torch.testing.assert_close(observation["policy"][0], observation["policy"][1], atol=2e-5, rtol=1e-5)
-                obstacle_poses = env.dynamic_collection.data.body_pose_w.torch
-                torch.testing.assert_close(obstacle_poses, obstacle_poses[:1].expand_as(obstacle_poses), atol=1e-6, rtol=0)
-                torch.testing.assert_close(
-                    obstacle_poses[0, env._active_obstacle_ids, :3], env.motion.position, atol=1e-6, rtol=0
-                )
+                if env.dynamic_collection is not None:
+                    obstacle_poses = env.dynamic_collection.data.body_pose_w.torch
+                    torch.testing.assert_close(
+                        obstacle_poses, obstacle_poses[:1].expand_as(obstacle_poses), atol=1e-6, rtol=0
+                    )
+                    torch.testing.assert_close(
+                        obstacle_poses[0, env._active_obstacle_ids, :3], env.motion.position, atol=1e-6, rtol=0
+                    )
+                else:
+                    import warp as wp
+
+                    camera = env.scene["depth_camera"]
+                    _ = camera.data.output["policy_depth"].torch
+                    # Observations use the pre-motion sensor sample. This check
+                    # explicitly refreshes the raycaster's latest world poses.
+                    camera._update_mesh_transforms()
+                    poses = wp.to_torch(camera._mesh_positions_w)
+                    torch.testing.assert_close(poses, poses[:1].expand_as(poses), atol=0, rtol=0)
+                    torch.testing.assert_close(
+                        poses[0, env._active_obstacle_ids + 2], env.motion.position, atol=1e-6, rtol=0
+                    )
             result = {
                 "physics": args.backend,
                 "num_envs": 2,
@@ -66,7 +82,11 @@ def main():
                 "same_world_observations_identical": True,
                 "obstacle_instances_follow_shared_motion": True,
                 "max_state_difference": max_difference,
-                "shared_dynamic_collection_shape": list(env.dynamic_collection.data.body_pose_w.torch.shape),
+                "shared_dynamic_collection_shape": (
+                    list(env.dynamic_collection.data.body_pose_w.torch.shape)
+                    if env.dynamic_collection is not None
+                    else None
+                ),
             }
             args.output.parent.mkdir(parents=True, exist_ok=True)
             args.output.write_text(json.dumps(result, indent=2) + "\n")
