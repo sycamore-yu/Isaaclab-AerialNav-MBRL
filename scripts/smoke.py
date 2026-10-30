@@ -9,7 +9,7 @@ from pathlib import Path
 
 from isaaclab.app import add_launcher_args, launch_simulation
 
-from isaaclab_navrl.physics import parse_physics_args, select_physics
+from isaaclab_navrl.physics import create_navigation_env, parse_physics_args, runtime_metadata, select_physics
 
 
 def main():
@@ -23,7 +23,6 @@ def main():
     parser.set_defaults(visualizer=["none"])
     args = parse_physics_args(parser)
 
-    import gymnasium as gym
     import torch
 
     import isaaclab_navrl.tasks  # noqa: F401
@@ -38,7 +37,7 @@ def main():
     cfg.configure_scene()
     task = "Isaac-NavRL-Zhang-Hummingbird-Direct-v0" if args.method == "zhang" else "Isaac-NavRL-Hummingbird-Direct-v0"
     with launch_simulation(cfg, args):
-        env = gym.make(task, cfg=cfg).unwrapped
+        env = create_navigation_env(task, cfg, args)
         try:
             observation, _ = env.reset()
             assert observation["policy"].shape == (args.num_envs, 202)
@@ -90,6 +89,7 @@ def main():
             result = {
                 "method": args.method,
                 "physics": args.physics_preset,
+                **runtime_metadata(env),
                 "num_envs": args.num_envs,
                 "steps": args.steps,
                 "static_obstacles": cfg.num_static_obstacles,

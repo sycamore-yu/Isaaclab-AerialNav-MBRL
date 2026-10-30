@@ -17,6 +17,7 @@ from isaaclab_physx.sim.schemas import PhysxRigidBodyCfg
 from isaaclab_tasks.utils import PresetCfg
 
 from isaaclab_navrl.control import make_drone_cfg
+from isaaclab_navrl.physics import DEFAULT_PHYSICS
 from isaaclab_navrl.terrain import build_terrain_cfg
 
 from ...depth_camera_cfg import BatchedDepthCameraCfg
@@ -45,7 +46,7 @@ class NavigationPhysicsCfg(PresetCfg):
         ),
         load_visual_shapes=True,
     )
-    default = isaacsim_physx
+    default = {"isaacsim_physx": isaacsim_physx, "newton_mjwarp": newton_mjwarp}[DEFAULT_PHYSICS]
 
 
 @configclass

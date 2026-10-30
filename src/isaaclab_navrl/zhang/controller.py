@@ -51,6 +51,22 @@ class GraphedLeeRotorController:
         return self.controller.commands
 
     @property
+    def velocity_gain(self):
+        return self.controller.velocity_gain
+
+    @property
+    def nominal_velocity_gain(self):
+        return self.controller.nominal_velocity_gain
+
+    @property
+    def rotor_parameters(self):
+        return self.controller.rotor_parameters
+
+    @property
+    def rotor_group(self):
+        return self.controller.rotor_group
+
+    @property
     def thrusts(self):
         return self.controller.thrusts
 

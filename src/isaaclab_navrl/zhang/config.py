@@ -4,7 +4,7 @@ import math
 from dataclasses import dataclass
 from typing import Literal
 
-from isaaclab_navrl.physics import PHYSICS_PRESETS
+from isaaclab_navrl.physics import DEFAULT_FRONTEND, DEFAULT_PHYSICS, validate_runtime
 
 ZHANG_VARIANTS = ("step", "continuous", "dcol")
 ZHANG_ALGORITHMS = ("bptt", "shac", "ahac")
@@ -18,7 +18,8 @@ class ZhangTrainCfg:
     timesteps: int = 150
     max_iterations: int | None = None
     stop_after_acceptance: bool = False
-    physics: Literal["isaacsim_physx", "newton_mjwarp"] = "isaacsim_physx"
+    physics: Literal["isaacsim_physx", "newton_mjwarp"] = DEFAULT_PHYSICS
+    frontend: Literal["torch", "warp"] = DEFAULT_FRONTEND
     physics_dt: float = 0.05
     policy_dt: float = 0.05
     velocity_loss_mode: Literal["variant_default", "per_step", "truncated_window", "full_window", "ema"] | None = None
@@ -97,8 +98,7 @@ class ZhangTrainCfg:
         return steps
 
     def validate(self) -> None:
-        if self.physics not in PHYSICS_PRESETS:
-            raise ValueError(f"physics must be one of {PHYSICS_PRESETS}")
+        validate_runtime(self.physics, self.frontend)
         if self.variant not in ZHANG_VARIANTS:
             raise ValueError(f"variant must be one of {ZHANG_VARIANTS}")
         if self.algorithm not in ZHANG_ALGORITHMS:

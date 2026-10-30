@@ -88,7 +88,7 @@ def main():
             )
             assert all(b - a == 1 for a, b in zip(physics_steps, physics_steps[1:], strict=False))
             assert env.physics_dt == env.step_dt == dt and env.curriculum.min_episodes == 1024
-            tau = env.controller.controller.rotor_parameters["tau_up"]
+            tau = env.controller.rotor_parameters["tau_up"]
             torch.testing.assert_close(tau, torch.full_like(tau, 1 - 0.57 ** (dt / 0.01)))
             from isaaclab_navrl.zhang.losses import navrl_height_loss
 

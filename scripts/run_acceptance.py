@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from isaaclab_navrl.physics import parse_physics_args
+from isaaclab_navrl.physics import DEFAULT_FRONTEND, DEFAULT_PHYSICS, parse_physics_args, validate_runtime
 from isaaclab_navrl.source import freeze_source, verify_source
 from isaaclab_navrl.training import STAGE_CONFIG, STAGES, write_json
 from isaaclab_navrl.zhang.cli import TrainArgValue, parse_train_args
@@ -48,8 +48,10 @@ def build_command(
     report_episodes: int | None = None,
     fresh_stage: bool = False,
     fixed_stage: bool = False,
-    physics: str = "isaacsim_physx",
+    physics: str = DEFAULT_PHYSICS,
+    frontend: str = DEFAULT_FRONTEND,
 ) -> list[str]:
+    validate_runtime(physics, frontend)
     command = [
         executable,
         str(scripts_dir / f"train_{method}.py"),
@@ -66,6 +68,8 @@ def build_command(
         "--device",
         device,
         f"physics={physics}",
+        "--frontend",
+        frontend,
     ]
     if not fixed_stage:
         command += ["--stop_after_acceptance"]
@@ -213,6 +217,7 @@ def run_pipeline(args: argparse.Namespace, train_args: dict[str, TrainArgValue])
         "stage_thresholds_passed": False,
         "method": args.method,
         "physics": args.physics_preset,
+        "frontend": args.frontend,
         "num_envs": args.num_envs,
         "report_episodes": getattr(args, "report_episodes", None) or args.num_envs,
         "train_seed": args.train_seed,
@@ -279,6 +284,7 @@ def run_pipeline(args: argparse.Namespace, train_args: dict[str, TrainArgValue])
                     fresh_stage=stage == start_stage and start_stage != STAGES[0],
                     fixed_stage=fixed_stage,
                     physics=args.physics_preset,
+                    frontend=args.frontend,
                 )
                 current_stage = {
                     "stage": stage,

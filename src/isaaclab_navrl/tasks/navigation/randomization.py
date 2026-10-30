@@ -193,7 +193,7 @@ def capture_nominal_dynamics(env, env_ids):
 def reset_sim_to_real(env, env_ids):
     ids = torch.arange(env.num_envs, device=env.device) if env_ids is None else env_ids.long()
     env.perturbation.reset(ids)
-    controller = env.controller.controller if env.cfg.method == "zhang" else env.controller
+    controller = env.controller
     controller.velocity_gain[ids] = controller.nominal_velocity_gain * env.perturbation.control_gain_scale[ids]
     for name in ("KF", "KM"):
         controller.rotor_parameters[name][ids] = (
