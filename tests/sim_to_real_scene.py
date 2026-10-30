@@ -1,4 +1,4 @@
-"""Check shared perturbations against real PhysX execution and partial resets."""
+"""Check shared perturbations against the selected backend and partial resets."""
 
 import argparse
 import json
@@ -9,11 +9,29 @@ from isaaclab.app import add_launcher_args, launch_simulation
 
 
 def drone_collision_attributes(env):
-    """Read the actual USD collision attributes for every cloned aircraft."""
+    """Inspect collision flags for every aircraft in the active representation."""
     from pxr import Usd, UsdPhysics
 
     attributes = {}
     continuous = env.cfg.method == "zhang" and env.cfg.variant == "continuous"
+    if env.drone.__backend_name__ == "newton":
+        from isaaclab_newton.physics import NewtonManager
+        from newton import ShapeFlags
+
+        model = NewtonManager.get_model()
+        bodies, flags = model.shape_body.numpy(), model.shape_flags.numpy()
+        for env_path in env.scene.env_prim_paths:
+            prefix = f"{env_path}/Hummingbird/"
+            enabled = []
+            for index, (body, flag) in enumerate(zip(bodies, flags, strict=True)):
+                if body >= 0 and model.body_label[body].startswith(prefix):
+                    value = bool(flag & int(ShapeFlags.COLLIDE_SHAPES))
+                    attributes[f"{model.shape_label[index]}.newton:collide_shapes"] = value
+                    enabled.append(value)
+            assert enabled, f"No Newton drone shapes found under {prefix}"
+            assert not any(enabled) if continuous else any(enabled)
+        return attributes
+
     for env_path in env.scene.env_prim_paths:
         drone = env.sim.stage.GetPrimAtPath(f"{env_path}/Hummingbird")
         enabled = []
@@ -74,6 +92,17 @@ def check_zhang_collision_mode(env):
         observed_dynamic_velocities.clear()
         result = env.step(action)
         transition = result[-1]["transition"]
+        done = result[2] | result[3]
+        if bool(done.any()):
+            # Same-step resets must retain the completed transition's metrics.
+            expected_logs = {
+                "Episode/return": transition["episode_return"],
+                "Episode/length": transition["step"],
+                "Episode/reach_goal": transition["reached"],
+                "Episode/collision": transition["collision"],
+            }
+            for name, values in expected_logs.items():
+                torch.testing.assert_close(result[-1]["log"][name], values[done].float().mean())
         positions, substeps = transition["collision_position"], transition["collision_substep"]
         assert positions.shape == (env.num_envs, 3) and torch.isfinite(positions).all()
         assert substeps.shape == (env.num_envs,) and substeps.dtype == torch.long
@@ -138,6 +167,7 @@ def check_zhang_collision_mode(env):
             assert int(env.first_reach_step[1]) > 0
             kept_position = env._collision_position[1].clone()
             kept_substep = env._collision_substep[1].clone()
+            kept_logs = {name: value.clone() for name, value in env.extras.get("log", {}).items()}
             env._reset_idx(torch.tensor([0], device=env.device, dtype=torch.int32))
             assert int(env._collision_substep[0]) == 0
             torch.testing.assert_close(env._collision_position[0], action[0], rtol=0, atol=0)
@@ -152,6 +182,11 @@ def check_zhang_collision_mode(env):
             env._reset_idx(torch.tensor([1], device=env.device, dtype=torch.int32))
             assert int(env._collision_substep[1]) == 0 and int(env._event_code[0]) == 0
             torch.testing.assert_close(env._collision_position[1], action[1], rtol=0, atol=0)
+            # Manual partial resets must not manufacture or replace episode logs.
+            current_logs = env.extras.get("log", {})
+            assert current_logs.keys() == kept_logs.keys()
+            for name, value in kept_logs.items():
+                torch.testing.assert_close(current_logs[name], value, rtol=0, atol=0)
             injected.update({0: "reached", 1: None})
             _, _, _, _, info = step()
             assert int(info["transition"]["first_event_code"][0]) == 1
@@ -219,6 +254,7 @@ def main():
     parser.add_argument("--method", choices=("navrl", "zhang"), required=True)
     parser.add_argument("--enabled", action="store_true")
     parser.add_argument("--variant", choices=("step", "continuous", "dcol"), default="step")
+    parser.add_argument("--backend", choices=("isaacsim_physx", "newton_mjwarp"), default="isaacsim_physx")
     parser.add_argument("--output", type=Path, required=True)
     add_launcher_args(parser)
     parser.set_defaults(visualizer=["none"])
@@ -228,12 +264,14 @@ def main():
 
     import gymnasium as gym
     import torch
+    from isaaclab_tasks.utils.hydra import resolve_presets
 
     import isaaclab_navrl.tasks  # noqa: F401
     from isaaclab_navrl.tasks.navigation.config.hummingbird.env_cfg import NavRLEnvCfg, ZhangNavRLEnvCfg
     from isaaclab_navrl.tasks.navigation.randomization import DifferentiableDelay
 
     cfg = (ZhangNavRLEnvCfg if args.method == "zhang" else NavRLEnvCfg)()
+    resolve_presets(cfg, selected=(args.backend,))
     cfg.scene.num_envs = 16
     cfg.num_static_obstacles, cfg.num_dynamic_obstacles = 300, 60
     cfg.training_curriculum = False
@@ -284,6 +322,11 @@ def main():
                 policy_depth = camera.data.output["policy_depth"].torch
                 assert policy_depth.shape == (env.num_envs, 12, 16, 1)
                 assert torch.isfinite(policy_depth).all()
+                obstacle_poses = env.dynamic_collection.data.body_pose_w.torch
+                torch.testing.assert_close(obstacle_poses, obstacle_poses[:1].expand_as(obstacle_poses), atol=1e-6, rtol=0)
+                torch.testing.assert_close(
+                    obstacle_poses[0, env._active_obstacle_ids, :3], env.motion.position, atol=1e-6, rtol=0
+                )
                 begin, end, raw_depth = camera.last_depth_batch
                 assert raw_depth.shape == (end - begin, 1, 120, 160)
                 assert torch.isfinite(raw_depth).all()
@@ -319,6 +362,7 @@ def main():
             collision_check = check_zhang_collision_mode(env) if args.method == "zhang" else None
             policy_steps = 12 + (collision_check["policy_steps"] if collision_check is not None else 0)
             result = {
+                "physics": args.backend,
                 "method": args.method,
                 "enabled": args.enabled,
                 "num_envs": 16,
@@ -333,6 +377,7 @@ def main():
                 "inertia_scale_max": float(inertia_ratio.max()),
                 "executed_action_max_error": max_execution_error,
                 "partial_reset_passed": True,
+                "obstacle_instances_follow_shared_motion": True,
                 "nonfinite_events": int(env.nonfinite_events),
                 "drone_collision_attributes": collision_attributes,
                 "collision_mode_check": collision_check,

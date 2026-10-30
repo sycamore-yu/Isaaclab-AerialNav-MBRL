@@ -5,7 +5,7 @@ build-backend = "uv_build"
 [project]
 name = "isaaclab_navrl"
 version = "0.1.0"
-description = "NavRL and Zhang differentiable training in Isaac Lab 3.0 PhysX."
+description = "NavRL and Zhang differentiable training with Isaac Lab 3.0 PhysX and Newton backends."
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = ["isaaclab[isaacsim,rsl-rl]==3.0.0", "tensorboard>=2.21", "pyyaml>=6.0"]

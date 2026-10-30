@@ -272,6 +272,7 @@ class ZhangTrainer:
         payload = {
             "format_version": 3,
             "method": "zhang",
+            "physics": self.cfg.physics,
             "variant": self.cfg.variant,
             "algorithm": self.cfg.algorithm,
             "stage_log_dir": str(self.log_dir),
@@ -297,6 +298,7 @@ class ZhangTrainer:
             "schedule_updates": self.schedule_updates,
             "parent_checkpoint": self.parent_checkpoint,
             "environment": {
+                "physics": self.cfg.physics,
                 "seed": self.env.cfg.seed,
                 "terrain_seed": self.env.cfg.terrain_seed,
                 "static_obstacles": self.env.cfg.num_static_obstacles,
@@ -419,6 +421,7 @@ class ZhangTrainer:
     def _result(self, status, checkpoint=None, error=None):
         result = {
             "method": "zhang",
+            "physics": self.cfg.physics,
             "variant": self.cfg.variant,
             "algorithm": self.cfg.algorithm,
             "recurrent_model": self.cfg.recurrent_model,

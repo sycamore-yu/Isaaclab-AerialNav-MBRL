@@ -9,6 +9,8 @@ from pathlib import Path
 
 from isaaclab.app import add_launcher_args, launch_simulation
 
+from isaaclab_navrl.physics import parse_physics_args, select_physics
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
@@ -22,7 +24,7 @@ def main():
     parser.add_argument("--dynamic_obstacles", type=int, default=100)
     add_launcher_args(parser)
     parser.set_defaults(visualizer=["none"])
-    args = parser.parse_args()
+    args = parse_physics_args(parser)
     if args.episodes < 1:
         parser.error("--episodes must be positive")
     if not args.checkpoint.is_file():
@@ -45,6 +47,7 @@ def main():
     cfg.seed, cfg.terrain_seed = args.seed, args.terrain_seed
     cfg.evaluation = True
     cfg.sim.device = args.device
+    select_physics(cfg, args.physics_preset)
     cfg.configure_scene()
     task = "Isaac-NavRL-Zhang-Hummingbird-Direct-v0" if args.method == "zhang" else "Isaac-NavRL-Hummingbird-Direct-v0"
     with launch_simulation(cfg, args):
@@ -72,6 +75,7 @@ def main():
                         break
             result = {
                 "method": args.method,
+                "physics": args.physics_preset,
                 **({"recurrent_model": policy.cfg.recurrent_model} if args.method == "zhang" else {}),
                 "checkpoint": str(args.checkpoint.resolve()),
                 "seed": args.seed,

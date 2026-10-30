@@ -8,18 +8,44 @@ from isaaclab.envs import DirectRLEnvCfg
 from isaaclab.managers import EventTermCfg, SceneEntityCfg
 from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sensors import MultiMeshRayCasterCameraCfg, MultiMeshRayCasterCfg, RayCasterCfg, patterns
-from isaaclab.sim.schemas import UsdPhysicsCollisionCfg, UsdPhysicsRigidBodyCfg
+from isaaclab.sim.schemas import MassCfg, UsdPhysicsCollisionCfg, UsdPhysicsRigidBodyCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.string import ResolvableString
+from isaaclab_newton.physics import MJWarpSolverCfg, NewtonCfg
 from isaaclab_physx.physics import PhysxCfg
 from isaaclab_physx.sim.schemas import PhysxRigidBodyCfg
+from isaaclab_tasks.utils import PresetCfg
 
-from isaaclab_navrl.control import ROTOR_CONFIG, make_drone_cfg
+from isaaclab_navrl.control import make_drone_cfg
 from isaaclab_navrl.terrain import build_terrain_cfg
 
 from ...depth_camera_cfg import BatchedDepthCameraCfg
 from ...randomization import SimToRealCfg
 from ...task_logic import dynamic_layout
+
+
+@configclass
+class NavigationPhysicsCfg(PresetCfg):
+    """Named physics choices used by both navigation tasks."""
+
+    isaacsim_physx = PhysxCfg(
+        enable_stabilization=True,
+        bounce_threshold_velocity=0.2,
+        gpu_max_rigid_contact_count=524288,
+        gpu_max_rigid_patch_count=163840,
+        gpu_found_lost_pairs_capacity=4194304,
+        gpu_found_lost_aggregate_pairs_capacity=33554432,
+        gpu_total_aggregate_pairs_capacity=4194304,
+    )
+    newton_mjwarp = NewtonCfg(
+        # MuJoCo mesh contacts use a convex hull. Newton's triangle contacts
+        # preserve the original non-convex forest mesh and its free corridors.
+        solver_cfg=MJWarpSolverCfg(
+            integrator="implicitfast", disable_sensors=True, use_mujoco_contacts=False
+        ),
+        load_visual_shapes=True,
+    )
+    default = isaacsim_physx
 
 
 @configclass
@@ -54,14 +80,18 @@ class SharedNavigationSceneCfg(InteractiveSceneCfg):
     depth_camera: MultiMeshRayCasterCameraCfg | None = None
 
 
-def make_dynamic_cfg(count: int, seed: int) -> RigidObjectCollectionCfg | None:
+def make_dynamic_cfg(count: int, seed: int, *, newton: bool = False) -> RigidObjectCollectionCfg | None:
     if count == 0:
         return None
     positions, sizes = dynamic_layout(count, seed)
+    root = "{ENV_REGEX_NS}/Dynamic" if newton else "/World/Dynamic"
     objects = {}
     for index, (position, size) in enumerate(zip(positions, sizes, strict=True)):
         properties = {
             "rigid_props": [UsdPhysicsRigidBodyCfg(kinematic_enabled=True), PhysxRigidBodyCfg(disable_gravity=True)],
+            # Collision-free geometry has no inferred mass in Newton's importer.
+            # Positive authored mass retains the kinematic body's free joint.
+            "mass_props": MassCfg(mass=1.0),
             "collision_props": UsdPhysicsCollisionCfg(collision_enabled=False),
             "visual_material": sim_utils.PreviewSurfaceCfg(diffuse_color=(0.0, 1.0, 0.0), metallic=0.2),
         }
@@ -70,10 +100,10 @@ def make_dynamic_cfg(count: int, seed: int) -> RigidObjectCollectionCfg | None:
         else:
             spawn = sim_utils.CuboidCfg(size=tuple(float(x) for x in size), **properties)
         objects[f"obstacle_{index:03d}"] = RigidObjectCfg(
-            prim_path=f"/World/Dynamic/obstacle_{index:03d}",
+            prim_path=f"{root}/obstacle_{index:03d}",
             spawn=spawn,
             init_state=RigidObjectCfg.InitialStateCfg(pos=tuple(float(x) for x in position)),
-            collision_group=-1,
+            collision_group=0 if newton else -1,
         )
     return RigidObjectCollectionCfg(rigid_objects=objects)
 
@@ -138,15 +168,7 @@ class NavRLEnvCfg(DirectRLEnvCfg):
         dt=0.016,
         render_interval=1,
         use_newton_actuators=False,
-        physics=PhysxCfg(
-            enable_stabilization=True,
-            bounce_threshold_velocity=0.2,
-            gpu_max_rigid_contact_count=524288,
-            gpu_max_rigid_patch_count=163840,
-            gpu_found_lost_pairs_capacity=4194304,
-            gpu_found_lost_aggregate_pairs_capacity=33554432,
-            gpu_total_aggregate_pairs_capacity=4194304,
-        ),
+        physics=NavigationPhysicsCfg(),
     )
     scene = SharedNavigationSceneCfg(
         num_envs=1024,
@@ -160,6 +182,16 @@ class NavRLEnvCfg(DirectRLEnvCfg):
 
     def configure_scene(self):
         """Apply task counts after command-line overrides and before launch."""
+        newton = isinstance(self.sim.physics, NewtonCfg)
+        # MJWarp forbids global dynamic bodies. Each Newton world has kinematic
+        # copies driven by the same authoritative motion; the terrain stays shared.
+        self.scene.replicate_physics = newton
+        self.scene.env_spacing = 0.0 if newton else 8.0
+        self.scene.lidar.class_type = ResolvableString(
+            "isaaclab_navrl.tasks.navigation.newton_sensors:NewtonNavRLRayCaster"
+            if newton
+            else "isaaclab_navrl.tasks.navigation.lidar:NavRLRayCaster"
+        )
         self.events = ZhangEventsCfg() if self.method == "zhang" else NavigationEventsCfg()
         active = self.sim_to_real.enabled and not self.evaluation
         if active and self.sim_to_real.mass:
@@ -171,14 +203,8 @@ class NavRLEnvCfg(DirectRLEnvCfg):
         else:
             self.events.inertia = None
         self.scene.terrain = build_terrain_cfg(self.scene.num_envs, self.num_static_obstacles, self.terrain_seed)
-        self.scene.dynamic_obstacles = make_dynamic_cfg(self.dynamic_capacity(), self.terrain_seed)
+        self.scene.dynamic_obstacles = make_dynamic_cfg(self.dynamic_capacity(), self.terrain_seed, newton=newton)
         self.scene.lidar.update_period = self.sim.dt * self.decimation
-        for actuator in self.scene.drone.actuators.values():
-            actuator.dt = self.sim.dt
-            thrust_scale_max = self.sim_to_real.thrust_scale_range[1] if active and self.sim_to_real.thrust else 1.0
-            # RotorGroup enforces each sampled motor limit. The native force
-            # adapter must not clip a +10% coefficient back to the nominal limit.
-            actuator.thrust_range = (0.0, ROTOR_CONFIG["force_constants"][0] * 838**2 * thrust_scale_max)
 
         # NavRL ros1/map_manager/cfg/dynamic_map_param.yaml and quadcopter.urdf.
         target = MultiMeshRayCasterCfg.RaycastTargetCfg
@@ -186,11 +212,17 @@ class NavRLEnvCfg(DirectRLEnvCfg):
             target(prim_expr="/World/ground", is_shared=True, track_mesh_transforms=False),
             target(prim_expr="/World/defaultGroundPlane", is_shared=True, track_mesh_transforms=False),
         ]
+        dynamic_root = "{ENV_REGEX_NS}/Dynamic" if newton else "/World/Dynamic"
         meshes.extend(
-            target(prim_expr=f"/World/Dynamic/obstacle_{i:03d}", is_shared=True, track_mesh_transforms=True)
+            target(prim_expr=f"{dynamic_root}/obstacle_{i:03d}", is_shared=True, track_mesh_transforms=True)
             for i in range(self.dynamic_capacity())
         )
         self.scene.depth_camera = BatchedDepthCameraCfg(
+            class_type=(
+                "isaaclab_navrl.tasks.navigation.newton_sensors:NewtonBatchedDepthCamera"
+                if newton
+                else "isaaclab_navrl.tasks.navigation.depth_camera:BatchedDepthCamera"
+            ),
             prim_path="{ENV_REGEX_NS}/Hummingbird/base_link",
             spawn=None,
             batch_size=self.depth_camera_batch_size,
@@ -281,6 +313,3 @@ class ZhangNavRLEnvCfg(NavRLEnvCfg):
             UsdPhysicsCollisionCfg(collision_enabled=False) if self.variant == "continuous" else None
         )
         self.scene.lidar.update_period = self.sim.dt
-        self.scene.drone.class_type = ResolvableString(
-            "isaaclab_navrl.tasks.navigation.disturbed_multirotor:DisturbedMultirotor"
-        )

@@ -1,6 +1,5 @@
 """Unit tests for command construction and report validation, not training results."""
 
-import argparse
 import contextlib
 import copy
 import importlib.util
@@ -21,6 +20,21 @@ spec.loader.exec_module(protocol)
 STAGE_CONFIG, STAGES = protocol.STAGE_CONFIG, protocol.STAGES
 build_command, parse_train_args = protocol.build_command, protocol.parse_train_args
 run_pipeline, validate_stage_result = protocol.run_pipeline, protocol.validate_stage_result
+
+
+def pipeline_args(**values):
+    """Build orchestration fixtures through the real CLI defaults and validation."""
+    tokens = ["run_acceptance.py"]
+    for name, value in values.items():
+        if name == "physics":
+            tokens.append(f"physics={value}")
+        elif value is True:
+            tokens.append(f"--{name}")
+        elif value is not False and value is not None:
+            tokens.extend((f"--{name}", str(value)))
+    with patch.object(sys, "argv", tokens), patch.object(protocol, "run_pipeline", return_value=0) as pipeline:
+        assert protocol.main() == 0
+    return pipeline.call_args.args[0]
 
 
 def report_fixture(
@@ -480,15 +494,22 @@ class AcceptanceProtocolTests(unittest.TestCase):
 
     def test_all_five_stage_screening_completes_without_becoming_formal_acceptance(self):
         # Synthetic subprocess files verify orchestration, never policy quality.
-        for count, screening in ((128, True), (1024, False), (1024, True)):
+        for count, screening, physics in (
+            (128, True, "newton_mjwarp"),
+            (1024, False, "isaacsim_physx"),
+            (1024, True, "isaacsim_physx"),
+        ):
             visited = []
 
-            def unit_process(command, *, expected_count=count, visits=visited, **kwargs):
+            def unit_process(command, *, expected_count=count, expected_physics=physics, visits=visited, **kwargs):
                 stage = command[command.index("--stage") + 1]
                 method = Path(command[1]).stem.removeprefix("train_")
                 log_dir = Path(command[command.index("--log_dir") + 1])
                 parent = Path(command[command.index("--checkpoint") + 1]) if "--checkpoint" in command else None
                 self.assertEqual(int(command[command.index("--num_envs") + 1]), expected_count)
+                self.assertEqual(
+                    [token for token in command if token.startswith("physics=")], [f"physics={expected_physics}"]
+                )
                 result = report_fixture(stage, parent, variant="dcol", num_envs=expected_count)
                 result["method"] = method
                 (log_dir / "training_result.json").write_text(json.dumps(result), encoding="utf-8")
@@ -498,11 +519,12 @@ class AcceptanceProtocolTests(unittest.TestCase):
 
             with self.subTest(count=count, screening=screening), tempfile.TemporaryDirectory() as temporary:
                 output = Path(temporary) / "new"
-                args = argparse.Namespace(
+                args = pipeline_args(
                     method="both",
                     output=str(output),
                     num_envs=count,
                     screening=screening,
+                    physics=physics,
                     train_seed=0,
                     device="cuda:0",
                     finetune_lr=5e-5,
@@ -513,6 +535,7 @@ class AcceptanceProtocolTests(unittest.TestCase):
                 summary = json.loads((output / "training_result.json").read_text(encoding="utf-8"))
                 self.assertEqual(summary["purpose"], "training_comparison" if screening else "formal_acceptance")
                 self.assertEqual(summary["screening"], screening)
+                self.assertEqual(summary["physics"], physics)
                 self.assertIsNone(summary["error"])
                 for result in (summary, *summary["methods"].values()):
                     self.assertEqual(result["status"], "completed")
@@ -598,7 +621,7 @@ class AcceptanceProtocolTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory(prefix="acceptance_protocol_unit_") as temporary:
             output = Path(temporary) / "unit_run"
-            args = argparse.Namespace(
+            args = pipeline_args(
                 method="zhang",
                 output=str(output),
                 num_envs=1024,
@@ -672,7 +695,7 @@ class AcceptanceProtocolTests(unittest.TestCase):
 
                 with tempfile.TemporaryDirectory(prefix="acceptance_stop_unit_") as temporary:
                     output = Path(temporary) / "unit_run"
-                    args = argparse.Namespace(
+                    args = pipeline_args(
                         method="both",
                         output=str(output),
                         num_envs=1024,

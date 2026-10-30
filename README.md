@@ -1,11 +1,13 @@
 # NavRL 与 Zhang · Isaac Lab 3.0
 
-本项目在正式 Isaac Lab 3.0.0 / PhysX 中提供两个独立单机导航任务。并行无人机共用静态地形和动态物体，不相互碰撞。
+本项目在正式 Isaac Lab 3.0.0 中提供两个独立单机导航任务，支持 `physics=isaacsim_physx` 和 `physics=newton_mjwarp`，默认使用 PhysX。并行无人机共用静态地形和动态物体，不相互碰撞。
+
+两后端使用同一份动态障碍轨迹。PhysX 使用全局刚体，Newton / MuJoCo Warp 使用每个世界的同步运动学副本；相机网格仍共享。
 
 | 方法 | Gym 任务 | 训练方式 |
 |---|---|---|
 | NavRL | `Isaac-NavRL-Hummingbird-Direct-v0` | 官方 RSL-RL PPO、共享编码器、Beta 速度动作 |
-| Zhang | `Isaac-NavRL-Zhang-Hummingbird-Direct-v0` | CNN + GRU192、PhysX 前向、可微质点模型反向，前向状态取自 PhysX |
+| Zhang | `Isaac-NavRL-Zhang-Hummingbird-Direct-v0` | CNN + GRU192、所选物理后端前向、可微质点模型反向 |
 
 Zhang BPTT 可通过 `--recurrent_model sru_lstm_gated` 选择 SRU-LSTM-Gated，默认仍为 `gru`。
 SRU 沿用 CNN、10 维状态及 6 维输出，完整维护 192 维 `h` 和 192 维 `c`。
@@ -56,17 +58,23 @@ cd /home/tong/tongworkspace/free/isaaclab-navrl
 
 NavRL/PPO 使用独立的 `--method navrl` 入口；Zhang 超参数只传给 Zhang 入口。PPO 的观测、频率和动作与 Zhang 不同，属于方法对照，不能解释为只换优化器。对照规范与有时间标记的历史状态见 [truncated 与 PPO 对照](docs/ZHANG_TRUNCATED_PPO_CONTROLS_20261029.md)。有限步调试使用各训练脚本的 `--max_iterations`，不计入正式验收。
 
-公共 PPO 入口支持任务自动选择 RSL-RL 和 Hydra 覆盖。公共训练需显式给出有限的 `--max_iterations`；正式课程继续使用上面的验收入口。
+公共 PPO 入口支持任务自动选择 RSL-RL、物理后端预设和 Hydra 覆盖。公共训练需显式给出有限的 `--max_iterations`；正式课程继续使用上面的验收入口。
 
 ```bash
+# PhysX
 .venv/bin/isaaclab train --task Isaac-NavRL-Hummingbird-Direct-v0 \
-  --num_envs 16 --max_iterations 1 --device cuda:0 --visualizer none \
-  env.training_curriculum=false
+  --num_envs 256 --max_iterations 1 physics=isaacsim_physx
+# Newton / MuJoCo Warp
+.venv/bin/isaaclab train --task Isaac-NavRL-Hummingbird-Direct-v0 \
+  --num_envs 256 --max_iterations 1 physics=newton_mjwarp
 .venv/bin/isaaclab play --task Isaac-NavRL-Hummingbird-Direct-v0 \
-  --checkpoint /absolute/model.pt --num_envs 2 --device cuda:0 --visualizer none
+  --checkpoint /absolute/model.pt --num_envs 2 --device cuda:0 --visualizer none \
+  physics=newton_mjwarp
 ```
 
-运行环境由 `.venv`、`pyproject.toml` 和 `uv.lock` 固定：Python 3.12、Isaac Lab 3.0.0、Isaac Sim 6.2、RSL-RL 5.5.1。
+Zhang 使用独立的 `scripts/train_zhang.py` 或 `scripts/run_acceptance.py --method zhang`。Newton 切换前向仿真，反向仍使用现有可微质点模型，不对 Newton 求解器本身求导。后端配置、接触处理和验证记录见 [Newton 适配说明](docs/migration/NEWTON_BACKEND_20261030.md)。
+
+运行环境由 `.venv`、`pyproject.toml` 和 `uv.lock` 固定：Python 3.12、Isaac Lab 3.0.0、Isaac Sim 6.2、Newton 1.6.1、MuJoCo Warp 3.12.0、RSL-RL 5.5.1。
 
 ## 任务配置
 
@@ -109,6 +117,7 @@ TensorBoard 使用统一的 `Train/success_rate`、`Train/episodes` 等标签。
 - [训练课程与验收](docs/TRAINING_CURRICULUM.md)
 - [共享 Sim-to-Real 扰动](docs/SIM_TO_REAL_TRAINING.md)
 - [NavRL 迁移决策](docs/migration/NAVRL_ISAACLAB_3_MIGRATION.md)
+- [PhysX / Newton 后端适配](docs/migration/NEWTON_BACKEND_20261030.md)
 - [Zhang 迁移决策](docs/migration/ZHANG_MIGRATION_DECISIONS_1_4.md)
 - [实现与验证状态](docs/IMPLEMENTATION_STATUS.md)
 - [SHAC/AHAC 适配与边界](docs/migration/SHAC_AHAC_ADAPTATION.md)

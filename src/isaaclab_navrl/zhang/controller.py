@@ -78,8 +78,8 @@ class GraphedLeeRotorController:
         self.graph.replay()
         return self.commands
 
-    def apply(self, drone):
-        return self.controller.apply(drone)
+    def apply(self, drone, disturbance_acceleration_w=None):
+        return self.controller.apply(drone, disturbance_acceleration_w)
 
     def reset(self, env_ids):
         # The original reset writes all four motor buffers in place. Never

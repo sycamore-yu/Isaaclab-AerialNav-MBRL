@@ -15,6 +15,7 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
+from isaaclab_navrl.physics import parse_physics_args
 from isaaclab_navrl.source import RUNTIME_PATHS
 from isaaclab_navrl.training import write_json
 
@@ -38,7 +39,7 @@ def train_tokens(run):
     return tokens
 
 
-def command_for(source, output, plan, run, device):
+def command_for(source, output, plan, run, device, physics="isaacsim_physx"):
     command = [
         sys.executable,
         str(source / "scripts/run_acceptance.py"),
@@ -53,6 +54,7 @@ def command_for(source, output, plan, run, device):
         str(plan["seed"]),
         "--device",
         device,
+        f"physics={physics}",
         "--finetune_lr",
         str(plan.get("finetune_lr", 5e-5)),
     ]
@@ -216,7 +218,7 @@ def main():
     parser.add_argument("--slots", type=int, default=None, help="Optional limit; default admits by VRAM only")
     parser.add_argument("--resume", action="store_true", help="Take over a stopped dispatcher's live pipelines")
     parser.add_argument("--reserve_mib", type=int, default=2048)
-    args = parser.parse_args()
+    args = parse_physics_args(parser)
     dispatcher = Path(__file__).resolve().parents[1]
     dispatcher_commit = subprocess.check_output(
         ["git", "rev-parse", "HEAD"],
@@ -279,7 +281,8 @@ def main():
             "status": "queued",
             "pid": None,
             "estimated_mib": estimated_mib(run),
-            "command": command_for(source, target, plan, run, args.device),
+            "physics": args.physics_preset,
+            "command": command_for(source, target, plan, run, args.device, args.physics_preset),
         }
 
     previous = read_json(output / "queue.json") if args.resume else None
@@ -316,6 +319,7 @@ def main():
         "plan_sha256": hashlib.sha256(plan_bytes).hexdigest(),
         "gpu": args.gpu,
         "device": args.device,
+        "physics": args.physics_preset,
         "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
         "slots": args.slots,
         "reserve_mib": args.reserve_mib,

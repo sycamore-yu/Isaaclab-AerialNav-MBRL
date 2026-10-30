@@ -1,4 +1,4 @@
-"""Exercise real PhysX reset/step and shared-world contracts."""
+"""Exercise real simulator reset/step and shared-world contracts."""
 
 from __future__ import annotations
 
@@ -8,6 +8,8 @@ import time
 from pathlib import Path
 
 from isaaclab.app import add_launcher_args, launch_simulation
+
+from isaaclab_navrl.physics import parse_physics_args, select_physics
 
 
 def main():
@@ -19,7 +21,7 @@ def main():
     parser.add_argument("--output", type=Path, default=Path("logs/smoke/result.json"))
     add_launcher_args(parser)
     parser.set_defaults(visualizer=["none"])
-    args = parser.parse_args()
+    args = parse_physics_args(parser)
 
     import gymnasium as gym
     import torch
@@ -32,6 +34,7 @@ def main():
     cfg.scene.num_envs = args.num_envs
     cfg.num_dynamic_obstacles = args.dynamic_obstacles
     cfg.sim.device = args.device
+    select_physics(cfg, args.physics_preset)
     cfg.configure_scene()
     task = "Isaac-NavRL-Zhang-Hummingbird-Direct-v0" if args.method == "zhang" else "Isaac-NavRL-Hummingbird-Direct-v0"
     with launch_simulation(cfg, args):
@@ -86,6 +89,7 @@ def main():
             assert env.motion.step_count == obstacle_steps
             result = {
                 "method": args.method,
+                "physics": args.physics_preset,
                 "num_envs": args.num_envs,
                 "steps": args.steps,
                 "static_obstacles": cfg.num_static_obstacles,
