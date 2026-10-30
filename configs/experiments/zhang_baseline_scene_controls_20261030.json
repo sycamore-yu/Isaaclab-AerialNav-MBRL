@@ -41,7 +41,8 @@
         "timing": "unified_20hz",
         "gradient_diagnostic_updates": "1,50,250,1000",
         "target_speed_min": 2.0,
-        "target_speed_max": 6.0
+        "target_speed_max": 6.0,
+        "num_dynamic_obstacles": 60
       },
       "start_stage": "finetune_s1"
     },

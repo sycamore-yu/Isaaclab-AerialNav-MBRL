@@ -59,7 +59,7 @@ def parse_training_cli(tokens, module=trainer):
 class GradientDiagnosticCliTests(unittest.TestCase):
     def test_new_defaults_keep_bptt_and_normalization_schedule_controls_explicit(self):
         args = parse_training_cli([])
-        self.assertEqual(args.stage, "pretrain_s0")
+        self.assertIsNone(args.stage)  # Resolved to fresh default fS1 after parsing.
         self.assertEqual(args.algorithm, "bptt")
         self.assertEqual(args.critic_value_transform, "linear")
         self.assertIsNone(args.velocity_loss_mode)  # Resolved after parsing from the selected algorithm.
@@ -206,6 +206,7 @@ class GradientDiagnosticCliTests(unittest.TestCase):
             "isaaclab_navrl.training": types.SimpleNamespace(write_json=None),
             "isaaclab_navrl.zhang.config": types.SimpleNamespace(ZhangTrainCfg=capture_configuration),
             "isaaclab_navrl.zhang.runner": types.SimpleNamespace(ZhangTrainer=None),
+            "isaaclab_tasks.utils.hydra": types.SimpleNamespace(resolve_presets=lambda *_args, **_kwargs: None),
         }
         original_import = __import__
 

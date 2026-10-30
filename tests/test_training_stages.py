@@ -9,9 +9,9 @@ from isaaclab_navrl.tasks.navigation.curriculum import STAGE_CONFIG, TrainingCur
 def test_formal_curriculum_starts_without_dynamic_obstacles():
     assert list(STAGE_CONFIG.items()) == [
         ("pretrain_s0", {"static_obstacles": 300, "dynamic_obstacles": 0, "randomization": False}),
-        ("pretrain_s1", {"static_obstacles": 300, "dynamic_obstacles": 60, "randomization": False}),
+        ("pretrain_s1", {"static_obstacles": 300, "dynamic_obstacles": 40, "randomization": False}),
         ("pretrain_s2", {"static_obstacles": 400, "dynamic_obstacles": 120, "randomization": False}),
-        ("finetune_s1", {"static_obstacles": 300, "dynamic_obstacles": 60, "randomization": True}),
+        ("finetune_s1", {"static_obstacles": 300, "dynamic_obstacles": 40, "randomization": True}),
         ("finetune_s2", {"static_obstacles": 400, "dynamic_obstacles": 100, "randomization": True}),
     ]
     curriculum = TrainingCurriculum(10, "cpu", stage="pretrain_s0")

@@ -205,7 +205,10 @@ def launched_zhang_manifest(jobs, plan):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--plan", type=Path, required=True)
+    parser.add_argument(
+        "--plan", type=Path,
+        default=Path(__file__).resolve().parents[1] / "configs/experiments/zhang_baseline_fs1_dyn40.json",
+    )
     parser.add_argument(
         "--output",
         type=Path,

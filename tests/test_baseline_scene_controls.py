@@ -23,7 +23,7 @@ def test_controls_preserve_baseline_and_reach_trainer(tmp_path):
     plan = json.loads((ROOT / "configs/experiments/zhang_baseline_scene_controls_20261030.json").read_text())
     baseline = json.loads((ROOT / "configs/experiments/zhang_finetune_s1.json").read_text())["runs"][0]["train_args"]
     expected = [
-        ("finetune_s1", {"target_speed_min": 2.0, "target_speed_max": 6.0}),
+        ("finetune_s1", {"target_speed_min": 2.0, "target_speed_max": 6.0, "num_dynamic_obstacles": 60}),
         ("pretrain_s0", {}),
         ("pretrain_s1", {"num_dynamic_obstacles": 40}),
         ("finetune_s1", {"num_dynamic_obstacles": 40}),
@@ -72,10 +72,11 @@ def test_invalid_scene_controls_are_rejected(tokens):
 
 
 @pytest.mark.parametrize("stage", ["pretrain_s1", "finetune_s1"])
-def test_dynamic_count_survives_curriculum_and_report(stage):
-    cfg = {**STAGE_CONFIG[stage], "dynamic_obstacles": 40}
+@pytest.mark.parametrize("count", [40, 60])
+def test_dynamic_count_survives_curriculum_and_report(stage, count):
+    cfg = {**STAGE_CONFIG[stage], "dynamic_obstacles": count}
     curriculum = TrainingCurriculum(1, "cpu", stage=stage, stage_config=cfg)
-    assert curriculum.active_obstacles == 40
+    assert curriculum.active_obstacles == count
     curriculum.observe(
         {
             "first_event_code": torch.ones(1, dtype=torch.long),
@@ -86,10 +87,10 @@ def test_dynamic_count_survives_curriculum_and_report(stage):
             "step": torch.ones(1, dtype=torch.long),
         }
     )
-    assert curriculum.pop_report()["dynamic_obstacles"] == 40
+    assert curriculum.pop_report()["dynamic_obstacles"] == count
     assert curriculum.state_dict()["stage_config"] == cfg
-    assert STAGE_CONFIG[stage]["dynamic_obstacles"] == 60
-    assert TrainingCurriculum(1, "cpu", stage=stage).active_obstacles == 60
+    assert STAGE_CONFIG[stage]["dynamic_obstacles"] == 40
+    assert TrainingCurriculum(1, "cpu", stage=stage).active_obstacles == 40
 
 
 def test_speed_control_samples_requested_range_on_partial_reset():
@@ -146,9 +147,9 @@ def test_acceptance_validator_uses_requested_obstacle_count():
     protocol = runpy.run_path(str(ROOT / "scripts/run_acceptance.py"))
     result = report_fixture(stage="pretrain_s1", num_envs=256)
     curriculum = result["curriculum"]
-    curriculum["stage_config"]["dynamic_obstacles"] = 40
-    curriculum["active_dynamic_obstacles"] = 40
-    curriculum["latest_training_report"]["dynamic_obstacles"] = 40
+    curriculum["stage_config"]["dynamic_obstacles"] = 60
+    curriculum["active_dynamic_obstacles"] = 60
+    curriculum["latest_training_report"]["dynamic_obstacles"] = 60
     options = dict(
         method="zhang",
         stage="pretrain_s1",
@@ -157,5 +158,5 @@ def test_acceptance_validator_uses_requested_obstacle_count():
         screening=True,
         fresh_start_stage="pretrain_s1",
     )
-    assert not protocol["validate_stage_result"](result, **options, num_dynamic_obstacles=40)
+    assert not protocol["validate_stage_result"](result, **options, num_dynamic_obstacles=60)
     assert protocol["validate_stage_result"](result, **options)

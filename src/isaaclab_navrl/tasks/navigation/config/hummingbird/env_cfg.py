@@ -18,6 +18,7 @@ from isaaclab_tasks.utils import PresetCfg
 
 from isaaclab_navrl.control import make_drone_cfg
 from isaaclab_navrl.terrain import build_terrain_cfg
+from isaaclab_navrl.training import DEFAULT_STAGE, STAGE_CONFIG
 
 from ...depth_camera_cfg import BatchedDepthCameraCfg
 from ...randomization import SimToRealCfg
@@ -276,6 +277,11 @@ class ZhangEventsCfg(NavigationEventsCfg):
 @configclass
 class ZhangNavRLEnvCfg(NavRLEnvCfg):
     method = "zhang"
+    training_stage: str | None = DEFAULT_STAGE
+    num_static_obstacles: int = STAGE_CONFIG[DEFAULT_STAGE]["static_obstacles"]
+    num_dynamic_obstacles: int = STAGE_CONFIG[DEFAULT_STAGE]["dynamic_obstacles"]
+    training_report_episodes: int | None = 1024
+    sim_to_real: SimToRealCfg = SimToRealCfg(enabled=STAGE_CONFIG[DEFAULT_STAGE]["randomization"])
     variant: str = "dcol"
     timing: str = "unified_20hz"
     capture_terminal_observation: bool = False

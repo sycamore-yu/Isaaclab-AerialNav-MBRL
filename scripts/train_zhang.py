@@ -10,7 +10,7 @@ from isaaclab.app import add_launcher_args, launch_simulation
 
 from isaaclab_navrl.physics import parse_physics_args, select_physics
 from isaaclab_navrl.source import verify_training_import
-from isaaclab_navrl.training import STAGE_CONFIG, STAGES, graceful_training_stop, write_json
+from isaaclab_navrl.training import DEFAULT_STAGE, STAGE_CONFIG, STAGES, graceful_training_stop, write_json
 from isaaclab_navrl.zhang.cli import add_train_args, parse_train_args
 
 
@@ -20,10 +20,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument("--log_dir", type=Path, required=True)
     parser.add_argument("--num_envs", type=int, default=1024)
-    parser.add_argument("--report_episodes", type=int, default=None)
+    parser.add_argument("--report_episodes", type=int, default=1024)
     parser.add_argument("--max_iterations", type=int, default=None, help="Optional smoke-run limit; default unlimited")
     parser.add_argument("--stop_after_acceptance", action="store_true", help="Finish when this stage reaches 80%")
-    parser.add_argument("--stage", choices=STAGES, default="pretrain_s0")
+    parser.add_argument("--stage", choices=STAGES, help="Default: fresh finetune_s1 (fS1/40)")
     parser.add_argument("--checkpoint", type=Path, help="Previous stage checkpoint from this experiment")
     parser.add_argument(
         "--fresh_stage",
@@ -36,6 +36,9 @@ def main():
     add_launcher_args(parser)
     parser.set_defaults(visualizer=["none"])
     args = parse_physics_args(parser)
+    if args.stage is None:
+        args.stage = DEFAULT_STAGE
+        args.fresh_stage = args.fresh_stage or args.checkpoint is None
     overrides = {
         key: getattr(args, key)
         for key in ("num_dynamic_obstacles", "target_speed_min", "target_speed_max")

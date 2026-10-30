@@ -27,24 +27,25 @@ PYTHONPATH=src .venv/bin/python scripts/run_comparison_queue.py \
 
 ## 训练与验收
 
-当前默认采用 20 Hz 同步 DCOL+BPTT、完整 2 秒速度窗口和 `navrl_range` 高度损失。动态障碍前视位置已按查询时刻预测。旧训练已停止并保留检查点。此前 P0/P1 诊断见 [实施报告](docs/P0_P1_20261030.md)。当前六组固定微调 S1 对照见 [实验说明](docs/TIME_ALIGNED_AVOIDANCE_20261030.md)。
+当前默认采用 20 Hz 同步 DCOL+BPTT、完整 2 秒速度窗口和 `navrl_range` 高度损失。动态障碍前视位置已按查询时刻预测。旧训练已停止并保留检查点。此前 P0/P1 诊断见 [实施报告](docs/P0_P1_20261030.md)。六组固定微调 S1 对照见 [实验说明](docs/TIME_ALIGNED_AVOIDANCE_20261030.md)。
 
-后续对照默认从随机权重启动 `finetune_s1`。六组均使用 256 环境、seed 0，每份报告至少 1024 个完整回合。达到 80% 后继续训练，以观察成功率保持情况。队列默认按本地时间生成目录名，源码来自指定提交的独立快照：
+后续默认环境为 `baseline_fs1_dyn40`：固定 `finetune_s1`、300 静态障碍、40 动态障碍、开启扰动，从随机权重启动。默认单组使用 256 环境、seed 0，每份报告至少 1024 个完整回合。达到 80% 后继续训练，以观察成功率保持情况。队列默认按本地时间生成目录名，源码来自指定提交的独立快照：
 
 ```bash
 PYTHONPATH=src .venv/bin/python scripts/run_comparison_queue.py \
-  --plan configs/experiments/zhang_finetune_s1.json \
   --commit "$(git rev-parse HEAD)"
 ```
+
+默认计划为 `configs/experiments/zhang_baseline_fs1_dyn40.json`。六组对照可显式指定 `--plan configs/experiments/zhang_finetune_s1.json`。直接运行 `scripts/train_zhang.py` 省略 `--stage` 时也使用 fS1/40；显式指定阶段时沿用原检查点/`--fresh_stage` 约束。已有冻结实验、checkpoint 和历史结果不随默认值修改。
 
 新管线从已提交源码生成独立快照，并在阶段切换及实际导入时核验。队列支持固定 commit 的干净功能分支。正式五阶段依次为预训练 S0、S1、S2 和微调 S1、S2；各阶段自然首次到达率达到 80% 后晋级。
 
 | 阶段 | 静态障碍 | 动态障碍 | 额外扰动 |
 |---|---:|---:|---|
 | 预训练 S0 | 300 | 0 | 关闭 |
-| 预训练 S1 | 300 | 60 | 关闭 |
+| 预训练 S1 | 300 | 40 | 关闭 |
 | 预训练 S2 | 400 | 120 | 关闭 |
-| 微调 S1 | 300 | 60 | 开启 |
+| 微调 S1 | 300 | 40 | 开启 |
 | 微调 S2 | 400 | 100 | 开启 |
 
 预训练从随机初始化开始。后续阶段加载本次实验的前序检查点，保留网络和优化器。每阶段重建地图并清空回合历史。正式验收默认使用 1024 个并行环境。每份报告至少包含 1024 个完整回合，无更新次数上限。小规模比较须显式使用 `--screening`，即使五阶段门槛均通过也不标记正式验收。输出目录必须不存在。
