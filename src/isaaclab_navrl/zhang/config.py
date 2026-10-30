@@ -55,7 +55,7 @@ class ZhangTrainCfg:
     coef_d_acc: float = 0.01
     coef_d_jerk: float = 0.001
     coef_height_boundary: float = 1.0
-    height_loss_mode: Literal["target_exp", "target_huber", "boundary_huber", "navrl_range"] = "target_exp"
+    height_loss_mode: Literal["target_exp", "target_huber", "boundary_huber", "navrl_range"] = "navrl_range"
     height_target_range: tuple[float, float] = (0.5, 2.5)
     boundary_margin: float = 0.5
     boundary_scale: float = 0.5

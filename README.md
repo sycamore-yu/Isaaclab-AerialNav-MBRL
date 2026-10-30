@@ -49,7 +49,14 @@ Zhang 默认 `--timing unified_20hz`；可选 `unified_50hz` 或旧 `baseline`�
 
 两任务保留 Hummingbird USD、Lee 控制律和 RotorGroup 电机响应。两环境的深度相机默认采样 160×120 像素，内参随分辨率缩放以保留原视场，再完成逆深度变换、噪声和 12×16 池化。NavRL 策略仍使用原 LiDAR 特征。动态物体同时进入相机、碰撞检测和损失。
 
-Zhang保留速度匹配、避障、碰撞、加速度、Jerk和速度预测辅助项。高度项默认`height_loss_mode=target_exp`，可选目标SmoothL1（`target_huber`）或旧边界SmoothL1（`boundary_huber`）；目标使用当前回合导航目标z。默认step逐步速度监督；continuous/dcol默认20步窗口加合格终止短窗，显式`velocity_loss_mode=full_window`保留原完整窗口。continuous的碰撞和高度越界不重置，首次失败仍锁存。新接口及历史设置的区别见[新机制](docs/ZHANG_NEW_MECHANISMS_20261029.md)。
+Zhang 保留速度匹配、避障、碰撞、加速度、Jerk 和速度预测辅助项。
+高度项默认 `height_loss_mode=navrl_range`，权重为 1。
+NavRL 高度区间由当前回合起点和目标确定，并向两侧各扩展 0.2 m。
+区间外采用平方损失，区间内为 0。
+默认 BPTT 使用完整 2 秒速度窗口，20 Hz 下为 40 步。
+SHAC/AHAC 默认逐步速度监督。
+continuous 的碰撞和高度越界不重置，首次失败仍锁存。
+当前实验结论与直接阶段对照见 [EXP](docs/EXP/20261030_20HZ_CONTROLS.md)。
 
 actor默认AdamW、weight_decay=.01，可显式选Adam；预训练lr默认.001，微调.00005。cosine默认周期400次更新；Plateau默认patience2，可独立配置。AHAC共同H默认初始32、范围16–300，BPTT默认H150。全局梯度裁剪为5，激活检查点控制显存。可选`height_priority`梯度投影仅用于BPTT，需用实际参数位移验证，不能把原始梯度投影当作成功率改善。
 

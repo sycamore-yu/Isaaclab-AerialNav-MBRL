@@ -12,7 +12,7 @@ class ZhangTrainConfigTests(unittest.TestCase):
         cfg = ZhangTrainCfg()
         cfg.validate()
         self.assertEqual((cfg.optimizer, cfg.weight_decay), ("adamw", 0.01))
-        self.assertEqual(cfg.height_loss_mode, "target_exp")
+        self.assertEqual(cfg.height_loss_mode, "navrl_range")
         self.assertEqual(cfg.height_target_range, (0.5, 2.5))
         self.assertEqual(cfg.gradient_projection, "none")
         self.assertEqual(cfg.plateau_patience, 2)

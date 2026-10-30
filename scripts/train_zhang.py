@@ -40,6 +40,8 @@ def main():
     parser.add_argument("--stage", choices=("pretrain_s0", "pretrain_s1", "pretrain_s2", "finetune_s1", "finetune_s2"),
                         default="pretrain_s0")
     parser.add_argument("--checkpoint", type=Path, help="Previous stage checkpoint from this experiment")
+    parser.add_argument("--fresh_stage", action="store_true",
+                        help="Explicit direct-stage comparison: random initialization without an earlier stage")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--terrain_seed", type=int, default=0)
     parser.add_argument("--variant", choices=("step", "continuous", "dcol"), default="dcol")
@@ -84,7 +86,7 @@ def main():
     parser.add_argument("--coef_d_jerk", type=float, default=0.001)
     parser.add_argument("--coef_height_boundary", type=float, default=1.0)
     parser.add_argument("--height_loss_mode", choices=("target_exp", "target_huber", "boundary_huber", "navrl_range"),
-                        default="target_exp")
+                        default="navrl_range")
     parser.add_argument("--height_target_min", type=float, default=0.5)
     parser.add_argument("--height_target_max", type=float, default=2.5)
     parser.add_argument("--boundary_margin", type=float, default=0.5)
@@ -108,11 +110,15 @@ def main():
         parser.error("--critic_value_transform softplus requires --algorithm shac or ahac")
     if args.stage == "pretrain_s0" and args.checkpoint is not None:
         parser.error("Pretraining S0 must start from random initialization")
-    if args.stage != "pretrain_s0" and args.checkpoint is None and args.max_iterations is None:
-        parser.error("Later stages require the previous stage checkpoint; use a finite limit only for smoke tests")
+    if args.fresh_stage and (args.stage == "pretrain_s0" or args.checkpoint is not None):
+        parser.error("--fresh_stage requires a later stage without --checkpoint")
+    if args.stage != "pretrain_s0" and args.checkpoint is None and args.max_iterations is None and not args.fresh_stage:
+        parser.error("Later stages require the previous checkpoint or explicit --fresh_stage comparison")
     if args.log_dir.exists() and any(args.log_dir.iterdir()):
         parser.error("Each training stage requires a new or empty --log_dir")
-    args.lr = args.lr if args.lr is not None else (5e-5 if args.stage.startswith("finetune") else 0.001)
+    args.lr = args.lr if args.lr is not None else (
+        5e-5 if args.stage.startswith("finetune") and not args.fresh_stage else 0.001
+    )
 
     import gymnasium as gym
     import torch
@@ -184,7 +190,8 @@ def main():
                                          "pixel_noise_std": cfg.scene.depth_camera.pixel_noise_std},
                         "sim_to_real": asdict(cfg.sim_to_real)},
         "parent_checkpoint": str(args.checkpoint.resolve()) if args.checkpoint else None,
-        "fresh": args.checkpoint is None, "independent_evaluation": False,
+        "fresh": args.checkpoint is None, "direct_stage_start": args.fresh_stage,
+        "independent_evaluation": False,
     })
     with launch_simulation(cfg, args):
         env = gym.make("Isaac-NavRL-Zhang-Hummingbird-Direct-v0", cfg=cfg).unwrapped

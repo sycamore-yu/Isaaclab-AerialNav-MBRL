@@ -34,6 +34,7 @@ class EndpointEnv(AnalyticEnv):
         result['target'] = result['policy_target'] = self.target.clone()
         result['depth_features'] = self.depth.clone()
         result['policy_depth_features'] = self.depth.clone()
+        result['height_range'] = torch.tensor([[2., 2.]]).repeat(2, 1)
         return result
 
     def step(self, command):

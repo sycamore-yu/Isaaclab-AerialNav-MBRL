@@ -34,6 +34,7 @@ def _history(position, height_target):
 def _height_only_cfg(**overrides):
     values = {
         "variant": "step", "coef_v": 0.0, "coef_v_pred": 0.0,
+        "height_loss_mode": "target_exp",
         "coef_obj_avoidance": 0.0, "coef_collide": 0.0,
         "coef_d_acc": 0.0, "coef_d_jerk": 0.0,
     }
@@ -161,7 +162,8 @@ def test_height_mode_changes_only_its_term_and_preserves_other_cost_gradients():
         "obstacle_signed_distance": list(signed.unbind(0)),
         "dcol_gap": list((signed[..., 1:] - 0.3).unbind(0)),
     })
-    cfg = ZhangTrainCfg(variant="dcol", velocity_loss_mode="per_step", coef_height_boundary=0.7)
+    cfg = ZhangTrainCfg(variant="dcol", velocity_loss_mode="per_step", coef_height_boundary=0.7,
+                        height_loss_mode="target_exp")
     baseline, _, baseline_cost = zhang_transition_costs(history, cfg)
     nonheight_inputs = (velocity, command, prediction, signed)
     baseline_gradients = torch.autograd.grad(baseline["total"], nonheight_inputs, retain_graph=True)

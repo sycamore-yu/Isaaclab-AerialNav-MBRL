@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "num_envs": 256,
+  "screening": true,
+  "seed": 0,
+  "finetune_lr": 5e-05,
+  "stage_order": [
+    "pretrain_s0",
+    "pretrain_s1",
+    "pretrain_s2",
+    "finetune_s1",
+    "finetune_s2"
+  ],
+  "stage_promotion_success_rate": 0.8,
+  "max_updates": null,
+  "report_episodes": 1024,
+  "purpose": "direct_starts_on_20hz_navrl_height_default",
+  "initialization": "random_at_declared_start_stage_then_same_run_handoff",
+  "launch_order": [
+    "direct_s1",
+    "direct_finetune_s2"
+  ],
+  "retained_curriculum_baseline": "logs/curriculum/zhang_20hz_controls_20261030/navrl_height",
+  "runs": [
+    {
+      "name": "direct_s1",
+      "method": "zhang",
+      "path": "direct_s1",
+      "start_stage": "pretrain_s1",
+      "train_args": {
+        "variant": "dcol",
+        "algorithm": "bptt",
+        "timesteps": 150,
+        "velocity_loss_mode": "full_window",
+        "velocity_window_s": 2.0,
+        "height_loss_mode": "navrl_range",
+        "height_target_min": 0.5,
+        "height_target_max": 2.5,
+        "coef_height_boundary": 1.0,
+        "optimizer": "adamw",
+        "weight_decay": 0.01,
+        "lr": 0.001,
+        "lr_schedule": "cosine",
+        "plateau_patience": 2,
+        "observation_normalization": false,
+        "recovery_enabled": true,
+        "max_grad_norm": 5.0,
+        "grad_decay": 0.4,
+        "camera_batch_size": 64,
+        "gradient_projection": "none",
+        "gradient_diagnostic_updates": "1,7,10,50,100,250,500,1000",
+        "timing": "unified_20hz"
+      }
+    },
+    {
+      "name": "direct_finetune_s2",
+      "method": "zhang",
+      "path": "direct_finetune_s2",
+      "start_stage": "finetune_s2",
+      "train_args": {
+        "variant": "dcol",
+        "algorithm": "bptt",
+        "timesteps": 150,
+        "velocity_loss_mode": "full_window",
+        "velocity_window_s": 2.0,
+        "height_loss_mode": "navrl_range",
+        "height_target_min": 0.5,
+        "height_target_max": 2.5,
+        "coef_height_boundary": 1.0,
+        "optimizer": "adamw",
+        "weight_decay": 0.01,
+        "lr": 0.001,
+        "lr_schedule": "cosine",
+        "plateau_patience": 2,
+        "observation_normalization": false,
+        "recovery_enabled": true,
+        "max_grad_norm": 5.0,
+        "grad_decay": 0.4,
+        "camera_batch_size": 64,
+        "gradient_projection": "none",
+        "gradient_diagnostic_updates": "1,7,10,50,100,250,500,1000",
+        "timing": "unified_20hz"
+      }
+    }
+  ]
+}

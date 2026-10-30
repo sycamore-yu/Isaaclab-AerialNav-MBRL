@@ -29,6 +29,7 @@ def _history(velocity, target=None, episode=None, done=None):
         "collision": list(done.unbind(0)), "position": list(position.unbind(0)),
         "obstacle_signed_distance": list(vectors.norm(dim=-1).unbind(0)),
         "height_target": [velocity.new_full((batch,), 2.0)] * count,
+        "height_range": [velocity.new_full((batch, 2), 2.0)] * count,
         "dcol_gap": [velocity.new_full((batch, 9), 9.7)] * count,
         "margin": [velocity.new_full((batch,), 0.3)] * count,
         "command": list(zero.unbind(0)), "previous_command": list(zero.unbind(0)),

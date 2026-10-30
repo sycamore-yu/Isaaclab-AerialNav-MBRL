@@ -73,7 +73,7 @@ def test_runner_constructs_the_requested_optimizer_without_changing_its_weight_d
     trainer = _trainer(tmp_path, optimizer=name, weight_decay=decay)
     assert type(trainer.optimizer) is optimizer_type
     assert all(group["weight_decay"] == decay for group in trainer.optimizer.param_groups)
-    assert trainer.cfg.height_loss_mode == "target_exp"
+    assert trainer.cfg.height_loss_mode == "navrl_range"
     assert trainer.cfg.resolved_velocity_loss_mode == "truncated_window"
 
 

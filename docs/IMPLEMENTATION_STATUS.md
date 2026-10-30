@@ -26,7 +26,12 @@ RMS 与 Plateau 已各在 U81／12441600 个环境转移后完整停止并保存
 
 ## 当前实现
 
-环境为正式 Isaac Lab 3.0.0、Isaac Sim 6.2 和 PhysX。NavRL 使用官方 RSL-RL 5.5.1 PPO；Zhang使用独立BPTT或明确配置的actor–critic适配，保留六项任务成本并选择一种高度项；最新默认target_exp，可选target_huber或旧boundary_huber，见[接口说明](ZHANG_NEW_MECHANISMS_20261029.md)。两任务保留 Hummingbird 资产、Lee 控制器和 RotorGroup。
+环境为正式 Isaac Lab 3.0.0、Isaac Sim 6.2 和 PhysX。
+NavRL 使用官方 RSL-RL 5.5.1 PPO。
+Zhang 默认采用 20 Hz、DCOL、BPTT 和 NavRL 区间平方高度损失，权重为 1。
+SHAC/AHAC 是显式算法对照。
+当前结论与直接阶段对照见 [EXP](EXP/20261030_20HZ_CONTROLS.md)。
+两任务保留 Hummingbird 资产、Lee 控制器和 RotorGroup。
 
 | 阶段 | 静态障碍 | 动态障碍 | 额外扰动 |
 |---|---:|---:|---|

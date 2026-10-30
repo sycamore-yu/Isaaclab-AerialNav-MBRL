@@ -24,6 +24,7 @@ def ground_history(query_height, terminal_height=None):
         "position": list(position.unbind(0)), "obstacle_vector": list(vectors.unbind(0)),
         "obstacle_signed_distance": list(signed.unbind(0)),
         "height_target": [query_height.new_full((batch,), 2.0)] * count,
+        "height_range": [query_height.new_full((batch, 2), 2.0)] * count,
         "margin": [query_height.new_full((batch,), 0.3)] * count,
         "command": list(zero.unbind(0)), "previous_command": list(zero.unbind(0)),
         "velocity_prediction": list(zero.unbind(0)), "observed_velocity": list(zero.unbind(0)),
@@ -167,6 +168,6 @@ def test_every_variant_requires_signed_queries_and_rejects_misaligned_samples(va
     with pytest.raises(ValueError, match="must match"):
         zhang_transition_costs(wrong_shape, cfg)
     missing_target = dict(history)
-    del missing_target["height_target"]
-    with pytest.raises(ValueError, match="height_target"):
+    del missing_target["height_range"]
+    with pytest.raises(ValueError, match="height_range"):
         zhang_transition_costs(missing_target, cfg)

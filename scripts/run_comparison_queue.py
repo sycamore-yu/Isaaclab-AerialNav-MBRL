@@ -51,6 +51,8 @@ def command_for(source, output, plan, run, device):
     ]
     if "report_episodes" in plan:
         command += ["--report_episodes", str(plan["report_episodes"])]
+    if "start_stage" in run:
+        command += ["--start_stage", run["start_stage"]]
     tokens = train_tokens(run)
     if tokens:
         command += ["--train_args", *tokens]
@@ -161,6 +163,7 @@ def launched_zhang_manifest(jobs, plan):
             "name": job["name"], "path": job["path"], "seed": plan["seed"],
             "normalization": config.get("observation_normalization", False),
             "num_envs": plan["num_envs"],
+            "start_stage": job.get("start_stage", "pretrain_s0"),
             **{key: config[key] for key in fields if key in config},
         })
     return {"purpose": "launched_zhang_only", "runs": entries}
@@ -213,6 +216,8 @@ def main():
         if run["method"] not in ("zhang", "navrl"):
             parser.error("Unsupported method")
         protocol["parse_train_args"](train_tokens(run))
+        protocol["selected_stages"](run.get("start_stage", "pretrain_s0"),
+                                    screening=plan["screening"], method=run["method"])
         if run["method"] == "navrl" and run.get("train_args"):
             parser.error("PPO must not receive Zhang train_args")
         target = (output / run["path"]).resolve()

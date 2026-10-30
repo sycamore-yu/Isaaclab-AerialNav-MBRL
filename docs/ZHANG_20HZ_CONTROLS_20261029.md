@@ -3,9 +3,12 @@
 后续迭代遵循 [Zhang 对照开发流程](ZHANG_COMPARISON_WORKFLOW.md)：
 用当前默认配置做对照，选出更好的配置后提交为新默认，再开始下一轮。
 
-当前默认改为已保留的 `zhang_main_20261029/unified_20hz` 配置：DCOL、BPTT、
+当前默认采用 DCOL、BPTT、
 物理/策略动作/深度/LiDAR 统一20Hz、H150、完整2秒速度窗口（40步）、
-`target_exp`高度损失、AdamW、无RMS、无梯度投影、cosine。相机仍为160×120，批64。
+`navrl_range` 高度损失（权重 1）、AdamW、无 RMS、无梯度投影、cosine。
+相机仍为 160×120，批 64。
+2026-10-30 的用户决定及四组停止结论见 [EXP](EXP/20261030_20HZ_CONTROLS.md)。
+已保留的 `zhang_main_20261029/unified_20hz` 继续显式使用 `target_exp`。
 旧100Hz物理/10Hz策略时钟仍可显式选择 `--timing baseline`，历史实验不改写。
 
 用户保留 `logs/curriculum/zhang_main_20261029/step/zhang/pretrain_s0/tensorboard`，
@@ -14,7 +17,7 @@
 原队列停止派发，PPO/continuous不启动。记录见 `logs/20hz_default_20261029/`。
 保留的20Hz源代码另有归档；新默认不会改变已加载的当前BPTT训练逻辑。
 
-新计划为 `configs/experiments/zhang_20hz_controls.json`，五组从随机初始化开始，
+上一轮计划为 `configs/experiments/zhang_20hz_controls.json`，五组从随机初始化开始，
 保留256环境、至少1024自然回合/报告、五阶段、80%晋级、无更新上限和按显存派发。
 与保留的20Hz基线比较；新组不继承旧实验权重。
 
@@ -35,7 +38,9 @@ DCOL控制动态几何碰撞损失；`per_step/full_window/truncated_window`控�
 原step/truncated两组同样使用DCOL，分别采用逐步/短终止窗口速度损失。
 完整窗口不会为不足2秒的终止回合补分；truncated会补计合格终止短窗；step每步计分。
 跨更新的同一回合窗口历史被缓存，但不跨重置连接。时钟同步不使三者数学等价。
-本轮按用户指定仅运行上述五组，不额外加入step或truncated。
+上述五组中，50 Hz、SHAC、AHAC 和 Plateau 已保存检查点并停止。
+NavRL 高度损失组继续训练。
+下一轮直接阶段对照使用 `configs/experiments/zhang_navrl_direct_starts.json`。
 
 `navrl_range`使用当前回合固定的起点/目标高度区间：
 `relu(min(z_start,z_goal)-0.2-z)^2 + relu(z-max(z_start,z_goal)-0.2)^2`。

@@ -75,6 +75,7 @@ def loss_history(velocity, target=None, episode=None, done=None, collision=None,
         **{key: list(torch.zeros_like(done).unbind(0)) for key in ("bounds", "timeout", "invalid")},
         "obstacle_signed_distance": [vectors.norm(dim=-1)] * count, "margin": [torch.full((batch,), 0.3)] * count,
         "height_target": [velocity.new_full((batch,), 2.0)] * count,
+        "height_range": [velocity.new_full((batch, 2), 2.0)] * count,
         "command": [zeros] * count, "previous_command": [zeros] * count,
         "velocity_prediction": [zeros] * count, "observed_velocity": [zeros] * count,
     }
@@ -436,7 +437,8 @@ def test_avoidance_speed_and_jerk_use_policy_time_units():
         "target_velocity": [torch.zeros(1, 3)] * 4,
         "episode_id": [torch.zeros(1, dtype=torch.long)] * 4,
         "obstacle_signed_distance": [vectors.norm(dim=-1)] * 4,
-        "height_target": [torch.full((1,), 2.0)] * 4, "margin": [torch.full((1,), 0.3)] * 4,
+        "height_target": [torch.full((1,), 2.0)] * 4,
+        "height_range": [torch.full((1, 2), 2.0)] * 4, "margin": [torch.full((1,), 0.3)] * 4,
         "command": commands, "previous_command": [commands[0], *commands[:-1]],
         "velocity_prediction": [torch.zeros(1, 3)] * 4,
         "observed_velocity": [torch.zeros(1, 3)] * 4,
@@ -465,6 +467,7 @@ def test_pre_step_lookahead_preserves_gradient_for_a_crossed_obstacle():
         "velocity": [torch.zeros(1, 3)], "target_velocity": [torch.zeros(1, 3)],
         "position": [torch.tensor([[0.0, 0.0, 2.0]])],
         "height_target": [torch.full((1,), 2.0)],
+        "height_range": [torch.full((1, 2), 2.0)],
         "done": [torch.zeros(1, dtype=torch.bool)], "collision": [torch.zeros(1, dtype=torch.bool)],
         "episode_id": [torch.zeros(1, dtype=torch.long)], "margin": [torch.tensor([0.3])],
         "command": [torch.zeros(1, 3)], "previous_command": [torch.zeros(1, 3)],
@@ -529,7 +532,7 @@ class AnalyticEnv:
                 "quaternion": torch.tensor([[0.0, 0.0, 0.0, 1.0]]).expand(2, -1),
                 "target": torch.tensor([[10.0, 0.0, 2.0]]).expand(2, -1),
                 "episode_id": self.episode_id, "depth_features": self.depth,
-                "height_target": torch.full((2,), 2.0)}
+                "height_target": torch.full((2,), 2.0), "height_range": torch.full((2, 2), 2.0)}
         observation.update({f"policy_{name}": observation[name] for name in (
             "position", "velocity", "quaternion", "target", "depth_features"
         )})

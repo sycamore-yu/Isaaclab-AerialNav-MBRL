@@ -44,6 +44,7 @@ def test_new_defaults_match_the_retained_twenty_hz_configuration():
     cfg.validate()
     assert (cfg.variant, cfg.physics_dt, cfg.policy_dt) == ('dcol', .05, .05)
     assert cfg.velocity_loss_mode == 'full_window' and cfg.velocity_window_steps == 40
+    assert cfg.height_loss_mode == 'navrl_range' and cfg.coef_height_boundary == 1
     hz50 = replace(cfg, physics_dt=.02, policy_dt=.02)
     hz50.validate()
     assert hz50.velocity_window_steps == 100

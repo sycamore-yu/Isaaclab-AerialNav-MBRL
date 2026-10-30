@@ -38,6 +38,7 @@ def _history(velocity, episode_step, *, target=None, episode=None, **events):
         "obstacle_signed_distance": list(vector.norm(dim=-1).unbind(0)),
         "dcol_gap": [velocity.new_full((batch, 9), 9.7)] * count,
         "height_target": [velocity.new_full((batch,), 2.0)] * count,
+        "height_range": [velocity.new_full((batch, 2), 2.0)] * count,
         "margin": [velocity.new_full((batch,), 0.3)] * count,
         "command": list(zero.unbind(0)), "previous_command": list(zero.unbind(0)),
         "velocity_prediction": list(zero.unbind(0)), "observed_velocity": list(zero.unbind(0)),

@@ -22,6 +22,15 @@ STAGE_CONFIG = {
 }
 
 
+def selected_stages(start_stage="pretrain_s0", *, screening=False, method="zhang"):
+    """Keep skipped stages explicit and prevent direct starts from certifying a full curriculum."""
+    if start_stage not in STAGES:
+        raise ValueError(f"Unknown start stage: {start_stage}")
+    if start_stage != STAGES[0] and (not screening or method != "zhang"):
+        raise ValueError("Direct stage starts require --screening --method zhang")
+    return STAGES[STAGES.index(start_stage):]
+
+
 def parse_binary_flag(raw: str) -> bool:
     """Use the same explicit 0/1 grammar as train_zhang.py."""
     if raw not in ("0", "1"):
@@ -176,6 +185,7 @@ def build_command(
     parent_checkpoint: Path | None,
     executable: str = sys.executable,
     report_episodes: int | None = None,
+    fresh_stage: bool = False,
 ) -> list[str]:
     command = [
         executable,
@@ -190,17 +200,19 @@ def build_command(
     ]
     if parent_checkpoint is not None:
         command += ["--checkpoint", str(parent_checkpoint)]
+    elif fresh_stage:
+        command += ["--fresh_stage"]
     if report_episodes is not None:
         command += ["--report_episodes", str(report_episodes)]
     if method == "zhang":
         for key, value in train_args.items():
-            if key != "lr" or not stage.startswith("finetune_"):
+            if key != "lr" or not stage.startswith("finetune_") or fresh_stage:
                 if isinstance(value, bool):
                     formatted = str(int(value))
                 else:
                     formatted = ",".join(str(update) for update in value) if isinstance(value, tuple) else str(value)
                 command += [f"--{key}", formatted]
-    if stage.startswith("finetune_"):
+    if stage.startswith("finetune_") and not fresh_stage:
         command += ["--lr", str(finetune_lr)]
     return command
 
@@ -217,6 +229,7 @@ def validate_stage_result(
     report_episodes: int | None = None,
     velocity_loss_mode: str | None = None,
     screening: bool = False,
+    fresh_start_stage: str = "pretrain_s0",
 ) -> list[str]:
     """Validate one real training report against the fixed acceptance protocol."""
     errors = []
@@ -250,8 +263,11 @@ def validate_stage_result(
     expect(result.get("stage_passed") is True, "trainer has not passed the stage")
     expect(result.get("max_updates") is None, "training has a maximum update limit")
     expected_parent = str(parent_checkpoint) if parent_checkpoint is not None else None
-    expect((stage == STAGES[0]) is (parent_checkpoint is None),
-           "formal training must start fresh only at pretrain_s0 and inherit every later stage")
+    expect(fresh_start_stage in STAGES, "unknown fresh start stage")
+    expect(fresh_start_stage == STAGES[0] or (screening and method == "zhang"),
+           "direct stage starts are Zhang screening comparisons only")
+    expect((stage == fresh_start_stage) is (parent_checkpoint is None),
+           "training must start fresh only at its declared start stage and inherit every later stage")
     expect(result.get("parent_checkpoint") == expected_parent, "parent checkpoint is not the previous stage of this run")
     expect(result.get("fresh") is (parent_checkpoint is None), "fresh-run flag disagrees with the checkpoint lineage")
 
@@ -293,6 +309,8 @@ def write_json(path: Path, value: dict[str, Any]) -> None:
 
 def run_pipeline(args: argparse.Namespace, train_args: dict[str, TrainArgValue]) -> int:
     screening = getattr(args, "screening", False)
+    start_stage = getattr(args, "start_stage", STAGES[0])
+    stages = selected_stages(start_stage, screening=screening, method=args.method)
     output = Path(args.output).expanduser().resolve()
     output.mkdir(parents=True, exist_ok=False)
     methods = ("zhang", "navrl") if args.method == "both" else (args.method,)
@@ -308,7 +326,10 @@ def run_pipeline(args: argparse.Namespace, train_args: dict[str, TrainArgValue])
         "train_seed": args.train_seed,
         "finetune_lr": args.finetune_lr,
         "train_args": train_args,
-        "stage_order": list(STAGES),
+        "start_stage": start_stage,
+        "stage_order": list(stages),
+        "skipped_stages": list(STAGES[:STAGES.index(start_stage)]),
+        "complete_curriculum_passed": False,
         "started_at": datetime.now(UTC).isoformat(),
         "methods": {},
         "error": None,
@@ -326,7 +347,7 @@ def run_pipeline(args: argparse.Namespace, train_args: dict[str, TrainArgValue])
             current_method = {"status": "running", "acceptance_passed": False, "stages": []}
             summary["methods"][method] = current_method
             parent_checkpoint = None
-            for stage in STAGES:
+            for stage in stages:
                 current_stage = None
                 log_dir = output / method / stage
                 log_dir.mkdir(parents=True)
@@ -336,6 +357,7 @@ def run_pipeline(args: argparse.Namespace, train_args: dict[str, TrainArgValue])
                     num_envs=args.num_envs, seed=args.train_seed, device=args.device,
                     finetune_lr=args.finetune_lr, train_args=train_args, parent_checkpoint=parent_checkpoint,
                     report_episodes=getattr(args, "report_episodes", None),
+                    fresh_stage=stage == start_stage and start_stage != STAGES[0],
                 )
                 current_stage = {
                     "stage": stage,
@@ -399,6 +421,7 @@ def run_pipeline(args: argparse.Namespace, train_args: dict[str, TrainArgValue])
                         report_episodes=getattr(args, "report_episodes", None),
                         velocity_loss_mode=train_args.get("velocity_loss_mode"),
                         screening=screening,
+                        fresh_start_stage=start_stage,
                     )
                 checkpoint = log_dir / "checkpoint_stage.pt"
                 if not checkpoint.is_file():
@@ -416,6 +439,7 @@ def run_pipeline(args: argparse.Namespace, train_args: dict[str, TrainArgValue])
             current_method["acceptance_passed"] = not screening
         summary["status"] = "completed"
         summary["stage_thresholds_passed"] = True
+        summary["complete_curriculum_passed"] = start_stage == STAGES[0]
         summary["acceptance_passed"] = not screening
         exit_code = 0
     except (OSError, ValueError, RuntimeError, KeyboardInterrupt) as exc:
@@ -440,11 +464,17 @@ def main() -> int:
     parser.add_argument("--report_episodes", type=int, default=None)
     parser.add_argument("--screening", action="store_true",
                         help="Allow reduced-env fresh comparisons; never label them as formal acceptance")
+    parser.add_argument("--start_stage", choices=STAGES, default=STAGES[0],
+                        help="Zhang screening only: start fresh here, then follow the remaining stage order")
     parser.add_argument("--train_seed", type=int, default=0)
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--finetune_lr", type=float, default=5e-5)
     parser.add_argument("--train_args", nargs=argparse.REMAINDER, default=[])
     args = parser.parse_args()
+    try:
+        selected_stages(args.start_stage, screening=args.screening, method=args.method)
+    except ValueError as exc:
+        parser.error(str(exc))
     if args.num_envs < 1:
         parser.error("--num_envs must be positive")
     if args.num_envs < 1024 and not args.screening:
