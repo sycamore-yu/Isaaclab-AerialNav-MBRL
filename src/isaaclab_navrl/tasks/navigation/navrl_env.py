@@ -334,11 +334,14 @@ class ZhangNavRLEnv(NavRLEnv):
         self._event_time = torch.zeros(self.num_envs, device=self.device)
         self._substep_collision = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
         self._collision_position = torch.zeros(self.num_envs, 3, device=self.device)
+        self._collision_velocity = torch.zeros_like(self._collision_position)
         self._collision_substep = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
         self._dynamic_positions_by_substep = (
             self.motion.position.new_zeros((self.cfg.decimation, *self.motion.position.shape))
             if self.cfg.variant == "dcol" else None
         )
+        self._dynamic_velocities_by_substep = (torch.zeros_like(self._dynamic_positions_by_substep)
+            if self.cfg.variant == "dcol" else None)
         self._substep_bounds = torch.zeros_like(self._substep_collision)
         self._substep_invalid = torch.zeros_like(self._substep_collision)
         self.filtered_command = torch.zeros(self.num_envs, 3, device=self.device)
@@ -349,6 +352,7 @@ class ZhangNavRLEnv(NavRLEnv):
         reset_first_event(self._event_code, self._event_time, env_ids)
         self._substep_collision[env_ids] = False
         self._collision_position[env_ids] = 0
+        self._collision_velocity[env_ids] = 0
         self._collision_substep[env_ids] = 0
         self._substep_bounds[env_ids] = False
         self._substep_invalid[env_ids] = False
@@ -390,6 +394,7 @@ class ZhangNavRLEnv(NavRLEnv):
         self._policy_start_time = self.episode_length_buf.float() * self.step_dt
         self._substep_collision.zero_()
         self._collision_position.zero_()
+        self._collision_velocity.zero_()
         self._collision_substep.zero_()
         self._substep_bounds.zero_()
         self._substep_invalid.zero_()
@@ -398,6 +403,7 @@ class ZhangNavRLEnv(NavRLEnv):
             if self._dynamic_positions_by_substep.shape != shape:
                 # The legacy curriculum can change the shared obstacle count.
                 self._dynamic_positions_by_substep = self.motion.position.new_zeros(shape)
+                self._dynamic_velocities_by_substep = torch.zeros_like(self._dynamic_positions_by_substep)
 
     def _record_substep(self, terms):
         # A 10 Hz policy can cross the collision band between observations.
@@ -410,11 +416,15 @@ class ZhangNavRLEnv(NavRLEnv):
         self._collision_position.copy_(torch.where(
             first_collision[:, None], self.root_state()[:, :3], self._collision_position
         ))
+        self._collision_velocity.copy_(torch.where(
+            first_collision[:, None], self.root_state()[:, 7:10], self._collision_velocity
+        ))
         self._collision_substep.copy_(torch.where(
             first_collision, self._physical_substep, self._collision_substep
         ))
         if self.cfg.variant == "dcol":
             self._dynamic_positions_by_substep[self._physical_substep - 1].copy_(self.motion.position)
+            self._dynamic_velocities_by_substep[self._physical_substep - 1].copy_(self.motion.velocity)
         self._substep_collision |= terms["collision"]
         self._substep_bounds |= terms["bounds"]
         self._substep_invalid |= terms["invalid"]
@@ -435,8 +445,10 @@ class ZhangNavRLEnv(NavRLEnv):
         self.extras["transition"]["first_event_time_s"] = self._event_time.clone()
         self.extras["transition"]["collision_position"] = self._collision_position.clone()
         self.extras["transition"]["collision_substep"] = self._collision_substep.clone()
+        self.extras["transition"]["collision_velocity"] = self._collision_velocity.clone()
         if self.cfg.variant == "dcol":
             self.extras["transition"]["dynamic_positions_by_substep"] = self._dynamic_positions_by_substep.clone()
+            self.extras["transition"]["dynamic_velocities_by_substep"] = self._dynamic_velocities_by_substep.clone()
         self.extras["transition"]["actuator"] = self.filtered_command.clone()
         return terminated, timeout
 

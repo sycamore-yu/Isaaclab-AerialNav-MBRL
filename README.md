@@ -5,13 +5,13 @@
 | 方法 | Gym 任务 | 训练方式 |
 |---|---|---|
 | NavRL | `Isaac-NavRL-Hummingbird-Direct-v0` | 官方 RSL-RL PPO、共享编码器、Beta 速度动作 |
-| Zhang | `Isaac-NavRL-Zhang-Hummingbird-Direct-v0` | CNN + GRU192、PhysX 前向、可微质点模型反向和状态对齐 |
+| Zhang | `Isaac-NavRL-Zhang-Hummingbird-Direct-v0` | CNN + GRU192、PhysX 前向、可微质点模型反向，前向状态取自 PhysX |
 
 ## 训练与验收
 
-当前默认采用20Hz同步DCOL+BPTT、完整2秒速度窗口。旧step TensorBoard和正在运行的20Hz基线保留；新五组对照见 [20Hz默认与新对照](docs/ZHANG_20HZ_CONTROLS_20261029.md)。
+当前默认采用 20 Hz 同步 DCOL+BPTT、完整 2 秒速度窗口和 `navrl_range` 高度损失。P0/P1 的更改、诊断证据和验证边界见 [实施报告](docs/P0_P1_20261030.md)。旧训练已按用户批准在更新边界停止并保留检查点；第 6 节的超参对照未启动。
 
-当前工作已统一到 `main`，旧训练停止并保留检查点。新九组对照从干净主分支随机初始化，优先 20 Hz，见 [main 整合与对照](docs/MAIN_COMPARISON_20261029.md)。五阶段依次完成预训练 S0、S1、S2 和微调 S1、S2，各阶段自然首次到达率达到 80% 后晋级。
+新管线从已提交源码生成独立快照，并在阶段切换及实际导入时核验。队列支持固定 commit 的干净功能分支。正式五阶段依次为预训练 S0、S1、S2 和微调 S1、S2；各阶段自然首次到达率达到 80% 后晋级。
 
 | 阶段 | 静态障碍 | 动态障碍 | 额外扰动 |
 |---|---:|---:|---|
@@ -31,6 +31,16 @@ cd /home/tong/tongworkspace/free/isaaclab-navrl
 ```
 
 NavRL/PPO 使用独立的 `--method navrl` 入口；Zhang 超参数只传给 Zhang 入口。PPO 的观测、频率和动作与 Zhang 不同，属于方法对照，不能解释为只换优化器。对照规范与有时间标记的历史状态见 [truncated 与 PPO 对照](docs/ZHANG_TRUNCATED_PPO_CONTROLS_20261029.md)。有限步调试使用各训练脚本的 `--max_iterations`，不计入正式验收。
+
+公共 PPO 入口支持任务自动选择 RSL-RL 和 Hydra 覆盖。公共训练需显式给出有限的 `--max_iterations`；正式课程继续使用上面的验收入口。
+
+```bash
+.venv/bin/isaaclab train --task Isaac-NavRL-Hummingbird-Direct-v0 \
+  --num_envs 16 --max_iterations 1 --device cuda:0 --visualizer none \
+  env.training_curriculum=false
+.venv/bin/isaaclab play --task Isaac-NavRL-Hummingbird-Direct-v0 \
+  --checkpoint /absolute/model.pt --num_envs 2 --device cuda:0 --visualizer none
+```
 
 运行环境由 `.venv`、`pyproject.toml` 和 `uv.lock` 固定：Python 3.12、Isaac Lab 3.0.0、Isaac Sim 6.2、RSL-RL 5.5.1。
 

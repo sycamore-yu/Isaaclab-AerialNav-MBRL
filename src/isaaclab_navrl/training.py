@@ -5,6 +5,15 @@ import signal
 from contextlib import contextmanager
 from pathlib import Path
 
+STAGES = ("pretrain_s0", "pretrain_s1", "pretrain_s2", "finetune_s1", "finetune_s2")
+STAGE_CONFIG = {
+    "pretrain_s0": {"static_obstacles": 300, "dynamic_obstacles": 0, "randomization": False},
+    "pretrain_s1": {"static_obstacles": 300, "dynamic_obstacles": 60, "randomization": False},
+    "pretrain_s2": {"static_obstacles": 400, "dynamic_obstacles": 120, "randomization": False},
+    "finetune_s1": {"static_obstacles": 300, "dynamic_obstacles": 60, "randomization": True},
+    "finetune_s2": {"static_obstacles": 400, "dynamic_obstacles": 100, "randomization": True},
+}
+
 
 @contextmanager
 def graceful_training_stop(trainer):

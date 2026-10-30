@@ -7,19 +7,18 @@ import copy
 import functools
 import os.path as osp
 import subprocess
-from pathlib import Path
 
 import numpy as np
 import pytest
 import torch
 import trimesh
 import yaml
+from reference_repo import NAVRL
 from torch import nn
 
 from isaaclab_navrl.control import GRAVITY, MASS, ROTOR_CONFIG, LeeRotorController, rotor_allocation
 from isaaclab_navrl.terrain import NavRLObstaclesTerrainCfg, discrete_obstacles_terrain, obstacle_height_field
 
-NAVRL = Path(__file__).resolve().parents[2] / "NavRL"
 OMNI = "isaac-training/third_party/OmniDrones/omni_drones"
 TERRAIN = "isaac-training/third_party/orbit/source/extensions/omni.isaac.orbit/omni/isaac/orbit/terrains"
 

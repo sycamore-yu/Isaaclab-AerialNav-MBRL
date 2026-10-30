@@ -8,18 +8,14 @@ import math
 import os
 import subprocess
 import sys
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-STAGES = ("pretrain_s0", "pretrain_s1", "pretrain_s2", "finetune_s1", "finetune_s2")
-STAGE_CONFIG = {
-    "pretrain_s0": {"static_obstacles": 300, "dynamic_obstacles": 0, "randomization": False},
-    "pretrain_s1": {"static_obstacles": 300, "dynamic_obstacles": 60, "randomization": False},
-    "pretrain_s2": {"static_obstacles": 400, "dynamic_obstacles": 120, "randomization": False},
-    "finetune_s1": {"static_obstacles": 300, "dynamic_obstacles": 60, "randomization": True},
-    "finetune_s2": {"static_obstacles": 400, "dynamic_obstacles": 100, "randomization": True},
-}
+from isaaclab_navrl.source import freeze_source, verify_source
+from isaaclab_navrl.training import STAGE_CONFIG, STAGES, write_json
+from isaaclab_navrl.zhang.cli import TrainArgValue, parse_train_args
 
 
 def selected_stages(start_stage="pretrain_s0", *, screening=False, method="zhang"):
@@ -31,144 +27,6 @@ def selected_stages(start_stage="pretrain_s0", *, screening=False, method="zhang
     return STAGES[STAGES.index(start_stage):]
 
 
-def parse_binary_flag(raw: str) -> bool:
-    """Use the same explicit 0/1 grammar as train_zhang.py."""
-    if raw not in ("0", "1"):
-        raise ValueError("expected 0 or 1")
-    return raw == "1"
-
-
-def parse_gradient_diagnostic_updates(raw: str) -> tuple[int, ...]:
-    """Validate the same opt-in update-list grammar as train_zhang.py."""
-    if raw == "":
-        return ()
-    parts = raw.split(",")
-    if any(not part.isascii() or not part.isdecimal() for part in parts):
-        raise ValueError("gradient_diagnostic_updates requires comma-separated positive integers without empty entries")
-    updates = tuple(int(part) for part in parts)
-    if any(update < 1 for update in updates) or len(set(updates)) != len(updates):
-        raise ValueError("gradient_diagnostic_updates must contain unique positive integers")
-    return updates
-
-
-TrainArgValue = str | int | float | bool | tuple[int, ...]
-TRAIN_ARG_CHOICES = {
-    "timing": ("baseline", "unified_20hz", "unified_50hz"),
-    "variant": ("step", "continuous", "dcol"),
-    "algorithm": ("bptt", "shac", "ahac"),
-    "lr_schedule": ("cosine", "plateau", "constant"),
-    "critic_value_transform": ("linear", "softplus"),
-    "velocity_loss_mode": ("variant_default", "per_step", "truncated_window", "full_window"),
-    "height_loss_mode": ("target_exp", "target_huber", "boundary_huber", "navrl_range"),
-    "optimizer": ("adamw", "adam"),
-    "gradient_projection": ("none", "height_priority"),
-}
-TRAIN_ARG_TYPES = {
-    "timing": str,
-    "variant": str,
-    "algorithm": str,
-    "lr_schedule": str,
-    "observation_normalization": parse_binary_flag,
-    "normalization_variance_floor": float,
-    "recovery_enabled": parse_binary_flag,
-    "timesteps": int,
-    "velocity_window_s": float,
-    "velocity_loss_mode": str,
-    "camera_batch_size": int,
-    "lr": float,
-    "optimizer": str,
-    "weight_decay": float,
-    "plateau_patience": int,
-    "height_loss_mode": str,
-    "height_target_min": float,
-    "height_target_max": float,
-    "gradient_projection": str,
-    "max_grad_norm": float,
-    "grad_decay": float,
-    "coef_obj_avoidance": float,
-    "coef_collide": float,
-    "coef_d_acc": float,
-    "coef_d_jerk": float,
-    "coef_height_boundary": float,
-    "boundary_margin": float,
-    "boundary_scale": float,
-    "cosine_period_updates": int,
-    "critic_lr": float,
-    "critic_iterations": int,
-    "critic_max_iterations": int,
-    "critic_value_transform": str,
-    "discount": float,
-    "td_lambda": float,
-    "ahac_min_horizon": int,
-    "ahac_max_horizon": int,
-    "ahac_initial_horizon": int,
-    "ahac_risk_clearance": float,
-    "ahac_risk_scale": float,
-    "ahac_risk_budget": float,
-    "ahac_dual_lr": float,
-    "gradient_diagnostic_updates": parse_gradient_diagnostic_updates,
-}
-
-
-def parse_train_args(tokens: list[str]) -> dict[str, TrainArgValue]:
-    """Accept only Zhang hyperparameters; process and curriculum flags stay fixed."""
-    values = {}
-    index = 1 if tokens and tokens[0] == "--" else 0
-    while index < len(tokens):
-        option, separator, raw_value = tokens[index].partition("=")
-        key = option.removeprefix("--")
-        if not option.startswith("--") or key not in TRAIN_ARG_TYPES:
-            raise ValueError(f"Unsupported --train_args option: {option}")
-        if key in values:
-            raise ValueError(f"Duplicate --train_args option: {option}")
-        if not separator:
-            index += 1
-            if index == len(tokens):
-                raise ValueError(f"Missing value for {option}")
-            raw_value = tokens[index]
-        try:
-            value = TRAIN_ARG_TYPES[key](raw_value)
-        except ValueError as exc:
-            raise ValueError(f"Invalid value for {option}: {raw_value}") from exc
-        if key in TRAIN_ARG_CHOICES:
-            if value not in TRAIN_ARG_CHOICES[key]:
-                raise ValueError(f"Unknown Zhang {key}: {value}")
-        elif key == "gradient_diagnostic_updates" or isinstance(value, bool):
-            pass  # The converters already validate tuple and explicit 0/1 grammars.
-        elif not math.isfinite(value):
-            raise ValueError(f"{option} must be finite")
-        elif key == "discount":
-            if not 0 <= value < 1:
-                raise ValueError("discount must be in [0, 1) for continuing cost learning")
-        elif key == "td_lambda":
-            if not 0 <= value <= 1:
-                raise ValueError("td_lambda must be in [0, 1]")
-        elif key == "grad_decay":
-            if not 0 < value <= 1:
-                raise ValueError("grad_decay must be in (0, 1]")
-        elif key.startswith("coef_") or key in ("boundary_margin", "ahac_risk_clearance", "weight_decay", "plateau_patience"):
-            if value < 0:
-                raise ValueError(f"{option} must be nonnegative")
-        elif value <= 0:
-            raise ValueError(f"{option} must be positive")
-        values[key] = value
-        index += 1
-    if values.get("algorithm", "bptt") == "bptt" and values.get("critic_value_transform", "linear") != "linear":
-        raise ValueError("--critic_value_transform softplus requires --algorithm shac or ahac")
-    if values.get("algorithm", "bptt") != "bptt":
-        if values.get("variant", "dcol") != "dcol":
-            raise ValueError("SHAC/AHAC comparisons require --variant dcol")
-        if values.get("gradient_diagnostic_updates", ()):
-            raise ValueError("Seven-term gradient diagnostics require --algorithm bptt")
-        if values.get("gradient_projection", "none") != "none":
-            raise ValueError("Height-priority projection requires --algorithm bptt")
-    if values.get("timesteps", 150) < 2:
-        raise ValueError("timesteps must be at least 2")
-    if not 2 <= values.get("ahac_min_horizon", 16) <= values.get("ahac_initial_horizon", 32) <= values.get("ahac_max_horizon", 300):
-        raise ValueError("AHAC requires 2 <= min <= initial <= max horizon")
-    if not 0.2 < values.get("height_target_min", 0.5) < values.get("height_target_max", 2.5) < 4.0:
-        raise ValueError("height target range must be increasing and inside (0.2, 4.0) metres")
-    return values
 
 
 def build_command(
@@ -301,10 +159,6 @@ def validate_stage_result(
     return errors
 
 
-def write_json(path: Path, value: dict[str, Any]) -> None:
-    temporary = path.with_suffix(".json.tmp")
-    temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    temporary.replace(path)
 
 
 def run_pipeline(args: argparse.Namespace, train_args: dict[str, TrainArgValue]) -> int:
@@ -339,15 +193,24 @@ def run_pipeline(args: argparse.Namespace, train_args: dict[str, TrainArgValue])
     environment = os.environ.copy()
     environment.update(OPENBLAS_NUM_THREADS="1", OMP_NUM_THREADS="1", MKL_NUM_THREADS="1",
                        OMNI_KIT_ACCEPT_EULA="YES", PYTHONUNBUFFERED="1")
-    scripts_dir = Path(__file__).resolve().parent
     current_method: dict[str, Any] | None = None
     current_stage: dict[str, Any] | None = None
     try:
+        source_identity = freeze_source(Path(__file__).resolve().parents[1], output / "source")
+        expected_commit = environment.get("NAVRL_EXPECTED_COMMIT")
+        if expected_commit is not None and source_identity["commit"] != expected_commit:
+            raise RuntimeError("Pipeline snapshot differs from the dispatcher's pinned commit")
+        summary["source_identity"] = source_identity
+        scripts_dir = Path(source_identity["root"]) / "scripts"
+        environment.update(PYTHONPATH=str(scripts_dir.parent / "src"), PYTHONDONTWRITEBYTECODE="1",
+                           NAVRL_SOURCE_ROOT=source_identity["root"], NAVRL_SOURCE_COMMIT=source_identity["commit"])
+        write_json(summary_path, summary)
         for method in methods:
             current_method = {"status": "running", "acceptance_passed": False, "stages": []}
             summary["methods"][method] = current_method
             parent_checkpoint = None
             for stage in stages:
+                verify_source(scripts_dir.parent, source_identity["commit"])
                 current_stage = None
                 log_dir = output / method / stage
                 log_dir.mkdir(parents=True)
@@ -374,6 +237,7 @@ def run_pipeline(args: argparse.Namespace, train_args: dict[str, TrainArgValue])
                 current_method["stages"].append(current_stage)
                 write_json(summary_path, summary)
                 print(f"Starting {method}/{stage}: {log_dir}", flush=True)
+                environment["NAVRL_STAGE_STARTED_MONOTONIC"] = str(time.monotonic())
                 with stdout_log.open("w", encoding="utf-8") as stream:
                     process = subprocess.run(
                         command, cwd=scripts_dir.parent, env=environment,

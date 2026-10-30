@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import ast
 import subprocess
-from pathlib import Path
+from importlib.metadata import version
 from types import SimpleNamespace
 
 import pytest
 import torch
+from isaaclab_rl.rsl_rl.utils import handle_deprecated_rsl_rl_cfg
+from reference_repo import NAVRL
 from rsl_rl.runners import OnPolicyRunner
 from tensordict import TensorDict
 from torch import nn
@@ -20,7 +22,7 @@ from isaaclab_navrl.agents.rsl_rl_cfg import NavRLPpoRunnerCfg
 def make_models(batch=8):
     observation = TensorDict({"policy": torch.randn(batch, 202)}, batch_size=[batch])
     groups = {"actor": ["policy"], "critic": ["policy"]}
-    actor = NavRLActor(observation, groups, "actor", 3)
+    actor = NavRLActor(observation, groups, "actor", 3, {"class_name": "rsl_rl.modules.distribution:BetaDistribution", "action_range": (-2., 2.)})
     critic = NavRLCritic(observation, groups, "critic", 1, cnns=actor.cnns)
     return observation, actor, critic
 
@@ -80,7 +82,7 @@ class TinyVecEnv:
 def test_official_ppo_updates_and_checkpoint_roundtrip(tmp_path):
     torch.manual_seed(19)
     torch.set_num_threads(1)
-    cfg = NavRLPpoRunnerCfg().to_dict()
+    cfg = handle_deprecated_rsl_rl_cfg(NavRLPpoRunnerCfg(), version("rsl-rl-lib")).to_dict()
     cfg["num_steps_per_env"] = 4
     cfg["algorithm"]["num_learning_epochs"] = 2
     cfg["algorithm"]["num_mini_batches"] = 2
@@ -96,7 +98,7 @@ def test_official_ppo_updates_and_checkpoint_roundtrip(tmp_path):
     expected_value = runner.alg.critic(probe).detach()
     checkpoint = tmp_path / "checkpoint.pt"
     runner.save(str(checkpoint), infos={"fixture": True})
-    loaded = OnPolicyRunner(TinyVecEnv(), NavRLPpoRunnerCfg().to_dict(), log_dir=None, device="cpu")
+    loaded = OnPolicyRunner(TinyVecEnv(), handle_deprecated_rsl_rl_cfg(NavRLPpoRunnerCfg(), version("rsl-rl-lib")).to_dict(), log_dir=None, device="cpu")
     assert loaded.load(str(checkpoint), map_location="cpu") == {"fixture": True}
     torch.testing.assert_close(loaded.get_inference_policy()(probe), expected_action, rtol=0, atol=0)
     torch.testing.assert_close(loaded.alg.critic(probe), expected_value, rtol=0, atol=0)
@@ -108,7 +110,7 @@ def test_encoder_against_actual_upstream_source():
     """Build reference feature layers from the upstream AST, without old simulator imports."""
     from einops.layers.torch import Rearrange
 
-    source = Path(__file__).resolve().parents[2] / "NavRL"
+    source = NAVRL
     if not (source / ".git").exists():
         pytest.skip("Upstream NavRL checkout is not available for differential verification")
 
@@ -152,3 +154,10 @@ def test_encoder_against_actual_upstream_source():
     torch.testing.assert_close(actor.cnns(flat), reference_features, rtol=0, atol=0)
     alpha, beta = reference_head(reference_features)
     torch.testing.assert_close(actor(obs), 4 * alpha / (alpha + beta) - 2, rtol=1e-5, atol=1e-6)
+
+
+def test_public_distribution_overrides_cannot_silently_change_exported_action_units():
+    observation = TensorDict({"policy": torch.zeros(2, 202)}, batch_size=[2])
+    with pytest.raises(ValueError, match="fixed"):
+        NavRLActor(observation, {"actor": ["policy"]}, "actor", 3,
+                   {"class_name": "rsl_rl.modules.distribution:BetaDistribution", "action_range": (-1., 1.)})

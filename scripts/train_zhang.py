@@ -1,100 +1,35 @@
 """Train one Zhang BPTT, SHAC, or AHAC curriculum stage on Isaac Lab 3.0 PhysX."""
 
 import argparse
-from dataclasses import asdict
+import os
+import time
+from dataclasses import asdict, fields
 from pathlib import Path
 
 from isaaclab.app import add_launcher_args, launch_simulation
 
-from isaaclab_navrl.training import graceful_training_stop
-
-
-def parse_binary_flag(raw: str) -> bool:
-    """Require an explicit 0/1 value so protocol commands are unambiguous."""
-    if raw not in ("0", "1"):
-        raise ValueError("expected 0 or 1")
-    return raw == "1"
-
-
-def parse_gradient_diagnostic_updates(raw: str) -> tuple[int, ...]:
-    """Parse an opt-in list of unique positive global completed-update numbers."""
-    if raw == "":
-        return ()
-    parts = raw.split(",")
-    if any(not part.isascii() or not part.isdecimal() for part in parts):
-        raise ValueError("gradient_diagnostic_updates requires comma-separated positive integers without empty entries")
-    updates = tuple(int(part) for part in parts)
-    if any(update < 1 for update in updates) or len(set(updates)) != len(updates):
-        raise ValueError("gradient_diagnostic_updates must contain unique positive integers")
-    return updates
+from isaaclab_navrl.source import verify_training_import
+from isaaclab_navrl.training import STAGE_CONFIG, STAGES, graceful_training_stop, write_json
+from isaaclab_navrl.zhang.cli import add_train_args
 
 
 def main():
+    process_started = float(os.environ.get("NAVRL_STAGE_STARTED_MONOTONIC", time.monotonic()))
+    verify_training_import()
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument("--log_dir", type=Path, required=True)
     parser.add_argument("--num_envs", type=int, default=1024)
     parser.add_argument("--report_episodes", type=int, default=None)
-    parser.add_argument("--timing", choices=("baseline", "unified_20hz", "unified_50hz"), default="unified_20hz")
     parser.add_argument("--max_iterations", type=int, default=None, help="Optional smoke-run limit; default unlimited")
     parser.add_argument("--stop_after_acceptance", action="store_true", help="Finish when this stage reaches 80%")
-    parser.add_argument("--stage", choices=("pretrain_s0", "pretrain_s1", "pretrain_s2", "finetune_s1", "finetune_s2"),
+    parser.add_argument("--stage", choices=STAGES,
                         default="pretrain_s0")
     parser.add_argument("--checkpoint", type=Path, help="Previous stage checkpoint from this experiment")
     parser.add_argument("--fresh_stage", action="store_true",
                         help="Explicit direct-stage comparison: random initialization without an earlier stage")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--terrain_seed", type=int, default=0)
-    parser.add_argument("--variant", choices=("step", "continuous", "dcol"), default="dcol")
-    parser.add_argument("--algorithm", choices=("bptt", "shac", "ahac"), default="bptt",
-                        help="ahac selects AHAC-derived metric-clearance and stability feedback")
-    parser.add_argument("--timesteps", type=int, default=150)
-    parser.add_argument("--velocity_loss_mode", choices=("variant_default", "per_step", "truncated_window", "full_window"),
-                        default=None, help="Default: SHAC/AHAC per_step, otherwise full_window; truncated_window completes unscored "
-                        "short terminal windows; variant_default preserves each variant's current loss")
-    parser.add_argument("--velocity_window_s", type=float, default=2.0)
-    parser.add_argument("--camera_batch_size", type=int, default=64,
-                        help="Depth raycast environment batch size; does not change image resolution")
-    parser.add_argument("--lr", type=float, default=None, help="Default: 0.001 pretraining, 0.00005 fine-tuning")
-    parser.add_argument("--optimizer", choices=("adamw", "adam"), default="adamw")
-    parser.add_argument("--weight_decay", type=float, default=0.01)
-    parser.add_argument("--lr_schedule", choices=("cosine", "plateau", "constant"), default="cosine")
-    parser.add_argument("--observation_normalization", type=parse_binary_flag, default=False, metavar="{0,1}")
-    parser.add_argument("--normalization_variance_floor", type=float, default=1e-4)
-    parser.add_argument("--recovery_enabled", type=parse_binary_flag, default=True, metavar="{0,1}")
-    parser.add_argument("--cosine_period_updates", type=int, default=400)
-    parser.add_argument("--plateau_patience", type=int, default=2,
-                        help="Number of tolerated non-improving natural reports in ReduceLROnPlateau")
-    parser.add_argument("--critic_lr", type=float, default=0.0005)
-    parser.add_argument("--critic_iterations", type=int, default=16)
-    parser.add_argument("--critic_max_iterations", type=int, default=64)
-    parser.add_argument("--critic_value_transform", choices=("linear", "softplus"), default="linear",
-                        help="Critic cost output transform; softplus requires SHAC or AHAC")
-    parser.add_argument("--discount", type=float, default=0.99)
-    parser.add_argument("--td_lambda", type=float, default=0.95)
-    parser.add_argument("--ahac_min_horizon", type=int, default=16)
-    parser.add_argument("--ahac_max_horizon", type=int, default=300)
-    parser.add_argument("--ahac_initial_horizon", type=int, default=32)
-    parser.add_argument("--ahac_risk_clearance", type=float, default=0.1)
-    parser.add_argument("--ahac_risk_scale", type=float, default=0.05)
-    parser.add_argument("--ahac_risk_budget", type=float, default=0.1)
-    parser.add_argument("--ahac_dual_lr", type=float, default=0.1)
-    parser.add_argument("--max_grad_norm", type=float, default=5.0)
-    parser.add_argument("--grad_decay", type=float, default=0.4)
-    parser.add_argument("--coef_obj_avoidance", type=float, default=3.0)
-    parser.add_argument("--coef_collide", type=float, default=7.5)
-    parser.add_argument("--coef_d_acc", type=float, default=0.01)
-    parser.add_argument("--coef_d_jerk", type=float, default=0.001)
-    parser.add_argument("--coef_height_boundary", type=float, default=1.0)
-    parser.add_argument("--height_loss_mode", choices=("target_exp", "target_huber", "boundary_huber", "navrl_range"),
-                        default="navrl_range")
-    parser.add_argument("--height_target_min", type=float, default=0.5)
-    parser.add_argument("--height_target_max", type=float, default=2.5)
-    parser.add_argument("--boundary_margin", type=float, default=0.5)
-    parser.add_argument("--boundary_scale", type=float, default=0.5)
-    parser.add_argument("--gradient_diagnostic_updates", type=parse_gradient_diagnostic_updates, default=(),
-                        help="Optional unique global completed-update numbers, e.g. 20,22,24,26; empty disables")
-    parser.add_argument("--gradient_projection", choices=("none", "height_priority"), default="none",
-                        help="Optional BPTT parameter-gradient projection; Adam/AdamW can alter the final step direction")
+    add_train_args(parser)
     add_launcher_args(parser)
     parser.set_defaults(visualizer=["none"])
     args = parser.parse_args()
@@ -125,12 +60,10 @@ def main():
 
     import isaaclab_navrl.tasks  # noqa: F401
     from isaaclab_navrl.tasks.navigation.config.hummingbird.env_cfg import ZhangNavRLEnvCfg
-    from isaaclab_navrl.tasks.navigation.curriculum import STAGE_CONFIGS
-    from isaaclab_navrl.training import write_json
     from isaaclab_navrl.zhang.config import ZhangTrainCfg
     from isaaclab_navrl.zhang.runner import ZhangTrainer
 
-    stage = STAGE_CONFIGS[args.stage]
+    stage = STAGE_CONFIG[args.stage]
     cfg = ZhangNavRLEnvCfg()
     cfg.variant = args.variant
     cfg.timing = args.timing
@@ -147,18 +80,9 @@ def main():
     cfg.sim.device = args.device
     cfg.depth_camera_batch_size = args.camera_batch_size
     cfg.configure_scene()
-    fields = ("variant", "algorithm", "timesteps", "max_iterations", "stop_after_acceptance", "velocity_loss_mode",
-              "velocity_window_s", "lr", "optimizer", "weight_decay", "max_grad_norm",
-              "grad_decay", "coef_obj_avoidance", "coef_collide", "coef_d_acc", "coef_d_jerk",
-              "coef_height_boundary", "height_loss_mode", "boundary_margin", "boundary_scale", "cosine_period_updates", "seed",
-              "gradient_diagnostic_updates", "gradient_projection", "observation_normalization", "lr_schedule", "recovery_enabled",
-              "plateau_patience",
-              "normalization_variance_floor",
-              "critic_lr", "critic_iterations", "critic_max_iterations", "critic_value_transform", "discount", "td_lambda",
-              "ahac_min_horizon", "ahac_max_horizon", "ahac_initial_horizon",
-              "ahac_risk_clearance", "ahac_risk_scale", "ahac_risk_budget", "ahac_dual_lr")
-    train_cfg = ZhangTrainCfg(**{name: getattr(args, name) for name in fields},
-                              physics_dt=cfg.sim.dt, policy_dt=cfg.sim.dt * cfg.decimation,
+    train_values = {field.name: getattr(args, field.name) for field in fields(ZhangTrainCfg)
+                    if hasattr(args, field.name)}
+    train_cfg = ZhangTrainCfg(**train_values, physics_dt=cfg.sim.dt, policy_dt=cfg.sim.dt * cfg.decimation,
                               height_target_range=cfg.height_target_range)
     train_cfg.validate()
     torch.manual_seed(args.seed)
@@ -171,7 +95,7 @@ def main():
         "static_obstacle_distance": "signed_heightfield_occupancy_exit_proxy",
         "static_projection": "float64_selected_face_refinement_float32_storage",
         "environment": {"num_envs": args.num_envs, "seed": args.seed, "terrain_seed": args.terrain_seed,
-                        "stage": args.stage, **stage, "curriculum": STAGE_CONFIGS,
+                        "stage": args.stage, **stage, "curriculum": STAGE_CONFIG,
                         "variant": args.variant, "drone_collision_response": args.variant != "continuous",
                         "height_target_range": list(cfg.height_target_range),
                         "height_target_source": "current_episode_navigation_goal_z",
@@ -198,6 +122,7 @@ def main():
         try:
             write_json(args.log_dir / "nominal_dynamics.json", env.nominal_dynamics)
             trainer = ZhangTrainer(env, train_cfg, args.log_dir)
+            trainer.process_started_at = process_started
             with graceful_training_stop(trainer):
                 if args.checkpoint is not None:
                     trainer.load_stage_checkpoint(args.checkpoint)

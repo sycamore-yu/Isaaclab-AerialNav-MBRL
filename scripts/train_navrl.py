@@ -13,8 +13,12 @@ from types import SimpleNamespace
 
 from isaaclab.app import add_launcher_args, launch_simulation
 
+from isaaclab_navrl.source import verify_training_import
+from isaaclab_navrl.training import STAGES, write_json
+
 
 def main():
+    verify_training_import()
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument("--log_dir", type=Path, required=True)
     parser.add_argument("--num_envs", type=int, default=1024)
@@ -24,7 +28,7 @@ def main():
     parser.add_argument("--stop_after_acceptance", action="store_true",
                         help="Finish when this training stage reaches its success threshold")
     parser.add_argument("--stage", default="pretrain_s0",
-                        choices=("pretrain_s0", "pretrain_s1", "pretrain_s2", "finetune_s1", "finetune_s2"))
+                        choices=STAGES)
     parser.add_argument("--checkpoint", type=Path, help="Checkpoint from the preceding training stage")
     parser.add_argument("--lr", type=float, help="Override this stage's learning rate")
     parser.add_argument("--seed", type=int, default=0)
@@ -81,9 +85,7 @@ def main():
             )
             result["nonfinite_events"] = int(env.nonfinite_events)
         # This also records failures before the training helpers can be imported.
-        temporary = log_dir / "training_result.json.tmp"
-        temporary.write_text(json.dumps(result, indent=2, allow_nan=False) + "\n")
-        temporary.replace(log_dir / "training_result.json")
+        write_json(log_dir / "training_result.json", result)
         if announce:
             print("TRAINING_RESULT " + json.dumps(result), flush=True)
 
@@ -98,13 +100,13 @@ def main():
         from isaaclab_navrl.agents.continuous_runner import ContinuousNavRLRunner
         from isaaclab_navrl.agents.rsl_rl_cfg import NavRLPpoRunnerCfg
         from isaaclab_navrl.tasks.navigation.config.hummingbird.env_cfg import NavRLEnvCfg
-        from isaaclab_navrl.tasks.navigation.curriculum import STAGE_CONFIGS
-        from isaaclab_navrl.training import graceful_training_stop, record_curriculum, write_json
+        from isaaclab_navrl.tasks.navigation.curriculum import STAGE_CONFIG
+        from isaaclab_navrl.training import graceful_training_stop, record_curriculum
 
         random.seed(args.seed)
         np.random.seed(args.seed)
         torch.manual_seed(args.seed)
-        stage_config = STAGE_CONFIGS[args.stage]
+        stage_config = STAGE_CONFIG[args.stage]
         cfg = NavRLEnvCfg()
         cfg.scene.num_envs = args.num_envs
         cfg.seed = args.seed
@@ -117,7 +119,11 @@ def main():
         cfg.sim_to_real.enabled = stage_config["randomization"]
         cfg.sim.device = args.device
         cfg.configure_scene()
-        agent_cfg = NavRLPpoRunnerCfg()
+        from importlib.metadata import version
+
+        from isaaclab_rl.rsl_rl.utils import handle_deprecated_rsl_rl_cfg
+
+        agent_cfg = handle_deprecated_rsl_rl_cfg(NavRLPpoRunnerCfg(), version("rsl-rl-lib"))
         agent_cfg.seed = args.seed
         agent_cfg.device = str(args.device)
         agent_cfg.max_iterations = args.max_iterations
@@ -129,7 +135,7 @@ def main():
         if parent_checkpoint is not None:
             checkpoint_data = torch.load(parent_checkpoint, map_location="cpu", weights_only=True)
             parent_infos = checkpoint_data["infos"]
-            predecessor = tuple(STAGE_CONFIGS)[tuple(STAGE_CONFIGS).index(args.stage) - 1]
+            predecessor = tuple(STAGE_CONFIG)[tuple(STAGE_CONFIG).index(args.stage) - 1]
             if parent_infos.get("method") != "navrl" or parent_infos.get("stage") != predecessor:
                 raise ValueError(f"Expected a NavRL {predecessor} checkpoint, received {parent_checkpoint}")
             if args.max_iterations is None and not parent_infos["curriculum"]["stage_passed"]:

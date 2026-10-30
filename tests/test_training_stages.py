@@ -3,11 +3,11 @@
 import pytest
 import torch
 
-from isaaclab_navrl.tasks.navigation.curriculum import STAGE_CONFIGS, TrainingCurriculum
+from isaaclab_navrl.tasks.navigation.curriculum import STAGE_CONFIG, TrainingCurriculum
 
 
 def test_formal_curriculum_starts_without_dynamic_obstacles():
-    assert list(STAGE_CONFIGS.items()) == [
+    assert list(STAGE_CONFIG.items()) == [
         ("pretrain_s0", {"static_obstacles": 300, "dynamic_obstacles": 0, "randomization": False}),
         ("pretrain_s1", {"static_obstacles": 300, "dynamic_obstacles": 60, "randomization": False}),
         ("pretrain_s2", {"static_obstacles": 400, "dynamic_obstacles": 120, "randomization": False}),
@@ -33,7 +33,7 @@ def test_formal_curriculum_starts_without_dynamic_obstacles():
     assert not curriculum.ready_to_advance
 
 
-@pytest.mark.parametrize("stage", list(STAGE_CONFIGS))
+@pytest.mark.parametrize("stage", list(STAGE_CONFIG))
 def test_named_stage_requires_eighty_percent_and_has_no_internal_map_switch(stage):
     curriculum = TrainingCurriculum(10, "cpu", stage=stage)
     for successes in (7, 8):
@@ -45,10 +45,10 @@ def test_named_stage_requires_eighty_percent_and_has_no_internal_map_switch(stag
         })
         report = curriculum.pop_report(update=successes)
         assert report["success_rate"] == successes / 10
-        assert report["static_obstacles"] == STAGE_CONFIGS[stage]["static_obstacles"]
-        assert report["dynamic_obstacles"] == STAGE_CONFIGS[stage]["dynamic_obstacles"]
-        assert report["randomization"] == STAGE_CONFIGS[stage]["randomization"]
+        assert report["static_obstacles"] == STAGE_CONFIG[stage]["static_obstacles"]
+        assert report["dynamic_obstacles"] == STAGE_CONFIG[stage]["dynamic_obstacles"]
+        assert report["randomization"] == STAGE_CONFIG[stage]["randomization"]
         assert curriculum.stage_passed is (successes == 8)
         assert not curriculum.ready_to_advance
         assert curriculum.acceptance_passed is (stage == "finetune_s2" and successes == 8)
-    assert curriculum.state_dict()["stages"] == list(STAGE_CONFIGS)
+    assert curriculum.state_dict()["stages"] == list(STAGE_CONFIG)

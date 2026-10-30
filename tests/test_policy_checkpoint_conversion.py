@@ -5,13 +5,13 @@ from __future__ import annotations
 import ast
 import subprocess
 from collections.abc import Iterable
-from pathlib import Path
 from types import SimpleNamespace
 from typing import Union
 
 import pytest
 import torch
 from einops.layers.torch import Rearrange
+from reference_repo import NAVRL
 from tensordict import TensorDict
 from torch import nn
 
@@ -20,7 +20,7 @@ from isaaclab_navrl.agents.models import NavRLActor, NavRLCritic
 
 
 def test_released_checkpoint_conversion_preserves_actions_and_denormalized_values():
-    source = Path(__file__).resolve().parents[2] / "NavRL"
+    source = NAVRL
     checkpoint = source / "ros1/navigation_runner/scripts/ckpts/navrl_checkpoint.pt"
     if not checkpoint.exists():
         pytest.skip("The released upstream checkpoint is not present")
@@ -116,7 +116,7 @@ def test_released_checkpoint_conversion_preserves_actions_and_denormalized_value
     converted = convert_original_state_dict(original)
     observations = TensorDict({"policy": flat}, batch_size=[32])
     groups = {"actor": ["policy"], "critic": ["policy"]}
-    actor = NavRLActor(observations, groups, "actor", 3)
+    actor = NavRLActor(observations, groups, "actor", 3, {"class_name": "rsl_rl.modules.distribution:BetaDistribution", "action_range": (-2., 2.)})
     critic = NavRLCritic(observations, groups, "critic", 1, actor.cnns)
     actor.load_state_dict(converted["actor_state_dict"])
     critic.load_state_dict(converted["critic_state_dict"])

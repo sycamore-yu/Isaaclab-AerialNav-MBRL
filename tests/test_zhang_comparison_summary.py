@@ -4,7 +4,6 @@ import contextlib
 import importlib.util
 import io
 import json
-import math
 import tempfile
 import unittest
 from pathlib import Path
@@ -43,16 +42,22 @@ class ComparisonSummaryTests(unittest.TestCase):
         self.assertIsNone(result["numerical_checks"]["max_executed_action_error"])
         self.assertIsNone(result["recent_reports"]["metrics"]["success_rate"]["mean"])
 
-    def test_recent_statistics_use_last_five_and_each_metrics_actual_sample_count(self):
-        records = [{"update": i, "success_rate": i / 10, "episode_return_mean": None if i != 7 else 3.0}
-                   for i in range(1, 8)]
+    def test_recent_statistics_weight_completed_episodes_and_keep_missing_denominators(self):
+        records = [{"episodes": 1000, "success_rate": 1.0}] * 2 + [
+            {"episodes": 10, "counts": {"success": 1}, "success_rate": 0.1,
+             "success_time_mean_s": 3.0, "episode_return_mean": 2.0},
+            {"episodes": 100, "counts": {"success": 90}, "success_rate": 0.9,
+             "success_time_mean_s": 8.0, "episode_return_mean": 4.0},
+            {}, {}, {"success_rate": 0.8},
+        ]
         recent = summary_tool.recent_statistics(records)
         success = recent["metrics"]["success_rate"]
         self.assertEqual(recent["report_count"], 5)
-        self.assertEqual(success["n"], 5)
-        self.assertAlmostEqual(success["mean"], 0.5)
-        self.assertAlmostEqual(success["std"], math.sqrt(0.025))
-        self.assertEqual(recent["metrics"]["episode_return_mean"], {"n": 1, "mean": 3.0, "std": None})
+        self.assertEqual(success["n"], 2)
+        self.assertEqual(success["denominator"], 110)
+        self.assertAlmostEqual(success["mean"], 91 / 110)
+        self.assertAlmostEqual(recent["metrics"]["success_time_mean_s"]["mean"], 723 / 91)
+        self.assertAlmostEqual(recent["metrics"]["episode_return_mean"]["mean"], 420 / 110)
 
     def test_first_threshold_matches_exact_update_and_stage_step_counters(self):
         self.write("config.json", self.config(horizon=96))
@@ -100,7 +105,7 @@ class ComparisonSummaryTests(unittest.TestCase):
         other_config = self.config(variant="continuous", horizon=96, width=320)
         (second_directory / "config.json").write_text(json.dumps(other_config), encoding="utf-8")
         report = summary_tool.summarize_runs([self.root, second])
-        comparison = report["comparison"][0]
+        comparison = next(item for item in report["comparison"] if item["stage"] == "pretrain_s1")
         self.assertEqual(set(comparison["differing_fields"]), {"variant", "timesteps", "depth_width"})
         self.assertFalse(comparison["control_fields_match"])
         before = (self.directory / "config.json").read_bytes()
@@ -116,3 +121,24 @@ class ComparisonSummaryTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_three_report_retention_requires_each_report_to_have_1024_episodes(tmp_path):
+    directory = tmp_path / "zhang" / "pretrain_s1"
+    directory.mkdir(parents=True)
+    reports = [
+        {"update": 1, "episodes": 32, "success_rate": 1.0},
+        {"update": 2, "episodes": 1024, "success_rate": .9},
+        {"update": 3, "episodes": 1024, "success_rate": .9},
+        {"update": 4, "episodes": 1024, "success_rate": .79},
+        *[{"update": i, "episodes": 1024, "success_rate": .8} for i in (5, 6, 7)],
+    ]
+    (directory / "training_statistics.jsonl").write_text("".join(json.dumps(r) + "\n" for r in reports))
+    (directory / "updates.jsonl").write_text(json.dumps({"update": 7, "elapsed_s": 250, "process_elapsed_s": 270}) + "\n")
+    result = summary_tool.summarize_stage(tmp_path, "pretrain_s1")
+    assert result["first_80_percent"]["update"] == 2
+    assert result["stable_80_percent"]["first_update"] == 5
+    assert result["stable_80_percent"]["confirmed_update"] == 7
+    assert result["stable_80_percent"]["elapsed_s"] == 250
+    assert result["stable_80_percent"]["process_elapsed_s"] == 270
+    assert result["stable_80_percent"]["episodes"] == 3072

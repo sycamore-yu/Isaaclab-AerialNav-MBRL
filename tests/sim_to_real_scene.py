@@ -43,6 +43,8 @@ def check_zhang_collision_mode(env):
     injected = {0: "collision", 1: "reached"}
     observed_collisions = {}
     observed_dynamic_positions = {}
+    observed_velocities = {}
+    observed_dynamic_velocities = {}
 
     def inject(original):
         def compute():
@@ -52,8 +54,10 @@ def check_zhang_collision_mode(env):
                     terms[name][index] = name == event
                 if event == "collision" and env._physical_substep > 0 and index not in observed_collisions:
                     observed_collisions[index] = (env._physical_substep, env.root_state()[index, :3].clone())
+                    observed_velocities[index] = env.root_state()[index, 7:10].clone()
                     if env.cfg.variant == "dcol":
                         observed_dynamic_positions[index] = env.motion.position.clone()
+                        observed_dynamic_velocities[index] = env.motion.velocity.clone()
             return terms
         return compute
 
@@ -65,6 +69,8 @@ def check_zhang_collision_mode(env):
     def step():
         observed_collisions.clear()
         observed_dynamic_positions.clear()
+        observed_velocities.clear()
+        observed_dynamic_velocities.clear()
         result = env.step(action)
         transition = result[-1]["transition"]
         positions, substeps = transition["collision_position"], transition["collision_substep"]
@@ -77,6 +83,7 @@ def check_zhang_collision_mode(env):
                 observed_substep, observed_position = observed_collisions[index]
                 assert observed_substep == 1 and int(substeps[index]) == observed_substep
                 torch.testing.assert_close(positions[index], observed_position, rtol=0, atol=0)
+                torch.testing.assert_close(transition["collision_velocity"][index], observed_velocities[index], rtol=0, atol=0)
             else:
                 assert int(substeps[index]) == 0
                 torch.testing.assert_close(positions[index], action[index], rtol=0, atol=0)
@@ -88,6 +95,8 @@ def check_zhang_collision_mode(env):
             for index, observed in observed_dynamic_positions.items():
                 observed_substep = observed_collisions[index][0]
                 torch.testing.assert_close(dynamic[observed_substep - 1], observed, rtol=0, atol=0)
+                torch.testing.assert_close(transition["dynamic_velocities_by_substep"][observed_substep - 1],
+                                           observed_dynamic_velocities[index], rtol=0, atol=0)
         else:
             assert "dynamic_positions_by_substep" not in transition
             assert env._dynamic_positions_by_substep is None
@@ -217,6 +226,7 @@ def main():
     cfg.sim_to_real.enabled = args.enabled
     cfg.sim.device = args.device
     if args.method == "zhang":
+        cfg.timing = "baseline"  # Multiple physics substeps are required by the first-collision snapshot checks.
         # Exercise repeated configuration and restore the requested variant before launch.
         cfg.variant = "continuous"
         cfg.configure_scene()

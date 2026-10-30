@@ -15,6 +15,8 @@ QUEUE = runpy.run_path(str(ROOT / "scripts/run_comparison_queue.py"))
 
 @pytest.mark.parametrize("start", ["pretrain_s1", "finetune_s2"])
 def test_direct_pipeline_starts_random_then_inherits_only_its_own_checkpoints(tmp_path, monkeypatch, start):
+    monkeypatch.setattr(protocol, "freeze_source", lambda source, target: {"root": str(target), "commit": "fixture"})
+    monkeypatch.setattr(protocol, "verify_source", lambda *args: None)
     calls = []
 
     def simulate(command, **kwargs):

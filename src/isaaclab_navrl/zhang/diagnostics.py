@@ -37,14 +37,16 @@ def _select_columns(values, spans):
 class GradientDiagnostic:
     """Keep detached component gradients until the original optimizer step ends."""
 
-    def __init__(self, model, losses, cfg):
+    def __init__(self, model, losses, cfg, *, components=None):
         named_parameters = [(name, value) for name, value in model.named_parameters() if value.requires_grad]
         self._parameters = tuple(value for _, value in named_parameters)
         self._device = self._parameters[0].device
         self.diagnostic_s = 0.0
         started = self._start_timing()
-        self.term_names = [name for name, _ in LOSS_COEFFICIENTS]
-        self.coefficients = [float(getattr(cfg, attribute)) for _, attribute in LOSS_COEFFICIENTS]
+        self.term_names = list(components) if components is not None else [name for name, _ in LOSS_COEFFICIENTS]
+        self.coefficients = ([1.0] * len(components) if components is not None else
+                             [float(getattr(cfg, attribute)) for _, attribute in LOSS_COEFFICIENTS])
+        losses = components if components is not None else losses
         self.loss_values = [float(losses[name].detach()) for name in self.term_names]
         self.parameter_layout = []
         trunk, z_head = [], []
@@ -156,27 +158,28 @@ class GradientDiagnostic:
                     for value, norm in zip(linearized_delta, norms, strict=True)
                 ],
             }
-            height = self.term_names.index("height_boundary")
-            height_square = raw_gram[height][height]
-            others_dot_height = float(raw_dots[height]) - self.coefficients[height] * height_square
-            groups[name]["height_weight_threshold_raw_gradient"] = (
-                max(0.0, -others_dot_height / height_square) if height_square else None
-            )
-            counterfactuals = {}
-            for label, term, weight in (
-                ("height_coefficient_5", "height_boundary", 5.0),
-                ("avoidance_coefficient_half", "obstacle_avoidance",
-                 self.coefficients[self.term_names.index("obstacle_avoidance")] * 0.5),
-            ):
-                changed = coefficients.clone()
-                changed[self.term_names.index(term)] = weight
-                changed_total = changed @ gradients
-                counterfactuals[label] = {
-                    "term": term, "coefficient": weight,
-                    "component_sum_norm": float(changed_total.norm()),
-                    "raw_loss_dot_total": (gradients @ changed_total).cpu().tolist(),
-                }
-            groups[name]["raw_gradient_counterfactuals"] = counterfactuals
+            if "height_boundary" in self.term_names:
+                height = self.term_names.index("height_boundary")
+                height_square = raw_gram[height][height]
+                others_dot_height = float(raw_dots[height]) - self.coefficients[height] * height_square
+                groups[name]["height_weight_threshold_raw_gradient"] = (
+                    max(0.0, -others_dot_height / height_square) if height_square else None
+                )
+                counterfactuals = {}
+                for label, term, weight in (
+                    ("height_coefficient_5", "height_boundary", 5.0),
+                    ("avoidance_coefficient_half", "obstacle_avoidance",
+                     self.coefficients[self.term_names.index("obstacle_avoidance")] * 0.5),
+                ):
+                    changed = coefficients.clone()
+                    changed[self.term_names.index(term)] = weight
+                    changed_total = changed @ gradients
+                    counterfactuals[label] = {
+                        "term": term, "coefficient": weight,
+                        "component_sum_norm": float(changed_total.norm()),
+                        "raw_loss_dot_total": (gradients @ changed_total).cpu().tolist(),
+                    }
+                groups[name]["raw_gradient_counterfactuals"] = counterfactuals
         norm = float(grad_norm)
         record = {
             "schema_version": 1, "term_order": self.term_names,
@@ -198,3 +201,108 @@ class GradientDiagnostic:
         self._finish_timing(started)
         record["diagnostic_s"] = self.diagnostic_s
         return record
+
+
+def critic_vertical_probe(critic, features, heights, terminated):
+    """Physical partials: hold camera, recurrent memory and history fixed."""
+    leaf = features.detach().requires_grad_(True)
+    values = critic.actor_value(leaf)
+    gradient = torch.autograd.grad(values.sum(), leaf)[0]
+    result = {"height_m": heights.detach().tolist(), "terminated": terminated.tolist(),
+              "value": values.detach().tolist(), "scope": "partials_with_camera_and_memory_fixed"}
+    for name, column, scale in (("z", 2, -1 / 50), ("vz", 5, 1 / 10)):
+        epsilon = 0.02
+        with torch.no_grad():
+            plus, minus = leaf.detach().clone(), leaf.detach().clone()
+            plus[:, column] += epsilon * scale
+            minus[:, column] -= epsilon * scale
+            numerical = (critic.actor_value(plus) - critic.actor_value(minus)) / (2 * epsilon)
+        analytic = gradient[:, column] * scale
+        result[f"dV_d{name}"] = analytic.tolist()
+        result[f"fd_dV_d{name}"] = numerical.tolist()
+        result[f"fd_max_abs_error_d{name}"] = float((analytic - numerical).abs().max())
+    return result
+
+
+def collision_records(env, transition):
+    """Classify failure at its first collision substep, before autoreset.
+
+    Static class uses the task's heightfield proxy, not a PhysX contact ID.
+    """
+    from isaaclab_navrl.tasks.navigation.geometry import primitive_signed_distance
+
+    selected = ((transition["collision_substep"] > 0) & (transition["first_event_code"] == 2)).nonzero().flatten()
+    records = []
+    for row in selected.tolist():
+        position = transition["collision_position"][row].detach().requires_grad_(True)
+        velocity = transition["collision_velocity"][row]
+        substep = int(transition["collision_substep"][row]) - 1
+        poses = transition["dynamic_positions_by_substep"][substep]
+        static = env.terrain_distance.signed_distance(position[None])[0]
+        candidates = [static, position[2] - 0.01]
+        dynamic_index = None
+        if len(poses):
+            distances = primitive_signed_distance(position[None], poses, env.motion.size)
+            dynamic_index = int(distances.detach().argmin())
+            candidates.append(distances[dynamic_index])
+        stacked = torch.stack(candidates)
+        winner = int(stacked.detach().argmin())
+        distance = stacked[winner]
+        normal = torch.autograd.grad(distance, position)[0]
+        obstacle_velocity = torch.zeros_like(velocity)
+        category = ("static", "ground", "dynamic")[winner]
+        if winner == 2:
+            category = "dynamic_cylinder" if env.motion.size[dynamic_index, 2] > 1 else "dynamic_box"
+            obstacle_velocity = transition["dynamic_velocities_by_substep"][substep, dynamic_index]
+        relative = velocity - obstacle_velocity
+        records.append({"env_id": row, "type": category, "height_m": float(position[2].detach()),
+                        "clearance_m": float(distance.detach()) - 0.3,
+                        "relative_speed_mps": float(relative.norm()),
+                        "closing_speed_mps": float(-relative.dot(normal)),
+                        "substep": substep + 1})
+    return records
+
+
+def compare_dynamic_metrics(query, positions, sizes, radius=0.3):
+    """Same frozen poses and points; no terminal, policy or loss-weight changes."""
+    from isaaclab_navrl.tasks.navigation.geometry import dynamic_signed_distance
+
+    from .dcol import dynamic_min_alpha
+
+    points = query.detach().reshape(-1, 3).requires_grad_(True)
+    poses = positions.detach().clone()
+    result = {"points": len(points), "obstacles": len(poses), "radius_m": radius, "metrics": {}}
+    if not len(poses):
+        return result
+    gradients = []
+    for name, measure in (
+        ("dcol", lambda p: radius * (dynamic_min_alpha(p, radius, poses, sizes) - 1)),
+        ("sdf", lambda p: dynamic_signed_distance(p, poses, sizes) - radius),
+    ):
+        if points.device.type == "cuda":
+            torch.cuda.synchronize(points.device)
+        started = time.perf_counter()
+        value = measure(points)
+        gradient = torch.autograd.grad(value.sum(), points)[0]
+        if points.device.type == "cuda":
+            torch.cuda.synchronize(points.device)
+        measured_s = time.perf_counter() - started
+        gradients.append(gradient)
+        numerical = []
+        with torch.no_grad():
+            for axis in range(3):
+                delta = torch.zeros_like(points)
+                delta[:, axis] = 1e-3
+                numerical.append((measure(points + delta) - measure(points - delta)) / 2e-3)
+        numerical = torch.stack(numerical, dim=-1)
+        norms = gradient.norm(dim=-1)
+        result["metrics"][name] = {
+            "gap_mean_m": float(value.detach().mean()), "gradient_norm_mean": float(norms.mean()),
+            "single_forward_backward_s": measured_s,
+            "fd_error_max": float((gradient - numerical).abs().max()),
+            "fd_error_p95": float((gradient - numerical).abs().flatten().quantile(.95)),
+        }
+    cosine = torch.nn.functional.cosine_similarity(*gradients, dim=-1)
+    result["gradient_cosine_mean"] = float(cosine.mean())
+    result["note"] = "finite differences may cross closest-obstacle or surface ties; proxy units do not imply equal gradient scales"
+    return result

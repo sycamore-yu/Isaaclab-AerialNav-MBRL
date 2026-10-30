@@ -4,15 +4,9 @@ from __future__ import annotations
 
 import torch
 
-from .task_logic import obstacle_categories
+from isaaclab_navrl.training import STAGE_CONFIG
 
-STAGE_CONFIGS = {
-    "pretrain_s0": {"static_obstacles": 300, "dynamic_obstacles": 0, "randomization": False},
-    "pretrain_s1": {"static_obstacles": 300, "dynamic_obstacles": 60, "randomization": False},
-    "pretrain_s2": {"static_obstacles": 400, "dynamic_obstacles": 120, "randomization": False},
-    "finetune_s1": {"static_obstacles": 300, "dynamic_obstacles": 60, "randomization": True},
-    "finetune_s2": {"static_obstacles": 400, "dynamic_obstacles": 100, "randomization": True},
-}
+from .task_logic import obstacle_categories
 
 
 def active_obstacle_indices(count: int, capacity: int) -> list[int]:
@@ -39,7 +33,7 @@ class TrainingCurriculum:
     labels = ("success", "collision", "bounds", "invalid", "timeout")
 
     def __init__(self, num_envs: int, device: str, stage: str | None = None):
-        if stage is not None and stage not in STAGE_CONFIGS:
+        if stage is not None and stage not in STAGE_CONFIG:
             raise ValueError(f"Unknown training stage: {stage}")
         self.stage_name = stage
         self.stage_passed = False
@@ -58,7 +52,7 @@ class TrainingCurriculum:
 
     @property
     def active_obstacles(self) -> int:
-        return STAGE_CONFIGS[self.stage_name]["dynamic_obstacles"] if self.stage_name else self.stages[self.stage_index]
+        return STAGE_CONFIG[self.stage_name]["dynamic_obstacles"] if self.stage_name else self.stages[self.stage_index]
 
     @property
     def stage_key(self):
@@ -111,7 +105,7 @@ class TrainingCurriculum:
             "reward_per_step_mean": float(self.return_sum / self.length_sum),
         }
         if self.stage_name:
-            report.update(stage=self.stage_name, **STAGE_CONFIGS[self.stage_name])
+            report.update(stage=self.stage_name, **STAGE_CONFIG[self.stage_name])
         previous = self.best_by_stage.get(self.stage_key)
         report["new_best"] = previous is None or report["success_rate"] > previous["success_rate"]
         if report["new_best"]:
@@ -148,10 +142,10 @@ class TrainingCurriculum:
 
     def state_dict(self) -> dict:
         return {
-            "stages": list(STAGE_CONFIGS) if self.stage_name else list(self.stages),
+            "stages": list(STAGE_CONFIG) if self.stage_name else list(self.stages),
             "active_dynamic_obstacles": self.active_obstacles,
             "stage": self.stage_name, "stage_passed": self.stage_passed,
-            "stage_config": STAGE_CONFIGS[self.stage_name] if self.stage_name else None,
+            "stage_config": STAGE_CONFIG[self.stage_name] if self.stage_name else None,
             "promotion_success_rate": self.threshold, "episodes_per_report_min": self.min_episodes,
             "acceptance_passed": self.acceptance_passed,
             "best_by_stage": self.best_by_stage, "latest_training_report": self.last_report,

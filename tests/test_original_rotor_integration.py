@@ -6,19 +6,18 @@ contract test; it does not launch PhysX or instantiate Multirotor.
 """
 
 import math
-from pathlib import Path
 
 import torch
 import yaml
 from isaaclab_contrib.actuators import Thruster, ThrusterCfg
 from isaaclab_contrib.utils.types import MultiRotorActions
-from torch.func import functional_call, vmap
-
+from reference_repo import NAVRL
 from test_thruster_parity import load_legacy_rotor_group
+from torch.func import functional_call, vmap
 
 
 def test_original_rotor_group(num_envs=8, num_steps=250):
-    root = Path(__file__).resolve().parents[2] / "NavRL"
+    root = NAVRL
     param_file = (
         root
         / "isaac-training/third_party/OmniDrones/omni_drones/robots/assets/usd/hummingbird.yaml"
@@ -82,7 +81,7 @@ def test_original_rotor_group(num_envs=8, num_steps=250):
     with torch.no_grad():
         for step in range(num_steps):
             cmds = torch.rand(num_envs, count) * 2.4 - 1.2
-            thrust_old, moment_old = zip(*(r(cmds[i]) for i, r in enumerate(serial)))
+            thrust_old, moment_old = zip(*(r(cmds[i]) for i, r in enumerate(serial)), strict=True)
             thrust_old = torch.stack(thrust_old)
             moment_old = torch.stack(moment_old)
             thrust_batch, moment_batch = vmap(

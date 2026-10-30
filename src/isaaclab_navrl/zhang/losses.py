@@ -253,6 +253,14 @@ def zhang_transition_costs(history, cfg, velocity_history=None):
             + cfg.coef_obj_avoidance * terms["obstacle_avoidance"] + cfg.coef_collide * terms["collision"]
             + cfg.coef_d_acc * terms["acceleration"] + cfg.coef_d_jerk * terms["jerk"]
             + cfg.coef_height_boundary * terms["height_boundary"])
+    if cfg.failure_terminal_cost:
+        # One immediate cost at absorbing failure, shared by actor and TD targets.
+        # Keep a differentiable height/clearance penalty; this event has no path derivative.
+        failure = torch.stack(history["failure_terminal"])
+        if failure.dtype != torch.bool or failure.shape != cost.shape:
+            raise ValueError("failure_terminal must be a boolean transition mask")
+        terms["failure_terminal"] = cfg.failure_terminal_cost * failure.to(cost)
+        cost = cost + terms["failure_terminal"]
     losses = {name: value.mean() for name, value in terms.items()}
     losses["total"] = cost.mean()
     losses["velocity_valid_samples"] = valid_samples.detach()
@@ -262,9 +270,3 @@ def zhang_transition_costs(history, cfg, velocity_history=None):
     if cfg.resolved_velocity_loss_mode == "truncated_window":
         losses["velocity_full_window_samples"] = full_samples.detach()
     return losses, detached_history, cost
-
-
-def zhang_losses(history, cfg, velocity_history=None):
-    """Compatibility wrapper for the existing two-return BPTT interface."""
-    losses, detached_history, _ = zhang_transition_costs(history, cfg, velocity_history)
-    return losses, detached_history

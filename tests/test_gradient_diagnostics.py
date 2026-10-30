@@ -9,7 +9,7 @@ import torch
 
 from isaaclab_navrl.zhang.config import ZhangTrainCfg
 from isaaclab_navrl.zhang.diagnostics import LOSS_COEFFICIENTS, GradientDiagnostic
-from isaaclab_navrl.zhang.losses import zhang_losses
+from isaaclab_navrl.zhang.losses import zhang_transition_costs
 from isaaclab_navrl.zhang.model import ZhangPolicy, decode_action
 
 
@@ -59,7 +59,7 @@ def _losses(model, cfg):
         ):
             history[name].append(value)
         previous = command
-    return zhang_losses(history, cfg)[0]
+    return zhang_transition_costs(history, cfg)[0]
 
 
 def _step(model, optimizer, cfg, diagnose):
@@ -264,3 +264,38 @@ def main():
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+def test_bootstrap_diagnostics_measure_the_actual_objective_without_changing_gradients():
+    model = ZhangPolicy()
+    cfg = ZhangTrainCfg(algorithm="shac", gradient_diagnostic_updates=(1,))
+    cfg.validate()
+    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
+    signal = sum(parameter.square().sum() for parameter in model.parameters())
+    parts = {"discounted_cost": signal, "bootstrap": -0.4 * signal}
+    diagnostic = GradientDiagnostic(model, {}, cfg, components=parts)
+    sum(parts.values()).backward()
+    diagnostic.check_total_gradient()
+    norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 5)
+    optimizer.step()
+    record = diagnostic.finish(optimizer, norm, 5)
+    assert record["total_gradient_check"]["relative_l2_error"] < 1e-6
+    assert record["groups"]["all"]["cosine"][0][1] == pytest.approx(-1)
+    assert record["groups"]["all"]["linearized_delta_loss"][0] < 0
+    assert record["groups"]["all"]["linearized_delta_loss"][1] > 0
+
+
+def test_critic_vertical_partials_include_physical_units_and_match_finite_difference():
+    from isaaclab_navrl.zhang.diagnostics import critic_vertical_probe
+
+    class AnalyticCritic:
+        def actor_value(self, features):
+            return 2 * features[:, 2] + 3 * features[:, 5]
+
+    features = torch.randn(3, 6, dtype=torch.double)
+    result = critic_vertical_probe(AnalyticCritic(), features, torch.tensor([2., 3.7, 4.1]),
+                                   torch.tensor([False, False, True]))
+    assert result["dV_dz"] == pytest.approx([-.04] * 3)
+    assert result["dV_dvz"] == pytest.approx([.3] * 3)
+    assert result["fd_max_abs_error_dz"] < 1e-12
+    assert result["fd_max_abs_error_dvz"] < 1e-12

@@ -190,13 +190,14 @@ class Harness:
                 load=lambda path, **_kwargs: json.loads(Path(path).read_text()),
                 isfinite=lambda _value: types.SimpleNamespace(all=lambda: True),
             ),
+            "isaaclab_rl.rsl_rl.utils": types.SimpleNamespace(handle_deprecated_rsl_rl_cfg=lambda cfg, version: cfg),
             "isaaclab_rl.rsl_rl": types.SimpleNamespace(RslRlVecEnvWrapper=lambda env, **_kwargs: env),
             "isaaclab_navrl.tasks": types.SimpleNamespace(),
             "isaaclab_navrl.agents.continuous_runner": types.SimpleNamespace(ContinuousNavRLRunner=self.make_runner),
             "isaaclab_navrl.agents.rsl_rl_cfg": types.SimpleNamespace(
                 NavRLPpoRunnerCfg=lambda: AgentConfig(1 if self.fail_second_periodic_save else 100)),
             "isaaclab_navrl.tasks.navigation.config.hummingbird.env_cfg": types.SimpleNamespace(NavRLEnvCfg=lambda: self.cfg),
-            "isaaclab_navrl.tasks.navigation.curriculum": types.SimpleNamespace(STAGE_CONFIGS=STAGES),
+            "isaaclab_navrl.tasks.navigation.curriculum": types.SimpleNamespace(STAGE_CONFIG=STAGES),
         }
         original_import = __import__
 

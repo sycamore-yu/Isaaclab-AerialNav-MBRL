@@ -12,6 +12,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from isaaclab_navrl import training
+from isaaclab_navrl.zhang.cli import parse_gradient_diagnostic_updates
 from isaaclab_navrl.zhang.config import ZhangTrainCfg
 
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
@@ -148,6 +149,8 @@ class GradientDiagnosticCliTests(unittest.TestCase):
         def capture_configuration(**values):
             raise CapturedConfiguration(values)
 
+        capture_configuration.__dataclass_fields__ = ZhangTrainCfg.__dataclass_fields__
+
         environment = types.SimpleNamespace(scene=types.SimpleNamespace(), sim=types.SimpleNamespace(dt=0.01), decimation=10,
                                             sim_to_real=types.SimpleNamespace(), configure_scene=lambda: None)
         imports = {
@@ -155,7 +158,7 @@ class GradientDiagnosticCliTests(unittest.TestCase):
             "isaaclab_navrl.tasks": types.SimpleNamespace(),
             "isaaclab_navrl.tasks.navigation.config.hummingbird.env_cfg": types.SimpleNamespace(
                 ZhangNavRLEnvCfg=lambda: environment),
-            "isaaclab_navrl.tasks.navigation.curriculum": types.SimpleNamespace(STAGE_CONFIGS=acceptance.STAGE_CONFIG),
+            "isaaclab_navrl.tasks.navigation.curriculum": types.SimpleNamespace(STAGE_CONFIG=acceptance.STAGE_CONFIG),
             "isaaclab_navrl.training": types.SimpleNamespace(write_json=None),
             "isaaclab_navrl.zhang.config": types.SimpleNamespace(ZhangTrainCfg=capture_configuration),
             "isaaclab_navrl.zhang.runner": types.SimpleNamespace(ZhangTrainer=None),
@@ -289,7 +292,7 @@ class GradientDiagnosticCliTests(unittest.TestCase):
         for raw in invalid:
             with self.subTest(raw=raw):
                 with self.assertRaises(ValueError):
-                    trainer.parse_gradient_diagnostic_updates(raw)
+                    parse_gradient_diagnostic_updates(raw)
                 with self.assertRaises(ValueError):
                     acceptance.parse_train_args([f"--gradient_diagnostic_updates={raw}"])
                 with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as error:
@@ -333,7 +336,7 @@ class GradientDiagnosticCliTests(unittest.TestCase):
                 )
                 value = command[command.index("--gradient_diagnostic_updates") + 1]
                 self.assertEqual(value, "20,22,24,26")
-                self.assertEqual(trainer.parse_gradient_diagnostic_updates(value), (20, 22, 24, 26))
+                self.assertEqual(parse_gradient_diagnostic_updates(value), (20, 22, 24, 26))
                 self.assertEqual(command[command.index("--camera_batch_size") + 1], "64")
                 self.assertEqual(command[command.index("--lr") + 1], "5e-05" if stage.startswith("finetune_") else "0.001")
                 self.assertEqual("--checkpoint" in command, parent is not None)

@@ -2,18 +2,18 @@
 
 import ast
 import subprocess
-from pathlib import Path
 from types import SimpleNamespace
 
 import einops
 import torch
+from reference_repo import NAVRL
 from tensordict import TensorDict
 
 from isaaclab_navrl.tasks.navigation.task_logic import DynamicObstacleMotion, navigation_terms
 
 
 def test_original_observation_and_reward_on_the_same_states():
-    upstream = Path(__file__).resolve().parents[2] / "NavRL"
+    upstream = NAVRL
     source = subprocess.check_output(
         ["git", "show", "HEAD:isaac-training/training/scripts/env.py"], cwd=upstream, text=True
     )

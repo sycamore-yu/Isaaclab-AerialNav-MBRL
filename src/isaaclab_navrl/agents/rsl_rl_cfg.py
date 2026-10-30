@@ -7,6 +7,10 @@ from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlPpoAlgorithmCfg
 @configclass
 class NavRLModelCfg:
     class_name: str = "isaaclab_navrl.agents.models:NavRLActor"
+    distribution_cfg: dict | None = {
+        "class_name": "rsl_rl.modules.distribution:BetaDistribution", "action_range": (-2.0, 2.0),
+    }
+    stochastic: bool = False  # Consumed by Isaac Lab's official config migration.
 
 
 @configclass
@@ -19,11 +23,9 @@ class NavRLPpoRunnerCfg(RslRlOnPolicyRunnerCfg):
     experiment_name = "navrl"
     logger = "tensorboard"
     clip_actions = None
-    empirical_normalization = False
-    policy = None
     obs_groups = {"actor": ["policy"], "critic": ["policy"]}
     actor = NavRLModelCfg()
-    critic = NavRLModelCfg(class_name="isaaclab_navrl.agents.models:NavRLCritic")
+    critic = NavRLModelCfg(class_name="isaaclab_navrl.agents.models:NavRLCritic", distribution_cfg=None)
     algorithm = RslRlPpoAlgorithmCfg(
         class_name="rsl_rl.algorithms:PPO",
         num_learning_epochs=4,

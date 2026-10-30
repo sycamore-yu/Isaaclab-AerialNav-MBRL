@@ -10,7 +10,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-STAGES = ("pretrain_s1", "pretrain_s2", "finetune_s1", "finetune_s2")
+from isaaclab_navrl.training import STAGES
+
 REPORT_METRICS = (
     "success_rate", "collision_rate", "bounds_rate", "invalid_rate", "timeout_rate",
     "success_time_mean_s", "episode_return_mean", "episode_length_mean", "reward_per_step_mean",
@@ -96,10 +97,26 @@ def recent_statistics(reports: list[dict[str, Any]]) -> dict[str, Any]:
     recent = reports[-5:]
     metrics = {}
     for name in REPORT_METRICS:
-        values = [report[name] for report in recent if finite(report.get(name))]
-        metrics[name] = {"n": len(values), "mean": statistics.mean(values) if values else None,
-                         "std": statistics.stdev(values) if len(values) >= 2 else None}
-    return {"report_count": len(recent), "aggregation": "unweighted_reports", "std_kind": "sample", "metrics": metrics}
+        samples = []
+        for report in recent:
+            value, weight = report.get(name), report.get("episodes")
+            if name == "success_time_mean_s":
+                weight = report.get("counts", {}).get("success")
+            elif name == "reward_per_step_mean":
+                length = report.get("episode_length_mean")
+                weight = weight * length if finite(weight) and finite(length) else None
+            if finite(value) and finite(weight) and weight > 0:
+                count = report.get("counts", {}).get(name.removesuffix("_rate"))
+                if name.endswith("_rate") and finite(count):
+                    value = count / weight
+                samples.append((value, weight))
+        denominator = sum(weight for _, weight in samples)
+        mean = sum(value * weight for value, weight in samples) / denominator if denominator else None
+        variance = sum(weight * (value - mean)**2 for value, weight in samples) / denominator if denominator else None
+        metrics[name] = {"n": len(samples), "denominator": denominator, "mean": mean,
+                         "std": math.sqrt(variance) if len(samples) >= 2 else None}
+    return {"report_count": len(recent), "aggregation": "weighted_natural_episodes",
+            "std_kind": "weighted_between_report_population", "metrics": metrics}
 
 
 def nonfinite_fields(record: dict[str, Any]) -> list[str]:
@@ -117,7 +134,7 @@ def summarize_stage(root: Path, stage: str) -> dict[str, Any]:
     result_values = result or {}
     scored = [report for report in reports if finite(report.get("success_rate"))]
     best = max(scored, key=lambda report: report["success_rate"]) if scored else None
-    first_pass = next((report for report in scored if report["success_rate"] >= 0.8), None)
+    first_pass = next((report for report in scored if report["success_rate"] >= 0.8 and report.get("episodes", 0) >= 1024), None)
     first_80 = None
     if first_pass is not None:
         update = first_pass.get("update")
@@ -127,6 +144,7 @@ def summarize_stage(root: Path, stage: str) -> dict[str, Any]:
                     "episodes": first_pass.get("episodes"),
                     "elapsed_s": elapsed if finite(elapsed) else None,
                     "elapsed_match": "exact_update" if finite(elapsed) else "missing",
+                    "process_elapsed_s": matching.get("process_elapsed_s") if matching else None,
                     "stage_updates": None, "stage_environment_steps": None, "environment_steps": None}
         horizon, num_envs = fields["timesteps"], fields["num_envs"]
         completed, stage_updates = result_values.get("completed_updates"), result_values.get("stage_updates")
@@ -139,6 +157,16 @@ def summarize_stage(root: Path, stage: str) -> dict[str, Any]:
                 total_steps = result_values.get("environment_steps")
                 if isinstance(total_steps, int) and total_steps >= stage_updates * steps_per_update:
                     first_80["environment_steps"] = total_steps - (stage_updates - stage_count) * steps_per_update
+    held = next((reports[i:i+3] for i in range(len(reports)-2)
+                 if all(finite(r.get("success_rate")) and r["success_rate"] >= 0.8
+                        and r.get("episodes", 0) >= 1024 for r in reports[i:i+3])), None)
+    retention = None
+    if held:
+        endpoint = next((r for r in updates if r.get("update") == held[-1]["update"]), {})
+        retention = {"first_update": held[0]["update"], "confirmed_update": held[-1]["update"],
+                     "episodes": sum(r["episodes"] for r in held), "elapsed_s": endpoint.get("elapsed_s"),
+                     "process_elapsed_s": endpoint.get("process_elapsed_s"),
+                     "scope": "three_nonoverlapping_training_reports_not_independent_evaluation"}
     durations = [record["update_s"] for record in updates if finite(record.get("update_s"))]
     action_errors = [record["executed_action_max_error"] for record in updates
                      if finite(record.get("executed_action_max_error"))]
@@ -152,7 +180,7 @@ def summarize_stage(root: Path, stage: str) -> dict[str, Any]:
         )},
         "report_count": len(reports), "update_record_count": len(updates),
         "latest_report": reports[-1] if reports else None, "best_report": best,
-        "recent_reports": recent_statistics(reports), "first_80_percent": first_80,
+        "recent_reports": recent_statistics(reports), "first_80_percent": first_80, "stable_80_percent": retention,
         "performance": {"median_update_s": statistics.median(durations) if durations else None,
                         "update_s_samples": len(durations)},
         "numerical_checks": {

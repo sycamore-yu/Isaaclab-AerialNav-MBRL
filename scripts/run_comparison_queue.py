@@ -15,6 +15,9 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
+from isaaclab_navrl.source import RUNTIME_PATHS
+from isaaclab_navrl.training import write_json
+
 
 def now():
     return datetime.now(UTC).isoformat()
@@ -28,10 +31,6 @@ def read_json(path):
         return {}
 
 
-def atomic_json(path, value):
-    temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_text(json.dumps(value, indent=2, allow_nan=False) + "\n")
-    temporary.replace(path)
 
 
 def train_tokens(run):
@@ -112,10 +111,8 @@ def check_source(source, expected_commit):
         return subprocess.check_output(["git", *args], cwd=source, text=True, timeout=10).strip()
     if git("rev-parse", "HEAD") != expected_commit:
         raise RuntimeError("Source HEAD differs from pinned commit")
-    if git("status", "--porcelain", "--untracked-files=all"):
-        raise RuntimeError("Source worktree is not clean")
-    if git("branch", "--show-current") != "main":
-        raise RuntimeError("New comparisons must run from the clean main branch")
+    if git("status", "--porcelain", "--untracked-files=all", "--", *RUNTIME_PATHS):
+        raise RuntimeError("Runtime source worktree is not clean")
 
 
 def free_memory_mib(gpu):
@@ -236,11 +233,12 @@ def main():
     active = adopt_running_jobs(previous, jobs) if previous else {}
     output.mkdir(parents=True, exist_ok=args.resume)
     if previous:
-        atomic_json(output / f"queue_before_takeover_{os.getpid()}.json", previous)
+        write_json(output / f"queue_before_takeover_{os.getpid()}.json", previous)
         (output / f"plan_before_takeover_{os.getpid()}.json").write_bytes((output / 'plan.json').read_bytes())
-    atomic_json(output / "plan.json", plan)
+    write_json(output / "plan.json", plan)
     environment = os.environ.copy()
     environment.update(
+        NAVRL_EXPECTED_COMMIT=args.commit,
         PYTHONPATH=str(source / "src"), PYTHONUNBUFFERED="1", OMNI_KIT_ACCEPT_EULA="YES",
         OPENBLAS_NUM_THREADS="1", OMP_NUM_THREADS="1", MKL_NUM_THREADS="1",
         PYTORCH_ALLOC_CONF="expandable_segments:True",
@@ -269,7 +267,7 @@ def main():
 
     signal.signal(signal.SIGTERM, stop_dispatch)
     signal.signal(signal.SIGINT, stop_dispatch)
-    atomic_json(state_path, state)
+    write_json(state_path, state)
 
     while True:
         for name, process in list(active.items()):
@@ -303,7 +301,7 @@ def main():
         if not active and (not pending or state["stop_dispatch_reason"]):
             state["status"] = "dispatch_stopped" if state["stop_dispatch_reason"] else "finished"
             state["finished_at"] = now()
-            atomic_json(state_path, state)
+            write_json(state_path, state)
             return 1 if failed else 0
 
         if pending and not state["stop_dispatch_reason"] and (args.slots is None or len(active) < args.slots):
@@ -322,8 +320,8 @@ def main():
                         if not state["stop_dispatch_reason"] and all(
                             current_stage_ready(jobs[item]) for item in active
                         ):
-                            job.update(status="starting", started_at=now(), free_before_mib=free)
-                            atomic_json(state_path, state)
+                            job.update(status="starting", started_at=now(), free_before_mib=free, concurrent_pipelines_at_launch=len(active) + 1)
+                            write_json(state_path, state)
                             log_path = output / f"{name}.stdout.log"
                             job["stdout_log"] = str(log_path)
                             with log_path.open("xb") as stream:
@@ -334,7 +332,7 @@ def main():
                             active[name] = process
                             job.update(status="running", pid=process.pid, process_group=process.pid)
                             job['source_commit'] = args.commit
-                            atomic_json(output / "zhang_manifest.json", launched_zhang_manifest(jobs, plan))
+                            write_json(output / "zhang_manifest.json", launched_zhang_manifest(jobs, plan))
             except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
                 failed = True
                 state["stop_dispatch_reason"] = f"dispatch_error:{error}"
@@ -344,7 +342,7 @@ def main():
 
         state["status"] = "draining" if state["stop_dispatch_reason"] else "running"
         state["updated_at"] = now()
-        atomic_json(state_path, state)
+        write_json(state_path, state)
         time.sleep(15)
 
 

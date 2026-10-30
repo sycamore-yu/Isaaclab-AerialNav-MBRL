@@ -19,7 +19,7 @@ class EndpointEnv(AnalyticEnv):
         self.trigger_step = trigger_step
         self.cfg.variant = 'dcol'
         self.episode_length_buf = torch.zeros(2, dtype=torch.long)
-        self.motion = SimpleNamespace(size=torch.empty(0, 3))
+        self.motion = SimpleNamespace(position=torch.empty(0, 3), size=torch.empty(0, 3))
         self.terrain_distance = SimpleNamespace(signed_distance=lambda q: q[..., 0]*0+100)
         self.target = torch.tensor([[10., 0., 2.]]).repeat(2, 1)
         self.terminated_flags = torch.zeros(2, dtype=torch.bool)
@@ -63,6 +63,7 @@ class EndpointEnv(AnalyticEnv):
         self.timeout_flags.copy_(torch.tensor([False, self.total_steps == self.trigger_step]))
         terminated, timeout = self.terminated_flags, self.timeout_flags
         transition['collision'] = terminated.clone()
+        transition['first_event_code'] = torch.where(terminated, 2, torch.where(timeout, 5, 0))
         if self.total_steps == self.trigger_step:
             self.position[:, 0] = 100.
             self.target[:, 0] = 200.
@@ -74,13 +75,15 @@ class EndpointEnv(AnalyticEnv):
         return {}, torch.zeros(2), terminated, timeout, {'transition': transition}
 
 
-def _run_endpoint_case(tmp_path, trigger_step=1, algorithm="shac"):
+def _run_endpoint_case(tmp_path, trigger_step=1, algorithm="shac", failure_cost=0):
+    tmp_path.mkdir(parents=True, exist_ok=True)
     env = EndpointEnv(trigger_step)
     cfg = ZhangTrainCfg(algorithm=algorithm, physics_dt=.01, policy_dt=.1,
                         ahac_min_horizon=2, ahac_initial_horizon=2, ahac_max_horizon=2,
-                        timesteps=2, max_iterations=1, critic_iterations=1, critic_max_iterations=1)
+                        timesteps=2, max_iterations=1, critic_iterations=1, critic_max_iterations=1,
+                        failure_terminal_cost=failure_cost)
     trainer = ZhangTrainer(env, cfg, tmp_path)
-    trainer._dcol_gap = lambda query, radius, positions=None: query[..., 0] * 0 + 5
+    trainer._dcol_gap = lambda query, radius, positions=None, **kwargs: query[..., 0] * 0 + 5
     original_initialize = trainer._initialize_critic
     endpoints, values, targets = [], [], []
 
@@ -138,3 +141,16 @@ def test_absorbing_terminal_at_horizon_does_not_gain_a_bootstrap(tmp_path, algor
     td = td_lambda_cost_targets(costs, next_values, cuts, discount=cfg.discount)
     torch.testing.assert_close(td[-1, 0], costs[-1, 0])
     torch.testing.assert_close(td[-1, 1], costs[-1, 1] + cfg.discount*values[-1][1])
+
+
+def test_failure_cost_flows_through_real_runner_without_changing_terminal_bootstrap(tmp_path):
+    torch.manual_seed(27)
+    _, _, _, baseline = _run_endpoint_case(tmp_path / "base")
+    torch.manual_seed(27)
+    _, _, _, repaired = _run_endpoint_case(tmp_path / "repair", failure_cost=300)
+    old_values, old_cuts, old_costs = baseline[0]
+    new_values, new_cuts, new_costs = repaired[0]
+    torch.testing.assert_close(old_values, new_values)
+    assert new_values[0, 0] == 0
+    torch.testing.assert_close(old_cuts, new_cuts)
+    torch.testing.assert_close(new_costs - old_costs, torch.tensor([[300., 0.], [0., 0.]]))

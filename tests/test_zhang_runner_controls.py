@@ -95,7 +95,7 @@ def test_recovery_keeps_each_level_file_immutable_and_restores_the_highest_same_
     assert set(trainer.recovery.stable_checkpoints) == {0.05}
     first = Path(trainer.recovery.stable_checkpoint)
     first_digest = hashlib.sha256(first.read_bytes()).hexdigest()
-    assert first.name == "checkpoint_stable_pretrain_s0_05.pt"
+    assert first.name == "checkpoint_stable_pretrain_s0_u3.pt"
     assert trainer.recovery.reference_success == 0.06
     first_record = copy.deepcopy(trainer.recovery.stable_checkpoints[0.05])
 
@@ -113,12 +113,13 @@ def test_recovery_keeps_each_level_file_immutable_and_restores_the_highest_same_
         record = trainer.recovery.stable_checkpoints[level]
         path = Path(record["checkpoint"])
         assert path.parent == tmp_path.resolve()
-        assert path.name == f"checkpoint_stable_pretrain_s0_{round(level * 100):02d}.pt"
+        assert path.name == "checkpoint_stable_pretrain_s0_u6.pt"
         assert record["stage"] == "pretrain_s0" and record["update"] == 6
         assert record["reference_success"] == 0.16
         payload = torch.load(path, map_location="cpu", weights_only=True)
         _assert_state_equal(payload["model_state_dict"], high_state)
         assert tuple(payload["environment"]["height_target_range"]) == (0.5, 2.5)
+    assert len(list(tmp_path.glob("checkpoint_stable_*.pt"))) == 2
     highest_path = trainer.recovery.stable_checkpoint
     high_digest = hashlib.sha256(Path(highest_path).read_bytes()).hexdigest()
 
@@ -149,7 +150,7 @@ def test_recovery_keeps_each_level_file_immutable_and_restores_the_highest_same_
 
 def test_recovery_refuses_to_overwrite_an_existing_level_file_before_acknowledging(tmp_path):
     trainer = _trainer(tmp_path)
-    path = tmp_path / "checkpoint_stable_pretrain_s0_05.pt"
+    path = tmp_path / "checkpoint_stable_pretrain_s0_u3.pt"
     original = b"Synthetic pre-existing history; not a trained policy checkpoint"
     path.write_bytes(original)
     for update in (1, 2):

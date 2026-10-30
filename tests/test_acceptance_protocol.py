@@ -59,6 +59,17 @@ def report_fixture(stage="pretrain_s0", parent=None, algorithm="bptt", variant="
 
 
 class AcceptanceProtocolTests(unittest.TestCase):
+    def setUp(self):
+        # Orchestration fixtures exercise child outcomes; source integrity has real-git tests.
+        freezer = patch.object(protocol, "freeze_source", side_effect=lambda source, target: {
+            "root": str(target), "commit": "fixture", "files": {},
+        })
+        verifier = patch.object(protocol, "verify_source")
+        freezer.start()
+        verifier.start()
+        self.addCleanup(freezer.stop)
+        self.addCleanup(verifier.stop)
+
     def command(self, **overrides):
         arguments = {
             "method": "zhang",
@@ -237,8 +248,7 @@ class AcceptanceProtocolTests(unittest.TestCase):
             ["--discount", "-1"], ["--td_lambda", "1.1"], ["--critic_iterations", "0"],
             ["--observation_normalization", "true"], ["--recovery_enabled", "false"],
             ["--observation_normalization", "2"], ["--recovery_enabled", ""],
-            ["--algorithm", "shac", "--variant", "step"], ["--algorithm", "shac", "--variant", "dcol",
-                                         "--gradient_diagnostic_updates", "12"],
+            ["--algorithm", "shac", "--variant", "step"],
             ["--ahac_min_horizon", "33"], ["--ahac_max_horizon", "16"], ["--timesteps", "1"],
             ["--ahac_risk_clearance", "-0.1"], ["--ahac_dual_lr", "0"],
         ]

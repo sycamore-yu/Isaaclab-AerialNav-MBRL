@@ -37,6 +37,8 @@ class ZhangTrainCfg:
     discount: float = 0.99
     td_lambda: float = 0.95
     critic_lr: float = 0.0005
+    failure_terminal_cost: float = 0.0
+    critic_target_tau: float = 0.6
     critic_iterations: int = 16
     critic_max_iterations: int = 64
     critic_value_transform: Literal["linear", "softplus"] = "linear"
@@ -109,10 +111,14 @@ class ZhangTrainCfg:
             raise ValueError("critic_value_transform must be linear or softplus")
         if self.algorithm == "bptt" and self.critic_value_transform != "linear":
             raise ValueError("A non-linear critic_value_transform requires SHAC or AHAC")
+        if not math.isfinite(self.failure_terminal_cost) or self.failure_terminal_cost < 0:
+            raise ValueError("failure_terminal_cost must be finite and nonnegative")
+        if self.failure_terminal_cost and self.algorithm == "bptt":
+            raise ValueError("failure_terminal_cost requires SHAC or AHAC")
+        if not math.isfinite(self.critic_target_tau) or not 0 < self.critic_target_tau <= 1:
+            raise ValueError("critic_target_tau must be in (0, 1]")
         if self.algorithm != "bptt" and self.variant != "dcol":
             raise ValueError("The SHAC/AHAC comparisons require the dcol configuration")
-        if self.algorithm != "bptt" and self.gradient_diagnostic_updates:
-            raise ValueError("Seven-term gradient diagnostics currently require the unbootstrapped BPTT objective")
         if self.lr_schedule not in ("cosine", "plateau", "constant"):
             raise ValueError("lr_schedule must be cosine, plateau, or constant")
         if any(type(value) is not bool for value in (self.observation_normalization, self.recovery_enabled)):

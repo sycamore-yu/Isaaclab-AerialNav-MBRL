@@ -1,6 +1,9 @@
 """Repeated upstream PPO updates must retain optimizer and logger state."""
 
+from importlib.metadata import version
+
 import torch
+from isaaclab_rl.rsl_rl.utils import handle_deprecated_rsl_rl_cfg
 from tensordict import TensorDict
 
 from isaaclab_navrl.agents.continuous_runner import ContinuousNavRLRunner
@@ -32,7 +35,7 @@ class VectorEnv:
 def test_two_upstream_updates_keep_parameters_optimizer_and_writer(tmp_path):
     torch.set_num_threads(1)
     env = VectorEnv()
-    cfg = NavRLPpoRunnerCfg().to_dict()
+    cfg = handle_deprecated_rsl_rl_cfg(NavRLPpoRunnerCfg(), version("rsl-rl-lib")).to_dict()
     cfg["num_steps_per_env"] = 2
     cfg["algorithm"].update(num_mini_batches=1, num_learning_epochs=1)
     runner = ContinuousNavRLRunner(env, cfg, str(tmp_path), "cpu")

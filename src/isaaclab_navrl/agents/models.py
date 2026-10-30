@@ -11,6 +11,7 @@ import copy
 import torch
 from rsl_rl.models import MLPModel
 from rsl_rl.modules.distribution import BetaDistribution
+from rsl_rl.utils import resolve_class
 from torch import nn
 
 
@@ -62,7 +63,7 @@ class BetaHeads(nn.Module):
 class NavRLActor(MLPModel):
     """Beta velocity policy owning the complete shared feature extractor."""
 
-    def __init__(self, obs, obs_groups, obs_set, output_dim):
+    def __init__(self, obs, obs_groups, obs_set, output_dim, distribution_cfg):
         nn.Module.__init__(self)
         self.obs_groups, self.obs_dim = self._get_obs_dim(obs, obs_groups, obs_set)
         if self.obs_groups != ["policy"] or self.obs_dim != 202 or output_dim != 3:
@@ -73,7 +74,12 @@ class NavRLActor(MLPModel):
         # share_cnn_encoders=True. This object includes all shared feature layers.
         self.cnns = NavRLEncoder()
         self.mlp = BetaHeads()
-        self.distribution = BetaDistribution(3, action_range=(-2.0, 2.0))
+        distribution_type, distribution_args = resolve_class(distribution_cfg)
+        if distribution_type is not BetaDistribution:
+            raise ValueError("NavRL's two heads require a BetaDistribution")
+        if tuple(distribution_args.get("action_range", ())) != (-2.0, 2.0):
+            raise ValueError("NavRL training and exports require the fixed [-2, 2] action range")
+        self.distribution = distribution_type(3, **distribution_args)
 
     def get_latent(self, obs, masks=None, hidden_state=None):
         return self.cnns(obs["policy"])
@@ -88,11 +94,13 @@ class NavRLActor(MLPModel):
 class NavRLCritic(MLPModel):
     """Value head using actor-owned features without duplicate optimizer entries."""
 
-    def __init__(self, obs, obs_groups, obs_set, output_dim, cnns):
+    def __init__(self, obs, obs_groups, obs_set, output_dim, cnns, distribution_cfg=None):
         nn.Module.__init__(self)
         self.obs_groups, self.obs_dim = self._get_obs_dim(obs, obs_groups, obs_set)
         if self.obs_groups != ["policy"] or self.obs_dim != 202 or output_dim != 1:
             raise ValueError("NavRL critic expects policy[202] observations and one value.")
+        if distribution_cfg is not None:
+            raise ValueError("NavRL critic is deterministic")
         if not isinstance(cnns, NavRLEncoder):
             raise TypeError("NavRL actor and critic must share one complete NavRLEncoder.")
         self.obs_normalization = False

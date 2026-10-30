@@ -2,7 +2,6 @@
 
 import ast
 import subprocess
-from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -11,12 +10,13 @@ import warp as wp
 from isaaclab.sensors.ray_caster import patterns
 from isaaclab.sensors.ray_caster.kernels import update_ray_caster_kernel
 from isaaclab.utils.math import quat_apply_yaw, quat_from_euler_xyz
+from reference_repo import NAVRL
 
 from isaaclab_navrl.tasks.navigation.lidar_kernels import rotate_directions_with_yaw
 
 
 def test_bpearl_angles_and_flattening_match_original():
-    root = Path(__file__).resolve().parents[2] / "NavRL"
+    root = NAVRL
     path = "isaac-training/third_party/orbit/source/extensions/omni.isaac.orbit/omni/isaac/orbit/sensors/ray_caster/patterns/patterns.py"
     source = subprocess.check_output(["git", "show", f"HEAD:{path}"], cwd=root, text=True)
     original = next(node for node in ast.parse(source).body

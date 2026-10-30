@@ -1,3 +1,5 @@
+# ruff: noqa: E402
+# Parse launcher arguments before importing the simulation implementation.
 """Closed-loop PhysX comparison of two ways to apply NavRL rotor forces.
 
 Use the installed Isaac Lab 3.0 + Isaac Sim 6.2 runtime:
@@ -39,18 +41,16 @@ add_launcher_args(parser)
 parser.set_defaults(visualizer=["none"])
 cli = parser.parse_args()
 
+import isaaclab.sim as sim_utils
 import numpy as np
 import torch
 import warp as wp
 import yaml
-
 from isaaclab.physics import PhysicsCfg
 from isaaclab.utils import instantiate
-from isaaclab_physx.sim.schemas import PhysxArticulationCfg, PhysxRigidBodyCfg
-
-import isaaclab.sim as sim_utils
 from isaaclab_contrib.actuators import ThrusterCfg
 from isaaclab_contrib.assets import MultirotorCfg
+from isaaclab_physx.sim.schemas import PhysxArticulationCfg, PhysxRigidBodyCfg
 from test_thruster_parity import load_legacy_rotor_group
 
 NAVRL = Path(__file__).resolve().parents[2] / "NavRL"

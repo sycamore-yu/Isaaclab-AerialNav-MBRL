@@ -60,7 +60,7 @@ def test_external_training_source_is_used_in_child_command(tmp_path):
 
 def test_ready_tracks_latest_stage_and_rejects_partial_or_initial_result(tmp_path):
     job = {"output": str(tmp_path), "method": "zhang"}
-    save = QUEUE["atomic_json"]
+    save = QUEUE["write_json"]
     parent = {"status": "running", "methods": {"zhang": {"stages": [
         {"status": "completed", "stage": "pretrain_s0"},
         {"status": "running", "stage": "pretrain_s1"},
@@ -122,8 +122,8 @@ def test_main_matrix_preserves_requested_controls_and_twenty_hz_priority(tmp_pat
 
 
 @pytest.mark.parametrize("dirty,branch,head", [(True, "main", "pinned"),
-                                              (False, "feature", "pinned"), (False, "main", "changed")])
-def test_queue_rejects_dirty_wrong_branch_or_changed_source(monkeypatch, dirty, branch, head):
+                                              (False, "main", "changed")])
+def test_queue_rejects_dirty_or_changed_source(monkeypatch, dirty, branch, head):
     def git(args, **kwargs):
         return {"rev-parse": head, "status": " M changed.py" if dirty else "", "branch": branch}[args[1]]
     monkeypatch.setattr(QUEUE["subprocess"], "check_output", git)
@@ -175,3 +175,10 @@ def test_twenty_hz_successor_plan_preserves_baseline_and_five_new_controls(tmp_p
         assert values['height_loss_mode'] == ('navrl_range' if name == 'navrl_height' else 'target_exp')
         assert values['coef_height_boundary'] == 1
         assert values['velocity_loss_mode'] == ('per_step' if name in ('shac', 'ahac') else 'full_window')
+
+
+def test_queue_accepts_clean_pinned_feature_branch(monkeypatch):
+    monkeypatch.setattr(QUEUE["subprocess"], "check_output", lambda args, **kw: {
+        "rev-parse": "pinned", "status": "", "branch": "feature",
+    }[args[1]])
+    QUEUE["check_source"](ROOT, "pinned")

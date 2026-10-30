@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from importlib.metadata import version
 from types import SimpleNamespace
 
 import torch
+from isaaclab_rl.rsl_rl.utils import handle_deprecated_rsl_rl_cfg
 from rsl_rl.algorithms import PPO
 from tensordict import TensorDict
 
@@ -19,7 +21,7 @@ def convert_original_state_dict(original: dict[str, torch.Tensor]) -> dict:
     marked non-fresh and are never loaded by the formal training entry point.
     """
     obs = TensorDict({"policy": torch.zeros(1, 202)}, batch_size=[1])
-    cfg = NavRLPpoRunnerCfg().to_dict()
+    cfg = handle_deprecated_rsl_rl_cfg(NavRLPpoRunnerCfg(), version("rsl-rl-lib")).to_dict()
     cfg["multi_gpu"] = None
     algorithm = PPO.construct_algorithm(obs, SimpleNamespace(num_envs=1, num_actions=3), cfg, "cpu")
     actor_state = {}
