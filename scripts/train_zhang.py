@@ -10,7 +10,7 @@ from isaaclab.app import add_launcher_args, launch_simulation
 
 from isaaclab_navrl.source import verify_training_import
 from isaaclab_navrl.training import STAGE_CONFIG, STAGES, graceful_training_stop, write_json
-from isaaclab_navrl.zhang.cli import add_train_args
+from isaaclab_navrl.zhang.cli import add_train_args, parse_train_args
 
 
 def main():
@@ -35,6 +35,15 @@ def main():
     add_launcher_args(parser)
     parser.set_defaults(visualizer=["none"])
     args = parser.parse_args()
+    overrides = {
+        key: getattr(args, key)
+        for key in ("num_dynamic_obstacles", "target_speed_min", "target_speed_max")
+        if getattr(args, key) is not None
+    }
+    try:
+        parse_train_args([token for key, value in overrides.items() for token in ("--" + key, str(value))])
+    except ValueError as exc:
+        parser.error(str(exc))
     if args.velocity_loss_mode is None:
         args.velocity_loss_mode = "per_step" if args.algorithm in ("shac", "ahac") else "full_window"
     if args.num_envs < 1 or (args.max_iterations is not None and args.max_iterations < 1):
@@ -67,7 +76,9 @@ def main():
     from isaaclab_navrl.zhang.config import ZhangTrainCfg
     from isaaclab_navrl.zhang.runner import ZhangTrainer
 
-    stage = STAGE_CONFIG[args.stage]
+    stage = STAGE_CONFIG[args.stage].copy()
+    if args.num_dynamic_obstacles is not None:
+        stage["dynamic_obstacles"] = args.num_dynamic_obstacles
     cfg = ZhangNavRLEnvCfg()
     cfg.variant = args.variant
     cfg.timing = args.timing
@@ -79,6 +90,9 @@ def main():
     cfg.num_static_obstacles = stage["static_obstacles"]
     cfg.num_dynamic_obstacles = stage["dynamic_obstacles"]
     cfg.training_stage = args.stage
+    cfg.training_stage_config = stage
+    if args.target_speed_min is not None:
+        cfg.target_speed_range = (args.target_speed_min, args.target_speed_max)
     cfg.training_curriculum = True
     cfg.sim_to_real.enabled = stage["randomization"]
     cfg.sim.device = args.device
@@ -120,6 +134,9 @@ def main():
                 "variant": args.variant,
                 "drone_collision_response": args.variant != "continuous",
                 "height_target_range": list(cfg.height_target_range),
+                "target_speed_range": [args.target_speed_min, args.target_speed_max]
+                if args.target_speed_min is not None
+                else [2.25, 9.75],
                 "height_target_source": "current_episode_navigation_goal_z",
                 "capture_terminal_observation": cfg.capture_terminal_observation,
                 "dynamic_obstacle_collision_response": False,

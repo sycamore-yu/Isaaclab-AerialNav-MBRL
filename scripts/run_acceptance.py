@@ -98,6 +98,7 @@ def validate_stage_result(
     velocity_loss_mode: str | None = None,
     screening: bool = False,
     fresh_start_stage: str = "pretrain_s0",
+    num_dynamic_obstacles: int | None = None,
 ) -> list[str]:
     """Validate one real training report against the fixed acceptance protocol."""
     errors = []
@@ -108,7 +109,9 @@ def validate_stage_result(
 
     if velocity_loss_mode is None:
         velocity_loss_mode = "per_step" if algorithm in ("shac", "ahac") else "full_window"
-    expected = STAGE_CONFIG[stage]
+    expected = STAGE_CONFIG[stage].copy()
+    if num_dynamic_obstacles is not None:
+        expected["dynamic_obstacles"] = num_dynamic_obstacles
     expect(result.get("method") == method, "method does not match the launched trainer")
     if method == "zhang":
         expect(result.get("variant") == variant, "Zhang variant does not match the launched experiment")
@@ -351,6 +354,7 @@ def run_pipeline(args: argparse.Namespace, train_args: dict[str, TrainArgValue])
                         velocity_loss_mode=train_args.get("velocity_loss_mode"),
                         screening=screening,
                         fresh_start_stage=start_stage,
+                        num_dynamic_obstacles=train_args.get("num_dynamic_obstacles"),
                     )
                 checkpoint = log_dir / "checkpoint_stage.pt"
                 if not checkpoint.is_file():
@@ -426,6 +430,9 @@ def main() -> int:
         train_args = parse_train_args(args.train_args)
     except ValueError as exc:
         parser.error(str(exc))
+    if any(key in train_args for key in ("num_dynamic_obstacles", "target_speed_min", "target_speed_max")):
+        if not (args.screening and args.fixed_stage and args.method == "zhang"):
+            parser.error("Scene overrides require fixed-stage Zhang screening")
     if args.method == "navrl" and train_args:
         parser.error("--train_args contains Zhang hyperparameters; use --method zhang or both")
     if Path(args.output).expanduser().exists():

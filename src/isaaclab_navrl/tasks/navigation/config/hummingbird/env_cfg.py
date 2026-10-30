@@ -126,6 +126,7 @@ class NavRLEnvCfg(DirectRLEnvCfg):
     depth_camera_batch_size: int = 16
     training_curriculum: bool = True
     training_stage: str | None = None
+    training_stage_config: dict | None = None
     training_report_episodes: int | None = None
     sim_to_real: SimToRealCfg = SimToRealCfg()
     events = NavigationEventsCfg()
@@ -248,6 +249,7 @@ class ZhangNavRLEnvCfg(NavRLEnvCfg):
     capture_terminal_observation: bool = False
     depth_camera_batch_size: int = 64
     height_target_range: tuple[float, float] = (0.5, 2.5)
+    target_speed_range: tuple[float, float] | None = None
     decimation = 10
     events = ZhangEventsCfg()
 
@@ -268,6 +270,8 @@ class ZhangNavRLEnvCfg(NavRLEnvCfg):
         if not 0.2 < low < high < 4.0:
             raise ValueError("Zhang height_target_range must lie strictly within (0.2, 4.0) metres")
         super().configure_scene()
+        if self.target_speed_range is not None:
+            self.events.parameters.params["target_speed_range"] = self.target_speed_range
         period = self.sim.dt * self.decimation
         self.events.disturbance.interval_range_s = (period, period)
         self.events.disturbance.params["interval_s"] = period

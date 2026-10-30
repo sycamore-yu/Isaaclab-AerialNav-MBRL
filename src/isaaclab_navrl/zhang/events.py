@@ -6,7 +6,7 @@ import torch
 
 
 @torch.no_grad()
-def randomize_zhang_parameters(env, env_ids, body_radius=0.3):
+def randomize_zhang_parameters(env, env_ids, body_radius=0.3, target_speed_range=None):
     """Resample reset drones without changing the NavRL world distribution.
 
     body_radius is measured from the collision geometry by the task. Training
@@ -49,7 +49,13 @@ def randomize_zhang_parameters(env, env_ids, body_radius=0.3):
         return torch.randn(count, *shape, device=env.device, generator=generator)
 
     parameters = env.zhang_parameters
-    parameters["max_speed"][env_ids] = (0.75 + 2.5 * uniform(1)) * 3
+    if target_speed_range is None:
+        parameters["max_speed"][env_ids] = (0.75 + 2.5 * uniform(1)) * 3
+    else:
+        low, high = target_speed_range
+        if not (math.isfinite(low) and math.isfinite(high) and 0 < low < high):
+            raise ValueError("target speed range must be finite with 0 < min < max")
+        parameters["max_speed"][env_ids] = low + (high - low) * uniform(1)
     parameters["z_drag_coef"][env_ids] = 1
     if env.cfg.evaluation or env.cfg.training_stage is not None:
         parameters["margin"][env_ids] = body_radius

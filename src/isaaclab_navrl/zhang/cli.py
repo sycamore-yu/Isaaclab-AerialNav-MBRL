@@ -37,6 +37,9 @@ TRAIN_ARG_CHOICES["velocity_loss_mode"] = get_args(get_args(ZhangTrainCfg.__anno
 TRAIN_ARG_CHOICES["timing"] = ("baseline", "unified_20hz", "unified_50hz")
 TRAIN_ARG_TYPES = {
     "timing": str,
+    "num_dynamic_obstacles": int,
+    "target_speed_min": float,
+    "target_speed_max": float,
     "variant": str,
     "algorithm": str,
     "lr_schedule": str,
@@ -133,6 +136,7 @@ def parse_train_args(tokens: list[str]) -> dict[str, TrainArgValue]:
             "plateau_patience",
             "failure_terminal_cost",
             "lateral_avoidance",
+            "num_dynamic_obstacles",
         ):
             if value < 0:
                 raise ValueError(f"{option} must be nonnegative")
@@ -160,6 +164,9 @@ def parse_train_args(tokens: list[str]) -> dict[str, TrainArgValue]:
         raise ValueError("AHAC requires 2 <= min <= initial <= max horizon")
     if not 0.2 < values.get("height_target_min", 0.5) < values.get("height_target_max", 2.5) < 4.0:
         raise ValueError("height target range must be increasing and inside (0.2, 4.0) metres")
+    low, high = values.get("target_speed_min"), values.get("target_speed_max")
+    if (low is None) != (high is None) or (low is not None and not 0 < low < high):
+        raise ValueError("target speed requires both bounds with 0 < min < max")
     return values
 
 
@@ -168,6 +175,9 @@ def add_train_args(parser):
     defaults = asdict(ZhangTrainCfg())
     defaults.update(
         timing="unified_20hz",
+        num_dynamic_obstacles=None,
+        target_speed_min=None,
+        target_speed_max=None,
         camera_batch_size=64,
         lr=None,
         velocity_loss_mode=None,

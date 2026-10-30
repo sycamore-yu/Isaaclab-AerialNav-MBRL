@@ -178,6 +178,9 @@ def launched_zhang_manifest(jobs, plan):
         "plateau_patience",
         "ahac_max_horizon",
         "timing",
+        "num_dynamic_obstacles",
+        "target_speed_min",
+        "target_speed_max",
     )
     for job in jobs.values():
         if job["method"] != "zhang" or job.get("pid") is None:

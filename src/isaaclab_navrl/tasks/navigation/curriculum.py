@@ -32,10 +32,13 @@ class TrainingCurriculum:
     threshold = 0.8
     labels = ("success", "collision", "bounds", "invalid", "timeout")
 
-    def __init__(self, num_envs: int, device: str, stage: str | None = None):
+    def __init__(self, num_envs: int, device: str, stage: str | None = None, *, stage_config=None):
         if stage is not None and stage not in STAGE_CONFIG:
             raise ValueError(f"Unknown training stage: {stage}")
         self.stage_name = stage
+        self.stage_config = (STAGE_CONFIG[stage] if stage_config is None else stage_config).copy() if stage else None
+        if self.stage_config is not None and self.stage_config["dynamic_obstacles"] < 0:
+            raise ValueError("dynamic obstacle count must be nonnegative")
         self.stage_passed = False
         self.min_episodes = num_envs
         self.stage_index = 0
@@ -52,7 +55,7 @@ class TrainingCurriculum:
 
     @property
     def active_obstacles(self) -> int:
-        return STAGE_CONFIG[self.stage_name]["dynamic_obstacles"] if self.stage_name else self.stages[self.stage_index]
+        return self.stage_config["dynamic_obstacles"] if self.stage_name else self.stages[self.stage_index]
 
     @property
     def stage_key(self):
@@ -106,7 +109,7 @@ class TrainingCurriculum:
             "reward_per_step_mean": float(self.return_sum / self.length_sum),
         }
         if self.stage_name:
-            report.update(stage=self.stage_name, **STAGE_CONFIG[self.stage_name])
+            report.update(stage=self.stage_name, **self.stage_config)
         previous = self.best_by_stage.get(self.stage_key)
         report["new_best"] = previous is None or report["success_rate"] > previous["success_rate"]
         if report["new_best"]:
@@ -147,7 +150,7 @@ class TrainingCurriculum:
             "active_dynamic_obstacles": self.active_obstacles,
             "stage": self.stage_name,
             "stage_passed": self.stage_passed,
-            "stage_config": STAGE_CONFIG[self.stage_name] if self.stage_name else None,
+            "stage_config": self.stage_config if self.stage_name else None,
             "promotion_success_rate": self.threshold,
             "episodes_per_report_min": self.min_episodes,
             "acceptance_passed": self.acceptance_passed,

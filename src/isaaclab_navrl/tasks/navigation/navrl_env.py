@@ -29,7 +29,12 @@ class NavRLEnv(DirectRLEnv):
         self.lidar = self.scene["lidar"]
         self.controller = LeeRotorController(self.num_envs, self.device, dt=self.physics_dt)
         self.curriculum = (
-            TrainingCurriculum(self.num_envs, self.device, stage=cfg.training_stage)
+            TrainingCurriculum(
+                self.num_envs,
+                self.device,
+                stage=cfg.training_stage,
+                stage_config=getattr(cfg, "training_stage_config", None),
+            )
             if cfg.training_curriculum
             else None
         )
