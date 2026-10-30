@@ -247,6 +247,7 @@ def main():
         cfg.configure_scene()
         assert cfg.scene.drone.spawn.collision_props.collision_enabled is False
         cfg.variant = args.variant
+    cfg.sim_to_real.action_delay_range_s = (0, 2 * cfg.sim.dt * cfg.decimation)
     cfg.configure_scene()
     if args.method == "zhang" and args.variant != "continuous":
         assert cfg.scene.drone.spawn.collision_props is None

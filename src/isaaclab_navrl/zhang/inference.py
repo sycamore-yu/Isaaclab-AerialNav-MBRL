@@ -2,6 +2,8 @@
 
 import torch
 
+from isaaclab_navrl.tasks.navigation.depth_history import OBSERVATION_CONTRACT
+
 from .config import ZhangTrainCfg
 from .model import ZhangPolicy, decode_action, policy_state
 from .normalization import PolicyObservationNormalizer
@@ -12,6 +14,12 @@ class ZhangInference:
         payload = torch.load(checkpoint, map_location=env.device, weights_only=True)
         if payload["method"] != "zhang" or payload["format_version"] not in (2, 3):
             raise ValueError("Not a supported Zhang checkpoint")
+        if (
+            env.cfg.sim_to_real.enabled
+            and env.cfg.sim_to_real.input_delay
+            and payload.get("environment", {}).get("observation_contract") != OBSERVATION_CONTRACT
+        ):
+            raise ValueError("Observation timing changed; evaluate the old delayed-input policy with its frozen source")
         self.cfg = ZhangTrainCfg(**payload["train_cfg"])
         self.cfg.validate()
         self.env = env
@@ -38,14 +46,6 @@ class ZhangInference:
             observation["policy_velocity"],
             observation["policy_quaternion"],
             observation["policy_target"],
-            parameters["max_speed"],
-            parameters["margin"],
-        )
-        _, heading, _, _ = policy_state(
-            observation["position"],
-            observation["velocity"],
-            observation["quaternion"],
-            observation["target"],
             parameters["max_speed"],
             parameters["margin"],
         )

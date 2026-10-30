@@ -5,12 +5,19 @@ from __future__ import annotations
 import numpy as np
 import torch
 from isaaclab.envs import DirectRLEnv
-from isaaclab.utils.math import quat_apply, quat_from_euler_xyz
+from isaaclab.utils.math import (
+    convert_camera_frame_orientation_convention,
+    matrix_from_quat,
+    quat_apply,
+    quat_from_euler_xyz,
+    quat_mul,
+)
 
 from isaaclab_navrl.control import LeeRotorController
 from isaaclab_navrl.zhang.termination import latch_first_event, reset_first_event, termination_mask
 
 from .curriculum import TrainingCurriculum, active_obstacle_indices
+from .depth_history import compensated_depth_features, reproject_depth
 from .geometry import TerrainDistance, nearest_obstacle_signed_distance
 from .randomization import PolicyPerturbation
 from .task_logic import DynamicObstacleMotion, goal_frame, navigation_terms
@@ -47,6 +54,7 @@ class NavRLEnv(DirectRLEnv):
             self.num_envs,
             self.device,
             cfg.seed,
+            policy_dt=self.step_dt,
             nominal_action_delay=1 if cfg.method == "zhang" else 0,
         )
         self.mass_scale = torch.ones(self.num_envs, 1, device=self.device)
@@ -331,14 +339,53 @@ class NavRLEnv(DirectRLEnv):
 
     def get_zhang_observation(self):
         state = self.root_state()
-        features = self.scene["depth_camera"].data.output["policy_depth"].torch
+        camera = self.scene["depth_camera"]
+        features = camera.data.output["policy_depth"].torch
         depth = features.permute(0, 3, 1, 2).clone()
+        measured_depth = camera.data.output["distance_to_image_plane"].torch.permute(0, 3, 1, 2)
 
         def sample():
             position, velocity, quaternion = self.perturbation.state(state[:, :3], state[:, 7:10], state[:, 3:7])
-            return torch.cat((position, velocity, quaternion, self.target_pos, depth.flatten(1)), dim=-1)
+            return torch.cat(
+                (position, velocity, quaternion, self.target_pos, depth.flatten(1), measured_depth.flatten(1)), dim=-1
+            )
 
         policy = self.perturbation.observe(self.common_step_counter, sample)
+        # The fast odometry channel models an onboard state estimate, with the
+        # configured measurement noise; only the delivered depth frame is delayed.
+        current = self.perturbation.latest_observation
+        age = self.perturbation.observation_age_s
+        policy_depth = policy[:, 13:205].reshape(self.num_envs, 1, 12, 16)
+        known_fraction = age.new_ones(self.num_envs)
+        if self.cfg.sim_to_real.enabled and self.cfg.sim_to_real.input_delay:
+            # Use calibrated nominal mounting; hidden pitch perturbations remain
+            # calibration error instead of becoming privileged actor information.
+            offset = camera.cfg.offset
+            offset_q = convert_camera_frame_orientation_convention(
+                state.new_tensor(offset.rot).expand(self.num_envs, -1), origin=offset.convention, target="ros"
+            )
+            offset_p = state.new_tensor(offset.pos).expand(self.num_envs, -1)
+
+            def camera_pose(estimate):
+                quaternion = estimate[:, 6:10]
+                return matrix_from_quat(quat_mul(quaternion, offset_q)), estimate[:, :3] + quat_apply(
+                    quaternion, offset_p
+                )
+
+            source_rotation, source_position = camera_pose(policy)
+            target_rotation, target_position = camera_pose(current)
+            warped, known = reproject_depth(
+                policy[:, 205:].reshape_as(measured_depth),
+                camera.data.intrinsic_matrices.torch,
+                source_rotation,
+                source_position,
+                target_rotation,
+                target_position,
+            )
+            policy_depth = torch.where(
+                (age > 0)[:, None, None, None], compensated_depth_features(warped, known), policy_depth
+            )
+            known_fraction = torch.where(age > 0, known.float().mean((1, 2, 3)), known_fraction)
         return {
             "depth_features": depth,
             "position": state[:, :3],
@@ -348,11 +395,13 @@ class NavRLEnv(DirectRLEnv):
             "episode_id": self.episode_id.clone(),
             "height_target": self.target_pos[:, 2].clone(),
             "height_range": self.height_range.clone(),
-            "policy_position": policy[:, :3],
-            "policy_velocity": policy[:, 3:6],
-            "policy_quaternion": policy[:, 6:10],
-            "policy_target": policy[:, 10:13],
-            "policy_depth_features": policy[:, 13:].reshape(self.num_envs, 1, 12, 16),
+            "policy_position": current[:, :3],
+            "policy_velocity": current[:, 3:6],
+            "policy_quaternion": current[:, 6:10],
+            "policy_target": current[:, 10:13],
+            "policy_depth_features": policy_depth,
+            "depth_age_s": age.clone(),
+            "depth_known_fraction": known_fraction,
             "input_delay_steps": self.perturbation.observation_buffer.time_lags.clone(),
         }
 

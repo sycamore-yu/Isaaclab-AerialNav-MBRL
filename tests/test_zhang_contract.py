@@ -681,7 +681,9 @@ class AnalyticEnv:
             variant="step",
             height_target_range=(0.5, 2.5),
         )
-        self.perturbation = PolicyPerturbation(self.cfg.sim_to_real, 2, "cpu", 7, nominal_action_delay=1)
+        self.perturbation = PolicyPerturbation(
+            self.cfg.sim_to_real, 2, "cpu", 7, policy_dt=self.step_dt, nominal_action_delay=1
+        )
         self.zhang_parameters = nominal_parameters(2)
         self.position = torch.zeros(2, 3)
         self.velocity = torch.zeros(2, 3)
@@ -721,6 +723,8 @@ class AnalyticEnv:
             }
         )
         observation["input_delay_steps"] = torch.zeros(2, dtype=torch.long)
+        observation["depth_age_s"] = torch.zeros(2)
+        observation["depth_known_fraction"] = torch.ones(2)
         return observation
 
     def nearest_obstacle_signed_distance(self, query):
@@ -785,6 +789,17 @@ def test_two_bptt_updates_survive_resets_and_save_independent_inference(tmp_path
     env.episode_id[0] += 1
     after_reset = policy()
     assert torch.isfinite(after_reset).all()
+    # Old weights still support clean evaluation, but must not silently change
+    # delayed-input semantics when training or evaluating an old experiment.
+    del saved["environment"]["observation_contract"]
+    legacy = tmp_path / "legacy.pt"
+    torch.save(saved, legacy)
+    assert torch.isfinite(load_zhang_policy(env, legacy)()).all()
+    with pytest.raises(ValueError, match="Observation timing changed"):
+        trainer.load_stage_checkpoint(legacy)
+    env.cfg.sim_to_real.enabled = True
+    with pytest.raises(ValueError, match="Observation timing changed"):
+        load_zhang_policy(env, legacy)
 
 
 def test_stage_handoff_preserves_weights_optimizer_and_counts_actual_transitions(tmp_path):

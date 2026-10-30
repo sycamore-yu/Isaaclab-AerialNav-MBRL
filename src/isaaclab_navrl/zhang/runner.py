@@ -11,6 +11,7 @@ from pathlib import Path
 import torch
 from torch.utils.tensorboard import SummaryWriter
 
+from isaaclab_navrl.tasks.navigation.depth_history import OBSERVATION_CONTRACT
 from isaaclab_navrl.tasks.navigation.randomization import DifferentiableDelay
 from isaaclab_navrl.training import (
     STAGE_CONFIG,
@@ -63,6 +64,8 @@ def rollout_diagnostics(history):
         "terminal_bound_recovered_count": int((bounds & ~low & ~high).sum()),
         "surrogate_velocity_error_mps": float(delta.norm(dim=-1).mean()),
         "surrogate_vertical_velocity_bias_mps": float(delta[..., 2].mean()),
+        "depth_age_s": float(torch.stack(history["depth_age_s"]).mean()),
+        "depth_known_fraction": float(torch.stack(history["depth_known_fraction"]).mean()),
     }
 
 
@@ -227,6 +230,8 @@ class ZhangTrainer:
         payload = torch.load(path, map_location=self.env.device, weights_only=True)
         if payload["format_version"] != 3 or payload["method"] != "zhang":
             raise ValueError("Stage transitions require this experiment's Zhang checkpoint")
+        if payload["environment"].get("observation_contract") != OBSERVATION_CONTRACT:
+            raise ValueError("Observation timing changed; resume the old experiment with its frozen source")
         # Version-3 persisted configs predate optional failure-cost and target-rate fields.
         saved_config = asdict(type(self.cfg)(**payload["train_cfg"]))
         allowed_stage_changes = {"lr", "max_iterations", "stop_after_acceptance", "gradient_diagnostic_updates"}
@@ -303,6 +308,7 @@ class ZhangTrainer:
                 "training_stage": self.env.cfg.training_stage,
                 "variant": self.cfg.variant,
                 "sim_to_real": asdict(self.env.cfg.sim_to_real),
+                "observation_contract": OBSERVATION_CONTRACT,
             },
             "torch_rng_state": torch.get_rng_state(),
             "curriculum": self.env.curriculum.state_dict() if self.env.curriculum is not None else None,
@@ -327,6 +333,7 @@ class ZhangTrainer:
             or payload["environment"]["training_stage"] != self.env.cfg.training_stage
             or payload["environment"]["dynamic_obstacles"] != self.env.cfg.num_dynamic_obstacles
             or payload["train_cfg"] != asdict(self.cfg)
+            or payload["environment"].get("observation_contract") != OBSERVATION_CONTRACT
         ):
             raise ValueError("Stable recovery requires the exact same run, stage and configuration")
         current_lrs = [group["lr"] for group in self.optimizer.param_groups]
@@ -590,12 +597,12 @@ class ZhangTrainer:
                         parameters["max_speed"],
                         parameters["margin"],
                     )
-                    delayed_state = observation_history.push(
+                    observation_history.push(
                         torch.cat((state.position, state.velocity), dim=-1), observation["input_delay_steps"]
                     )
-                    features, _, _, _ = policy_state(
-                        align_state(delayed_state[:, :3], observation["policy_position"]),
-                        align_state(delayed_state[:, 3:], observation["policy_velocity"]),
+                    features, policy_heading, _, _ = policy_state(
+                        align_state(state.position, observation["policy_position"]),
+                        align_state(state.velocity, observation["policy_velocity"]),
                         observation["policy_quaternion"],
                         observation["policy_target"],
                         parameters["max_speed"],
@@ -651,7 +658,7 @@ class ZhangTrainer:
                                 "depth": normalized_depth,
                                 "features": normalized_features,
                                 "hidden": hidden,
-                                "heading": heading,
+                                "heading": policy_heading,
                                 "thrust_error": parameters["thr_est_error"],
                             }.items()
                         }
@@ -661,7 +668,7 @@ class ZhangTrainer:
                             "clearance_m": clearance[probe_ids].tolist(),
                         }
                     output, hidden = self.model.forward_checkpointed(normalized_depth, normalized_features, hidden)
-                    command, velocity_prediction = decode_action(output, heading, parameters["thr_est_error"])
+                    command, velocity_prediction = decode_action(output, policy_heading, parameters["thr_est_error"])
                     # Source main_cuda records p + v * sub_div before env.run, including terminating steps.
                     history["obstacle_signed_distance"].append(obstacle_distance)
                     if self.cfg.variant == "dcol":
@@ -678,6 +685,8 @@ class ZhangTrainer:
                         history["height_range"].append(observation["height_range"].detach().clone())
                     history["velocity_prediction"].append(velocity_prediction)
                     history["observed_velocity"].append(state.velocity.detach())
+                    history["depth_age_s"].append(observation["depth_age_s"])
+                    history["depth_known_fraction"].append(observation["depth_known_fraction"])
                     history["episode_id"].append(observation["episode_id"].clone())
                     history["command"].append(command)
                     history["previous_command"].append(previous_command)

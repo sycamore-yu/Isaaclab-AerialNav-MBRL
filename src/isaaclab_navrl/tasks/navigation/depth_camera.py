@@ -296,7 +296,10 @@ class BatchedDepthCamera(MultiMeshRayCasterCamera):
         self._data.intrinsic_matrices.torch[:, 2, 2] = 1.0
         self._data.image_shape = self.image_shape
         self._data._output = {
-            "policy_depth": ProxyArray(wp.zeros((self._num_envs, 12, 16, 1), dtype=wp.float32, device=self._device))
+            "policy_depth": ProxyArray(wp.zeros((self._num_envs, 12, 16, 1), dtype=wp.float32, device=self._device)),
+            "distance_to_image_plane": ProxyArray(
+                wp.zeros((self._num_envs, *self.image_shape, 1), dtype=wp.float32, device=self._device)
+            ),
         }
         self._data.info = {"policy_depth": {"source_image_shape": self.image_shape}}
         self._compute_intrinsic_matrices()
@@ -488,4 +491,8 @@ class BatchedDepthCamera(MultiMeshRayCasterCamera):
                 features = depth_features(depth, noise).permute(0, 2, 3, 1)
                 current = self._data.output["policy_depth"].torch[begin:end]
                 current.copy_(torch.where(wp.to_torch(mask)[:, None, None, None], features, current))
+                # The history receives a depth measurement, including configured pixel noise.
+                measured = depth if noise is None else 3 / (3 / depth.clamp(0.3, 24) + noise).clamp_min(1e-6)
+                raw = self._data.output["distance_to_image_plane"].torch[begin:end]
+                raw.copy_(torch.where(wp.to_torch(mask)[:, None, None, None], measured.permute(0, 2, 3, 1), raw))
                 self.last_depth_batch = (begin, end, depth)

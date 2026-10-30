@@ -73,6 +73,7 @@ def main():
 
     import isaaclab_navrl.tasks  # noqa: F401
     from isaaclab_navrl.tasks.navigation.config.hummingbird.env_cfg import ZhangNavRLEnvCfg
+    from isaaclab_navrl.tasks.navigation.depth_history import OBSERVATION_CONTRACT
     from isaaclab_navrl.zhang.config import ZhangTrainCfg
     from isaaclab_navrl.zhang.runner import ZhangTrainer
 
@@ -156,6 +157,7 @@ def main():
                     "pixel_noise_std": cfg.scene.depth_camera.pixel_noise_std,
                 },
                 "sim_to_real": asdict(cfg.sim_to_real),
+                "observation_contract": OBSERVATION_CONTRACT,
             },
             "parent_checkpoint": str(args.checkpoint.resolve()) if args.checkpoint else None,
             "fresh": args.checkpoint is None,

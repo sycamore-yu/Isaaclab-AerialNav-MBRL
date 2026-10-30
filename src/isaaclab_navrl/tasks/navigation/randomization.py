@@ -26,8 +26,8 @@ class SimToRealCfg:
     attitude_std_deg: float = 1.0
     lidar_std: float = 0.02
     depth_std: float = 0.02
-    input_delay_range: tuple[int, int] = (0, 5)
-    action_delay_range: tuple[int, int] = (0, 2)
+    input_delay_range_s: tuple[float, float] = (0.0, 0.1)
+    action_delay_range_s: tuple[float, float] = (0.0, 0.05)
     control_gain_range: tuple[float, float] = (0.6, 1.4)
     mass_scale_range: tuple[float, float] = (0.9, 1.1)
     inertia_scale_range: tuple[float, float] = (0.9, 1.1)
@@ -38,16 +38,37 @@ class SimToRealCfg:
 class PolicyPerturbation:
     """Advance official delay buffers once per policy step, never per sensor read."""
 
-    def __init__(self, cfg, num_envs, device, seed, *, nominal_action_delay=0):
+    def __init__(self, cfg, num_envs, device, seed, *, policy_dt, nominal_action_delay=0):
         self.cfg, self.device, self.num_envs = cfg, device, num_envs
+        if not math.isfinite(policy_dt) or policy_dt <= 0:
+            raise ValueError("policy_dt must be finite and positive")
+        self.policy_dt = policy_dt
+        self.input_delay_steps = self._step_range(cfg.input_delay_range_s)
+        self.action_delay_steps = self._step_range(cfg.action_delay_range_s)
         self.nominal_action_delay = nominal_action_delay
         self.generator = torch.Generator(device=device).manual_seed(seed + 3109)
-        self.observation_buffer = DelayBuffer(cfg.input_delay_range[1], num_envs, device)
-        self.action_buffer = DelayBuffer(max(cfg.action_delay_range[1], nominal_action_delay), num_envs, device)
+        self.observation_buffer = DelayBuffer(self.input_delay_steps[1], num_envs, device)
+        self.action_buffer = DelayBuffer(max(self.action_delay_steps[1], nominal_action_delay), num_envs, device)
         self.control_gain_scale = torch.ones(num_envs, 1, device=device)
         self.thrust_scale = torch.ones_like(self.control_gain_scale)
         self._observation_key = None
         self._observation = None
+        self.latest_observation = None
+        self._observation_age_s = torch.zeros(num_envs, device=device)
+
+    def _step_range(self, bounds):
+        low, high = bounds
+        if not all(math.isfinite(x) for x in bounds) or not 0 <= low <= high:
+            raise ValueError("Delay bounds must be finite, nonnegative, and ordered")
+        steps = (math.ceil(low / self.policy_dt - 1e-9), math.floor(high / self.policy_dt + 1e-9))
+        if steps[0] > steps[1]:
+            raise ValueError("Delay range contains no policy-clock tick")
+        return steps
+
+    @property
+    def observation_age_s(self):
+        """Actual age, including the initial buffer fill and local resets."""
+        return self._observation_age_s
 
     @property
     def noisy(self):
@@ -57,8 +78,8 @@ class PolicyPerturbation:
     def reset(self, env_ids):
         ids = torch.as_tensor(env_ids, device=self.device, dtype=torch.long)
         for buffer, active, bounds, nominal in (
-            (self.observation_buffer, self.cfg.input_delay, self.cfg.input_delay_range, 0),
-            (self.action_buffer, self.cfg.action_delay, self.cfg.action_delay_range, self.nominal_action_delay),
+            (self.observation_buffer, self.cfg.input_delay, self.input_delay_steps, 0),
+            (self.action_buffer, self.cfg.action_delay, self.action_delay_steps, self.nominal_action_delay),
         ):
             buffer.reset(ids)
             if self.cfg.enabled and active:
@@ -98,7 +119,11 @@ class PolicyPerturbation:
     @torch.no_grad()
     def observe(self, key, sample):
         if self._observation_key != key:
-            self._observation = self.observation_buffer.compute(sample()).clone()
+            self.latest_observation = sample().clone()
+            tick = self.latest_observation.new_full((self.num_envs, 1), key)
+            delivered = self.observation_buffer.compute(torch.cat((self.latest_observation, tick), dim=-1)).clone()
+            self._observation = delivered[:, :-1]
+            self._observation_age_s = (key - delivered[:, -1]) * self.policy_dt
             self._observation_key = key
         return self._observation
 

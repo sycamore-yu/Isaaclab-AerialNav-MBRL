@@ -47,6 +47,7 @@ def write_training_scalars(writer, metrics, update):
             "target_speed_scale",
         ),
         "Failures": ("terminal_lower_bound_count", "terminal_upper_bound_count"),
+        "Observation": ("depth_age_s", "depth_known_fraction"),
     }
     for group, names in groups.items():
         for name in names:

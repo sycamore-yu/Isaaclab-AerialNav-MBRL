@@ -16,9 +16,9 @@ def _action_delay(num_envs: int, lags: torch.Tensor) -> PolicyPerturbation:
         observation_noise=False,
         input_delay=False,
         action_delay=True,
-        action_delay_range=(0, 2),
+        action_delay_range_s=(0, 0.1),
     )
-    perturbation = PolicyPerturbation(cfg, num_envs, "cpu", seed=417)
+    perturbation = PolicyPerturbation(cfg, num_envs, "cpu", seed=417, policy_dt=0.05)
     perturbation.reset(torch.arange(num_envs))
     perturbation.action_buffer.set_time_lag(lags)
     return perturbation
@@ -26,6 +26,25 @@ def _action_delay(num_envs: int, lags: torch.Tensor) -> PolicyPerturbation:
 
 def _grad_or_zero(gradient: torch.Tensor | None, value: torch.Tensor) -> torch.Tensor:
     return torch.zeros_like(value) if gradient is None else gradient
+
+
+def test_default_latency_in_seconds_and_observation_age_after_local_reset():
+    perturbation = PolicyPerturbation(SimToRealCfg(enabled=True), 256, "cpu", 417, policy_dt=0.05)
+    perturbation.reset(torch.arange(256))
+    assert set(perturbation.observation_buffer.time_lags.tolist()) == {0, 1, 2}
+    assert set(perturbation.action_buffer.time_lags.tolist()) == {0, 1}
+    perturbation.observation_buffer.set_time_lag(2)
+    for step, expected in enumerate((0.0, 0.05, 0.1, 0.1)):
+        delivered = perturbation.observe(step, lambda step=step: torch.full((256, 1), float(step)))
+        torch.testing.assert_close(perturbation.observation_age_s, torch.full((256,), expected))
+        assert delivered[0, 0] == max(0, step - 2)
+        assert perturbation.latest_observation[0, 0] == step
+    perturbation.reset(torch.tensor([0]))
+    perturbation.observation_buffer.set_time_lag(2)
+    delivered = perturbation.observe(4, lambda: torch.full((256, 1), 4.0))
+    assert perturbation.observation_age_s[0] == 0 and delivered[0, 0] == 4
+    torch.testing.assert_close(perturbation.observation_age_s[1:], torch.full((255,), 0.1))
+    assert delivered[1, 0] == 2
 
 
 def test_action_delay_selects_same_commands_and_credits_historical_actions():
@@ -104,9 +123,9 @@ def test_repeated_observation_read_does_not_sample_or_advance_delay():
         observation_noise=False,
         input_delay=True,
         action_delay=False,
-        input_delay_range=(1, 1),
+        input_delay_range_s=(0.05, 0.05),
     )
-    perturbation = PolicyPerturbation(cfg, 2, "cpu", seed=417)
+    perturbation = PolicyPerturbation(cfg, 2, "cpu", seed=417, policy_dt=0.05)
     perturbation.reset(torch.arange(2))
     perturbation.observation_buffer.set_time_lag(1)
     sampled_values = []
@@ -130,7 +149,7 @@ def test_repeated_observation_read_does_not_sample_or_advance_delay():
 @pytest.mark.parametrize("enabled,observation_noise", [(False, True), (True, False)])
 def test_disabled_observation_noise_preserves_input(enabled, observation_noise):
     cfg = SimToRealCfg(enabled=enabled, observation_noise=observation_noise)
-    perturbation = PolicyPerturbation(cfg, 2, "cpu", seed=417)
+    perturbation = PolicyPerturbation(cfg, 2, "cpu", seed=417, policy_dt=0.05)
     position = torch.tensor([[1.0, 2.0, 3.0], [-2.0, 4.0, 0.5]])
     velocity = torch.tensor([[0.1, -0.2, 0.3], [1.0, 2.0, -3.0]])
     quaternion = torch.tensor([[0.0, 0.0, 0.0, 1.0], [0.0, 0.0, 1.0, 0.0]])
@@ -156,7 +175,7 @@ def test_state_noise_has_requested_scale_and_preserves_true_state():
         velocity_std=0.05,
         attitude_std_deg=1.0,
     )
-    perturbation = PolicyPerturbation(cfg, num_envs, "cpu", seed=8642)
+    perturbation = PolicyPerturbation(cfg, num_envs, "cpu", seed=8642, policy_dt=0.05)
     position = torch.full((num_envs, 3), 2.0)
     velocity = torch.full((num_envs, 3), -0.5)
     quaternion = torch.zeros((num_envs, 4))
