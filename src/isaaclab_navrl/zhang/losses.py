@@ -4,6 +4,49 @@ import torch
 from torch.nn import functional as F
 
 
+class VelocityEMA:
+    """Episode-local DiffAero velocity memory with a separate random stream."""
+
+    def __init__(self, zero, seed):
+        self.value = torch.zeros_like(zero)
+        self.generator = torch.Generator(device=zero.device).manual_seed(seed)
+        self.alpha = self._sample(zero.shape[0])
+
+    def _sample(self, count):
+        return 0.08 + 0.04 * torch.rand(count, 1, device=self.value.device, generator=self.generator)
+
+    def update(self, velocity):
+        self.value = torch.lerp(self.value, velocity, self.alpha)
+        return self.value
+
+    def reset(self, done):
+        self.value = torch.where(done[:, None], torch.zeros_like(self.value), self.value)
+        self.alpha = torch.where(done[:, None], self._sample(len(done)), self.alpha)
+
+    def detach(self):
+        self.value = self.value.detach()
+
+
+def relative_avoidance(relative_velocity, normal, clearance):
+    """Outward normals: positive closing means approaching; lateral is XY only."""
+    closing = -(relative_velocity * normal).sum(-1)
+    normal_xy = F.normalize(normal[..., :2], dim=-1)
+    velocity_xy = relative_velocity[..., :2]
+    lateral = (velocity_xy - (velocity_xy * normal_xy).sum(-1, keepdim=True) * normal_xy).norm(dim=-1)
+    # Detach risk so the lateral reward cannot attract the drone toward obstacles.
+    danger = (-clearance.detach().clamp_min(0)).exp()
+    penalty, index = (closing.relu() * danger).max(dim=-1)
+    # Ground/ceiling normals must never produce a horizontal-motion reward.
+    reward = torch.where((closing > 0) & (normal[..., :2].norm(dim=-1) > 1e-6), lateral * danger, 0.0)
+    return closing, penalty - 0.5 * reward.gather(-1, index[..., None]).squeeze(-1)
+
+
+def risk_speed_scale(closing, clearance, max_speed, floor):
+    """Detached risk changes the target, not its gradient through the geometry."""
+    risk = (closing.detach().clamp_min(0) / max_speed.clamp_min(1e-6)) * (-clearance.detach().clamp_min(0)).exp()
+    return 1 - (1 - floor) * risk.amax(dim=-1, keepdim=True).clamp(0, 1)
+
+
 def masked_mean(value, valid):
     valid = valid.to(value.dtype)
     return (value * valid).sum() / valid.sum().clamp_min(1)
@@ -187,8 +230,9 @@ def zhang_transition_costs(history, cfg, velocity_history=None):
     timesteps, num_envs = velocity.shape[:2]
     detached_history = None
     short_samples = velocity.new_zeros(())
-    if cfg.resolved_velocity_loss_mode == "per_step":
-        velocity_cost = velocity_step_loss(velocity, target, reduction="none")
+    if cfg.resolved_velocity_loss_mode in ("per_step", "ema"):
+        scored_velocity = torch.stack(history["velocity_ema"]) if cfg.resolved_velocity_loss_mode == "ema" else velocity
+        velocity_cost = velocity_step_loss(scored_velocity, target, reduction="none")
         valid_samples = velocity.new_tensor(timesteps * num_envs)
     else:
         prefix_length = 0
@@ -234,6 +278,12 @@ def zhang_transition_costs(history, cfg, velocity_history=None):
     distance = obstacle_distance - margin
     # Ten source look-ahead points include both endpoints: dt_sample = policy_dt / 9.
     approach = (-distance.diff(dim=2) * ((distance.shape[2] - 1) / cfg.policy_dt)).clamp_min(1).detach()
+    lateral_cost = 0.0
+    if cfg.approach_mode == "relative":
+        closing, lateral_cost = relative_avoidance(
+            torch.stack(history["relative_velocity"]), torch.stack(history["obstacle_normal"]), distance[:, :, 1:]
+        )
+        approach = closing.clamp_min(1).detach()
     collision_gap = torch.stack(history["dcol_gap"]) if cfg.variant == "dcol" else distance[:, :, 1:]
     command = torch.stack(history["command"])
     command_previous = torch.stack(history["previous_command"])
@@ -260,7 +310,8 @@ def zhang_transition_costs(history, cfg, velocity_history=None):
         "velocity_prediction": F.mse_loss(
             torch.stack(history["velocity_prediction"]), torch.stack(history["observed_velocity"]), reduction="none"
         ).mean(dim=-1),
-        "obstacle_avoidance": (approach * (1 - distance[:, :, 1:]).relu().square()).mean(dim=-1),
+        "obstacle_avoidance": (approach * (1 - distance[:, :, 1:]).relu().square()).mean(dim=-1)
+        + cfg.lateral_avoidance * lateral_cost,
         "collision": (F.softplus(-32 * collision_gap) * approach).mean(dim=-1),
         "acceleration": command.square().sum(dim=-1),
         "jerk": ((command - command_previous) / cfg.policy_dt).square().sum(dim=-1),
@@ -287,6 +338,10 @@ def zhang_transition_costs(history, cfg, velocity_history=None):
     losses["total"] = cost.mean()
     losses["velocity_valid_samples"] = valid_samples.detach()
     losses["velocity_sample_fraction"] = valid_samples.detach() / (timesteps * num_envs)
+    if cfg.approach_mode == "relative":
+        losses["relative_closing_mps"] = closing.detach().mean()
+        losses["lateral_avoidance"] = lateral_cost.detach().mean()
+        losses["target_speed_scale"] = torch.stack(history["target_speed_scale"]).mean()
     # Includes an exactly-W terminal completion when the source omitted it.
     losses["velocity_short_terminal_samples"] = short_samples.detach()
     if cfg.resolved_velocity_loss_mode == "truncated_window":

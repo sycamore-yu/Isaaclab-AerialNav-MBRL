@@ -241,18 +241,8 @@ def metric_navigation_gap(query, static_signed_distance, positions, sizes, radiu
     selection is detached; only the selected primitive keeps a backward graph.
     Positions may be shared or broadcast per-query substep snapshots.
     """
-    from isaaclab_navrl.tasks.navigation.geometry import primitive_signed_distance
+    from isaaclab_navrl.tasks.navigation.geometry import nearest_obstacle_signed_distance
 
-    if static_signed_distance.shape != query.shape[:-1]:
-        raise ValueError("Static signed distance must match the query batch")
-    gap = torch.minimum(static_signed_distance - radius, query[..., 2] - 0.01 - radius)
-    if positions.shape[-2]:
-        with torch.no_grad():
-            candidate = primitive_signed_distance(query.detach()[..., None, :], positions.detach(), sizes)
-            winner = candidate.argmin(dim=-1)
-            centers = torch.broadcast_to(positions, (*query.shape[:-1], positions.shape[-2], 3))
-            selected = centers.gather(-2, winner[..., None, None].expand(*winner.shape, 1, 3)).squeeze(-2)
-            selected_size = sizes[winner]
-        dynamic = primitive_signed_distance(query, selected, selected_size) - radius
-        gap = torch.minimum(gap, dynamic)
-    return height_bounded_gap(query, gap)
+    return height_bounded_gap(
+        query, nearest_obstacle_signed_distance(query, static_signed_distance, positions, sizes) - radius
+    )

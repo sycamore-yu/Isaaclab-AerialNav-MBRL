@@ -46,6 +46,10 @@ TRAIN_ARG_TYPES = {
     "timesteps": int,
     "velocity_window_s": float,
     "velocity_loss_mode": str,
+    "collision_metric": str,
+    "approach_mode": str,
+    "lateral_avoidance": float,
+    "risk_speed_floor": float,
     "camera_batch_size": int,
     "lr": float,
     "optimizer": str,
@@ -119,7 +123,7 @@ def parse_train_args(tokens: list[str]) -> dict[str, TrainArgValue]:
         elif key == "td_lambda":
             if not 0 <= value <= 1:
                 raise ValueError("td_lambda must be in [0, 1]")
-        elif key in ("grad_decay", "critic_target_tau"):
+        elif key in ("grad_decay", "critic_target_tau", "risk_speed_floor"):
             if not 0 < value <= 1:
                 raise ValueError("grad_decay must be in (0, 1]")
         elif key.startswith("coef_") or key in (
@@ -128,6 +132,7 @@ def parse_train_args(tokens: list[str]) -> dict[str, TrainArgValue]:
             "weight_decay",
             "plateau_patience",
             "failure_terminal_cost",
+            "lateral_avoidance",
         ):
             if value < 0:
                 raise ValueError(f"{option} must be nonnegative")

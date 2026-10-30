@@ -560,33 +560,50 @@ def primitive_signed_distance(query, positions, sizes):
     return torch.where(sizes[..., 2] > 1, sdf(cylinder), sdf(box))
 
 
-def dynamic_signed_distance(query, positions, sizes):
-    """Check every obstacle; retain only the selected body's backward graph."""
-    if len(positions) == 0:
-        return query.sum(-1) * 0 + torch.inf
+def dynamic_signed_distance(query, positions, sizes, *, return_index=False):
+    """Check shared or per-query poses; retain only the selected body's graph."""
+    shape = query.shape[:-1]
+    if positions.shape[-2:] != sizes.shape or sizes.ndim != 2 or sizes.shape[-1] != 3:
+        raise ValueError("Expected positions (..., obstacles, 3) and sizes (obstacles, 3)")
+    positions = torch.broadcast_to(positions.detach(), (*shape, len(sizes), 3))
+    if len(sizes) == 0:
+        distance = query.sum(-1) * 0 + torch.inf
+        return (distance, None) if return_index else distance
     point = query.reshape(-1, 3)
     with torch.no_grad():
         best = torch.full_like(point[:, 0], torch.inf)
         winner = torch.zeros(len(point), dtype=torch.long, device=query.device)
-        for start in range(0, len(positions), 32):
+        for start in range(0, len(sizes), 32):
+            stop = min(start + 32, len(sizes))
             distance = primitive_signed_distance(
-                point[:, None], positions[None, start : start + 32], sizes[None, start : start + 32]
+                point[:, None], positions[..., start:stop, :].reshape(-1, stop - start, 3), sizes[None, start:stop]
             )
             value, index = distance.min(-1)
             winner = torch.where(value < best, index + start, winner)
             best = torch.minimum(value, best)
-        selected_position, selected_size = positions[winner], sizes[winner]
-    return primitive_signed_distance(point, selected_position, selected_size).reshape(query.shape[:-1])
+        index = winner.reshape(*shape, 1, 1).expand(*shape, 1, 3)
+        selected_position = positions.gather(-2, index).squeeze(-2).reshape(-1, 3)
+        selected_size = sizes[winner]
+    distance = primitive_signed_distance(point, selected_position, selected_size).reshape(shape)
+    return (distance, winner.reshape(shape)) if return_index else distance
 
 
-def nearest_obstacle_signed_distance(query, static_signed_distance, dynamic_position, dynamic_size, ground_z=0.01):
+def nearest_obstacle_signed_distance(
+    query, static_signed_distance, dynamic_position, dynamic_size, ground_z=0.01, *, dynamic_velocity=None
+):
     """Minimum signed static/ground/full dynamic surface distance, before radius."""
     if static_signed_distance.shape != query.shape[:-1]:
         raise ValueError("static_signed_distance must have shape query.shape[:-1], not closest-point vectors.")
-    return torch.minimum(
-        torch.minimum(static_signed_distance, query[..., 2] - ground_z),
-        dynamic_signed_distance(query, dynamic_position, dynamic_size),
-    )
+    fixed = torch.minimum(static_signed_distance, query[..., 2] - ground_z)
+    moving, winner = dynamic_signed_distance(query, dynamic_position, dynamic_size, return_index=True)
+    distance = torch.minimum(fixed, moving)
+    if dynamic_velocity is None:
+        return distance
+    # The fixed terrain and ground have zero velocity, including minimum ties.
+    velocity = torch.zeros_like(query)
+    if winner is not None:
+        velocity = torch.where((moving < fixed)[..., None], dynamic_velocity[winner], velocity)
+    return distance, velocity.detach()
 
 
 def nearest_obstacle_vector(query, static_nearest, dynamic_position, dynamic_size):

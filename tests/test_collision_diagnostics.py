@@ -54,7 +54,7 @@ def test_cached_static_query_retains_its_live_escape_gradient():
         terrain_distance=SimpleNamespace(signed_distance=forbidden_query),
         motion=SimpleNamespace(position=torch.empty(0, 3), size=torch.empty(0, 3)),
     )
-    trainer = SimpleNamespace(env=env)
+    trainer = SimpleNamespace(env=env, cfg=SimpleNamespace(collision_metric="dcol"))
     points = torch.tensor([[[0.0, 0.0, 2.0]]], requires_grad=True)
     cached = 1 + 0.4 * points[..., 0]
     gap = ZhangTrainer._dcol_gap(trainer, points, torch.tensor([0.3]), static_distance=cached)

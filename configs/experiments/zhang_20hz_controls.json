@@ -1,5 +1,7 @@
 {
   "schema_version": 1,
+  "fixed_stage": false,
+  "start_stage": "pretrain_s0",
   "purpose": "five_controls_on_retained_20hz_baseline",
   "num_envs": 256,
   "screening": true,

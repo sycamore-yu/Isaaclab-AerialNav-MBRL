@@ -1,5 +1,7 @@
 {
   "schema_version": 1,
+  "fixed_stage": false,
+  "start_stage": "pretrain_s0",
   "purpose": "fresh_main_nine_case_comparison",
   "num_envs": 256,
   "screening": true,

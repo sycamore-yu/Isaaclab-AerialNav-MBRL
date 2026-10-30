@@ -18,12 +18,16 @@ from isaaclab_navrl.training import STAGE_CONFIG, STAGES, write_json
 from isaaclab_navrl.zhang.cli import TrainArgValue, parse_train_args
 
 
-def selected_stages(start_stage="pretrain_s0", *, screening=False, method="zhang"):
+def selected_stages(start_stage="pretrain_s0", *, screening=False, method="zhang", fixed_stage=False):
     """Keep skipped stages explicit and prevent direct starts from certifying a full curriculum."""
     if start_stage not in STAGES:
         raise ValueError(f"Unknown start stage: {start_stage}")
     if start_stage != STAGES[0] and (not screening or method != "zhang"):
         raise ValueError("Direct stage starts require --screening --method zhang")
+    if fixed_stage:
+        if not screening or method != "zhang":
+            raise ValueError("Fixed-stage comparisons require --screening --method zhang")
+        return (start_stage,)
     return STAGES[STAGES.index(start_stage) :]
 
 
@@ -42,6 +46,7 @@ def build_command(
     executable: str = sys.executable,
     report_episodes: int | None = None,
     fresh_stage: bool = False,
+    fixed_stage: bool = False,
 ) -> list[str]:
     command = [
         executable,
@@ -58,8 +63,9 @@ def build_command(
         str(seed),
         "--device",
         device,
-        "--stop_after_acceptance",
     ]
+    if not fixed_stage:
+        command += ["--stop_after_acceptance"]
     if parent_checkpoint is not None:
         command += ["--checkpoint", str(parent_checkpoint)]
     elif fresh_stage:
@@ -183,7 +189,8 @@ def validate_stage_result(
 def run_pipeline(args: argparse.Namespace, train_args: dict[str, TrainArgValue]) -> int:
     screening = getattr(args, "screening", False)
     start_stage = getattr(args, "start_stage", STAGES[0])
-    stages = selected_stages(start_stage, screening=screening, method=args.method)
+    fixed_stage = getattr(args, "fixed_stage", False)
+    stages = selected_stages(start_stage, screening=screening, method=args.method, fixed_stage=fixed_stage)
     output = Path(args.output).expanduser().resolve()
     output.mkdir(parents=True, exist_ok=False)
     methods = ("zhang", "navrl") if args.method == "both" else (args.method,)
@@ -200,6 +207,7 @@ def run_pipeline(args: argparse.Namespace, train_args: dict[str, TrainArgValue])
         "finetune_lr": args.finetune_lr,
         "train_args": train_args,
         "start_stage": start_stage,
+        "fixed_stage": fixed_stage,
         "stage_order": list(stages),
         "skipped_stages": list(STAGES[: STAGES.index(start_stage)]),
         "complete_curriculum_passed": False,
@@ -234,6 +242,7 @@ def run_pipeline(args: argparse.Namespace, train_args: dict[str, TrainArgValue])
         )
         write_json(summary_path, summary)
         for method in methods:
+            environment["NAVRL_TENSORBOARD_DIR"] = str(output / method / "tensorboard")
             current_method = {"status": "running", "acceptance_passed": False, "stages": []}
             summary["methods"][method] = current_method
             parent_checkpoint = None
@@ -256,6 +265,7 @@ def run_pipeline(args: argparse.Namespace, train_args: dict[str, TrainArgValue])
                     parent_checkpoint=parent_checkpoint,
                     report_episodes=getattr(args, "report_episodes", None),
                     fresh_stage=stage == start_stage and start_stage != STAGES[0],
+                    fixed_stage=fixed_stage,
                 )
                 current_stage = {
                     "stage": stage,
@@ -358,7 +368,7 @@ def run_pipeline(args: argparse.Namespace, train_args: dict[str, TrainArgValue])
             current_method["acceptance_passed"] = not screening
         summary["status"] = "completed"
         summary["stage_thresholds_passed"] = True
-        summary["complete_curriculum_passed"] = start_stage == STAGES[0]
+        summary["complete_curriculum_passed"] = start_stage == STAGES[0] and not fixed_stage
         summary["acceptance_passed"] = not screening
         exit_code = 0
     except (OSError, ValueError, RuntimeError, KeyboardInterrupt) as exc:
@@ -393,12 +403,15 @@ def main() -> int:
         help="Zhang screening only: start fresh here, then follow the remaining stage order",
     )
     parser.add_argument("--train_seed", type=int, default=0)
+    parser.add_argument(
+        "--fixed_stage", action="store_true", help="Screening only: stay in the start scene after reaching 80%"
+    )
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--finetune_lr", type=float, default=5e-5)
     parser.add_argument("--train_args", nargs=argparse.REMAINDER, default=[])
     args = parser.parse_args()
     try:
-        selected_stages(args.start_stage, screening=args.screening, method=args.method)
+        selected_stages(args.start_stage, screening=args.screening, method=args.method, fixed_stage=args.fixed_stage)
     except ValueError as exc:
         parser.error(str(exc))
     if args.num_envs < 1:

@@ -17,7 +17,11 @@ class ZhangTrainCfg:
     stop_after_acceptance: bool = False
     physics_dt: float = 0.05
     policy_dt: float = 0.05
-    velocity_loss_mode: Literal["variant_default", "per_step", "truncated_window", "full_window"] | None = None
+    velocity_loss_mode: Literal["variant_default", "per_step", "truncated_window", "full_window", "ema"] | None = None
+    collision_metric: Literal["dcol", "sdf"] = "dcol"
+    approach_mode: Literal["finite_difference", "relative"] = "finite_difference"
+    lateral_avoidance: float = 0.0
+    risk_speed_floor: float = 1.0
     velocity_window_s: float = 2.0
     grad_decay: float = 0.4
     lr: float = 0.001
@@ -71,15 +75,15 @@ class ZhangTrainCfg:
             self.velocity_loss_mode = "per_step" if self.algorithm in ("shac", "ahac") else "full_window"
 
     @property
-    def resolved_velocity_loss_mode(self) -> Literal["per_step", "window", "truncated_window"]:
+    def resolved_velocity_loss_mode(self) -> Literal["per_step", "window", "truncated_window", "ema"]:
         """Select velocity supervision without changing collision geometry or critic memory."""
         if self.velocity_loss_mode == "variant_default":
             return "per_step" if self.variant == "step" else "truncated_window"
         if self.velocity_loss_mode == "full_window":
             return "window"
-        if self.velocity_loss_mode in ("per_step", "truncated_window"):
+        if self.velocity_loss_mode in ("per_step", "truncated_window", "ema"):
             return self.velocity_loss_mode
-        raise ValueError("velocity_loss_mode must be variant_default, per_step, truncated_window, or full_window")
+        raise ValueError("velocity_loss_mode must be variant_default, per_step, truncated_window, full_window, or ema")
 
     @property
     def velocity_window_steps(self) -> int:
@@ -94,6 +98,16 @@ class ZhangTrainCfg:
         if self.algorithm not in ZHANG_ALGORITHMS:
             raise ValueError(f"algorithm must be one of {ZHANG_ALGORITHMS}")
         _ = self.resolved_velocity_loss_mode
+        if self.collision_metric not in ("dcol", "sdf") or (self.collision_metric == "sdf" and self.variant != "dcol"):
+            raise ValueError("collision_metric must be dcol or sdf; sdf comparison requires variant dcol timing")
+        if self.approach_mode not in ("finite_difference", "relative"):
+            raise ValueError("approach_mode must be finite_difference or relative")
+        if not math.isfinite(self.lateral_avoidance) or self.lateral_avoidance < 0:
+            raise ValueError("lateral_avoidance must be finite and nonnegative")
+        if not math.isfinite(self.risk_speed_floor) or not 0 < self.risk_speed_floor <= 1:
+            raise ValueError("risk_speed_floor must be in (0, 1]")
+        if (self.lateral_avoidance or self.risk_speed_floor < 1) and self.approach_mode != "relative":
+            raise ValueError("lateral avoidance and risk speed require relative approach")
         if self.optimizer not in ("adamw", "adam"):
             raise ValueError("optimizer must be adamw or adam")
         if not math.isfinite(self.weight_decay) or self.weight_decay < 0:

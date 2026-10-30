@@ -5,6 +5,8 @@ from pathlib import Path
 from rsl_rl.runners import OnPolicyRunner
 from rsl_rl.utils.logger import Logger
 
+from isaaclab_navrl.training import tensorboard_directory
+
 
 class ContinuousLogger(Logger):
     def init_logging_writer(self):
@@ -22,7 +24,7 @@ class ContinuousNavRLRunner(OnPolicyRunner):
     def __init__(self, env, train_cfg, log_dir=None, device="cpu"):
         super().__init__(env, train_cfg, log_dir, device)
         self.logger = ContinuousLogger(
-            log_dir=log_dir,
+            log_dir=str(tensorboard_directory(log_dir)) if log_dir is not None else None,
             cfg=self.cfg,
             env_cfg=env.cfg,
             num_envs=env.num_envs,

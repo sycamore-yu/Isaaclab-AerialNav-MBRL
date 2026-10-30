@@ -20,7 +20,7 @@ class EndpointEnv(AnalyticEnv):
         self.trigger_step = trigger_step
         self.cfg.variant = "dcol"
         self.episode_length_buf = torch.zeros(2, dtype=torch.long)
-        self.motion = SimpleNamespace(position=torch.empty(0, 3), size=torch.empty(0, 3))
+        self.motion = SimpleNamespace(position=torch.empty(0, 3), velocity=torch.empty(0, 3), size=torch.empty(0, 3))
         self.terrain_distance = SimpleNamespace(signed_distance=lambda q: q[..., 0] * 0 + 100)
         self.target = torch.tensor([[10.0, 0.0, 2.0]]).repeat(2, 1)
         self.terminated_flags = torch.zeros(2, dtype=torch.bool)

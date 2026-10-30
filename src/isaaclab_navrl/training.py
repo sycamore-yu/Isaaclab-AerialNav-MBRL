@@ -1,6 +1,7 @@
 """Shared training lifecycle and reporting; no extra evaluation rollout."""
 
 import json
+import os
 import signal
 from contextlib import contextmanager
 from pathlib import Path
@@ -13,6 +14,55 @@ STAGE_CONFIG = {
     "finetune_s1": {"static_obstacles": 300, "dynamic_obstacles": 60, "randomization": True},
     "finetune_s2": {"static_obstacles": 400, "dynamic_obstacles": 100, "randomization": True},
 }
+
+
+def tensorboard_directory(log_dir):
+    """A pipeline shares one event directory across curriculum stages."""
+    return Path(os.environ.get("NAVRL_TENSORBOARD_DIR", str(Path(log_dir) / "tensorboard")))
+
+
+def write_training_scalars(writer, metrics, update):
+    """Keep dashboard essentials; full diagnostics remain in updates.jsonl."""
+    groups = {
+        "Loss": (
+            "total",
+            "actor_objective",
+            "velocity",
+            "velocity_prediction",
+            "obstacle_avoidance",
+            "collision",
+            "height_boundary",
+            "acceleration",
+            "jerk",
+            "failure_terminal",
+        ),
+        "Optimization": ("learning_rate", "grad_norm"),
+        "Timing": ("process_elapsed_s", "update_s", "environment_steps", "rollout_steps"),
+        "Motion": (
+            "mean_altitude_m",
+            "mean_horizontal_speed_mps",
+            "mean_abs_vertical_speed_mps",
+            "surrogate_velocity_error_mps",
+            "relative_closing_mps",
+            "target_speed_scale",
+        ),
+        "Failures": ("terminal_lower_bound_count", "terminal_upper_bound_count"),
+    }
+    for group, names in groups.items():
+        for name in names:
+            if name in metrics:
+                writer.add_scalar(f"{group}/{name}", metrics[name], update)
+    for name in (
+        "ActorCritic/critic_loss",
+        "ActorCritic/bootstrap",
+        "ActorCritic/discounted_cost",
+        "ActorCritic/critic_next_value_negative_fraction",
+        "Memory/torch_peak_allocated_mb",
+    ):
+        if name in metrics:
+            writer.add_scalar(name, metrics[name], update)
+    if "Optim/update_ratio" in metrics:
+        writer.add_scalar("Optimization/update_ratio", metrics["Optim/update_ratio"], update)
 
 
 @contextmanager
@@ -57,10 +107,12 @@ def record_curriculum(curriculum, update, log_dir, writer, save_checkpoint):
     for key, value in report.items():
         if key.endswith(("_rate", "_mean")) or key in ("episodes", "success_time_mean_s"):
             if value is not None:
-                writer.add_scalar(f"Train/{difficulty}/{key}", value, update)
+                writer.add_scalar(f"Train/{key}", value, update)
     writer.add_scalar("Curriculum/dynamic_obstacles", report["dynamic_obstacles"], update)
-    writer.add_scalar(f"Train/{difficulty}/stage_passed", int(curriculum.stage_passed), update)
-    writer.add_scalar("Train/finetune_s2/acceptance_passed", int(curriculum.acceptance_passed), update)
+    writer.add_scalar("Train/stage_passed", int(curriculum.stage_passed), update)
+    writer.add_scalar("Train/acceptance_passed", int(curriculum.acceptance_passed), update)
+    if difficulty in STAGES:
+        writer.add_scalar("Curriculum/stage", STAGES.index(difficulty), update)
     if "static_obstacles" in report:
         writer.add_scalar("Curriculum/static_obstacles", report["static_obstacles"], update)
         writer.add_scalar("Curriculum/randomization", int(report["randomization"]), update)

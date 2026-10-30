@@ -1,5 +1,7 @@
 {
   "schema_version": 1,
+  "fixed_stage": false,
+  "start_stage": "pretrain_s0",
   "purpose": "planned_fresh_comparisons_not_launch_receipts",
   "num_envs": 256,
   "screening": true,

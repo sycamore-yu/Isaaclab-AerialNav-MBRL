@@ -690,6 +690,8 @@ class AnalyticEnv:
         self.total_steps = 0
         self.perturbation.reset(torch.arange(2))
         self.queried_at_steps = []
+        self.motion = SimpleNamespace(position=torch.empty(0, 3), velocity=torch.empty(0, 3), size=torch.empty(0, 3))
+        self.terrain_distance = SimpleNamespace(signed_distance=self.nearest_obstacle_signed_distance)
         self.nonfinite_events = torch.zeros((), dtype=torch.long)
         self.curriculum = None
 

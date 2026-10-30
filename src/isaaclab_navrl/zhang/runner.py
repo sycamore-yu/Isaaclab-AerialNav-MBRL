@@ -12,14 +12,20 @@ import torch
 from torch.utils.tensorboard import SummaryWriter
 
 from isaaclab_navrl.tasks.navigation.randomization import DifferentiableDelay
-from isaaclab_navrl.training import STAGE_CONFIG, record_curriculum, write_json
+from isaaclab_navrl.training import (
+    STAGE_CONFIG,
+    record_curriculum,
+    tensorboard_directory,
+    write_json,
+    write_training_scalars,
+)
 
 from .actor_critic import ActorCriticSettings, CostActorCritic, short_horizon_cost_objective
 from .critic_state import CriticHistory, critic_observation
 from .dcol import height_bounded_gap, metric_navigation_gap
 from .diagnostics import GradientDiagnostic, collision_records, critic_vertical_probe
 from .dynamics import PointMassState, align_state, align_transition, policy_transition
-from .losses import zhang_transition_costs
+from .losses import VelocityEMA, risk_speed_scale, zhang_transition_costs
 from .model import ZhangPolicy, decode_action, policy_state
 from .normalization import PolicyObservationNormalizer
 from .optimization import OptimizerStepMonitor, RecoveryConfig, RecoveryController, make_plateau_scheduler
@@ -144,13 +150,14 @@ class ZhangTrainer:
         action_history = DifferentiableDelay(self.env.perturbation.action_buffer.history_length)
         observation_history = DifferentiableDelay(self.env.perturbation.observation_buffer.history_length)
         critic_history = CriticHistory(self.cfg.velocity_window_steps, zero)
+        self.velocity_ema = VelocityEMA(zero, self.cfg.seed + 31415) if self.cfg.velocity_loss_mode == "ema" else None
         self.velocity_history = None
         return observation, zero, state, hidden, zero, action_history, observation_history, critic_history
 
     def _critic_observation(
         self, state, observation, hidden, previous_command, critic_history, action_history, observation_history
     ):
-        return critic_observation(
+        features = critic_observation(
             state,
             observation,
             hidden,
@@ -163,6 +170,12 @@ class ZhangTrainer:
             self.env.max_episode_length,
             self.env.perturbation.action_buffer.time_lags,
         )
+        return self._with_velocity_memory(features)
+
+    def _with_velocity_memory(self, features):
+        if self.cfg.velocity_loss_mode == "ema":
+            return torch.cat((features, self.velocity_ema.value, self.velocity_ema.alpha), dim=-1)
+        return features
 
     def _initialize_critic(self, example):
         if self.cfg.algorithm == "bptt" or self.actor_critic is not None:
@@ -186,15 +199,26 @@ class ZhangTrainer:
             self._pending_critic_state = None
 
     def _dcol_gap(self, query, radius, obstacle_positions=None, *, static_distance=None):
-        """Dynamic-body DCOL with the signed heightfield occupancy exit proxy."""
+        """Select dynamic DCOL or SDF without changing sample times or static geometry."""
+        from isaaclab_navrl.tasks.navigation.geometry import nearest_obstacle_signed_distance
+
         from .dcol import hybrid_collision_gap
 
         radius = radius.reshape(-1, *([1] * (query.ndim - 2))).expand(query.shape[:-1])
+        static_distance = (
+            self.env.terrain_distance.signed_distance(query) if static_distance is None else static_distance
+        )
+        obstacle_positions = self.env.motion.position if obstacle_positions is None else obstacle_positions
+        if self.cfg.collision_metric == "sdf":
+            return (
+                nearest_obstacle_signed_distance(query, static_distance, obstacle_positions, self.env.motion.size)
+                - radius
+            )
         return hybrid_collision_gap(
             query,
             radius,
-            (self.env.terrain_distance.signed_distance(query) if static_distance is None else static_distance),
-            self.env.motion.position if obstacle_positions is None else obstacle_positions,
+            static_distance,
+            obstacle_positions,
             self.env.motion.size,
         )
 
@@ -373,7 +397,7 @@ class ZhangTrainer:
         }
         with (self.log_dir / "optimization_events.jsonl").open("a") as stream:
             stream.write(json.dumps(event, allow_nan=False) + "\n")
-        writer.add_scalar("Optim/next_learning_rate", event["lr_after"], self.completed_updates)
+        writer.add_scalar("Optimization/next_learning_rate", event["lr_after"], self.completed_updates)
         writer.add_scalar("Recovery/restore_count", self.recovery.restore_count, self.completed_updates)
         if self.recovery.reference_success is not None:
             writer.add_scalar("Recovery/reference_success", self.recovery.reference_success, self.completed_updates)
@@ -390,6 +414,11 @@ class ZhangTrainer:
             "method": "zhang",
             "variant": self.cfg.variant,
             "algorithm": self.cfg.algorithm,
+            "collision_metric": self.cfg.collision_metric,
+            "approach_mode": self.cfg.approach_mode,
+            "lateral_avoidance": self.cfg.lateral_avoidance,
+            "risk_speed_floor": self.cfg.risk_speed_floor,
+            "dynamic_lookahead": "constant_velocity_same_query_time",
             "status": status,
             "velocity_loss_mode": self.cfg.velocity_loss_mode,
             "resolved_velocity_loss_mode": self.cfg.resolved_velocity_loss_mode,
@@ -467,7 +496,7 @@ class ZhangTrainer:
                 },
             )
         lookahead = torch.linspace(0, self.cfg.policy_dt, 10, device=self.env.device)[None, :, None]
-        writer = SummaryWriter(str(self.log_dir / "tensorboard"))
+        writer = SummaryWriter(str(tensorboard_directory(self.log_dir)))
         if self.cfg.variant == "continuous":
             write_json(
                 self.log_dir / "continuous_geometry.json",
@@ -477,7 +506,7 @@ class ZhangTrainer:
                     "static_geometry": "signed_heightfield_occupancy_exit_proxy",
                     "static_projection": "float64_selected_face_refinement_float32_storage",
                     "applies_to": ["obstacle_avoidance", "collision"],
-                    "query_timing": "pre_policy_step_position_plus_velocity_lookahead",
+                    "query_timing": "drone_and_obstacles_at_same_constant_velocity_lookahead_time",
                     "static_penetration": "negative_distance_to_verified_original_mesh_exit",
                     "static_distance_is_exact_sdf": False,
                     "static_occupancy": "conservative_highest_vertical_mesh_projection",
@@ -488,10 +517,15 @@ class ZhangTrainer:
             write_json(
                 self.log_dir / "dcol_geometry.json",
                 {
-                    "scope": "hybrid_dynamic_dcol",
+                    "scope": "hybrid_dynamic_" + self.cfg.collision_metric,
                     "dynamic_geometry": "sphere_vs_axis_aligned_box_or_finite_z_cylinder",
-                    "dynamic_selection": "minimum_common_scale_over_all_dynamic_obstacles",
-                    "dynamic_metric": "radius_times_alpha_minus_one_metre_scaled_proxy_not_signed_distance",
+                    "dynamic_selection": "minimum_metric_over_all_dynamic_obstacles",
+                    "dynamic_metric": (
+                        "radius_times_alpha_minus_one_metre_scaled_proxy_not_signed_distance"
+                        if self.cfg.collision_metric == "dcol"
+                        else "primitive_signed_distance_minus_radius"
+                    ),
+                    "lookahead_obstacles": "position_plus_velocity_times_query_time",
                     "static_geometry": "signed_heightfield_occupancy_exit_proxy",
                     "static_projection": "float64_selected_face_refinement_float32_storage",
                     "static_penetration": "negative_distance_to_verified_original_mesh_exit",
@@ -520,6 +554,8 @@ class ZhangTrainer:
                 action_history.detach()
                 observation_history.detach()
                 critic_history.detach()
+                if self.velocity_ema is not None:
+                    self.velocity_ema.detach()
                 previous_command = previous_command.detach()
                 normalization_snapshot = self.normalizer.begin_rollout()
                 rollout_steps = (
@@ -573,18 +609,37 @@ class ZhangTrainer:
                     self.normalizer.observe(depth, features.detach())
                     # Source look-ahead queries belong to the pre-step state.
                     query = state.position[:, None] + state.velocity[:, None] * lookahead
-                    if self.cfg.variant == "dcol":
-                        from isaaclab_navrl.tasks.navigation.geometry import nearest_obstacle_signed_distance
+                    from isaaclab_navrl.tasks.navigation.geometry import nearest_obstacle_signed_distance
 
-                        static_distance = self.env.terrain_distance.signed_distance(query)
-                        obstacle_distance = nearest_obstacle_signed_distance(
-                            query,
-                            static_distance,
-                            self.env.motion.position,
-                            self.env.motion.size,
+                    if self.cfg.approach_mode == "relative":
+                        query.requires_grad_(True)
+                    # shortcut: constant obstacle velocity within one policy step; turns are not predicted.
+                    obstacle_positions = self.env.motion.position + self.env.motion.velocity * lookahead[..., None]
+                    static_distance = self.env.terrain_distance.signed_distance(query)
+                    geometry = nearest_obstacle_signed_distance(
+                        query,
+                        static_distance,
+                        obstacle_positions,
+                        self.env.motion.size,
+                        dynamic_velocity=self.env.motion.velocity if self.cfg.approach_mode == "relative" else None,
+                    )
+                    if self.cfg.approach_mode == "relative":
+                        obstacle_distance, obstacle_velocity = geometry
+                        normal = torch.autograd.grad(obstacle_distance.sum(), query, retain_graph=True)[0].detach()
+                        normal = torch.nn.functional.normalize(normal, dim=-1)
+                        relative_velocity = state.velocity[:, None] - obstacle_velocity
+                        history["relative_velocity"].append(relative_velocity[:, 1:])
+                        history["obstacle_normal"].append(normal[:, 1:])
+                        speed_scale = risk_speed_scale(
+                            -(relative_velocity * normal).sum(-1),
+                            obstacle_distance - parameters["margin"][:, None],
+                            parameters["max_speed"],
+                            self.cfg.risk_speed_floor,
                         )
+                        target_velocity = target_velocity * speed_scale
+                        history["target_speed_scale"].append(speed_scale)
                     else:
-                        obstacle_distance = self.env.nearest_obstacle_signed_distance(query)
+                        obstacle_distance = geometry
                     if diagnostic_update and rollout_step == rollout_steps - 1:
                         # Snapshot before the recurrent call; the same observations
                         # isolate the command change caused by one optimizer step.
@@ -611,7 +666,10 @@ class ZhangTrainer:
                     history["obstacle_signed_distance"].append(obstacle_distance)
                     if self.cfg.variant == "dcol":
                         dcol_lookahead = self._dcol_gap(
-                            query[:, 1:-1], parameters["margin"], static_distance=static_distance[:, 1:-1]
+                            query[:, 1:-1],
+                            parameters["margin"],
+                            obstacle_positions[:, 1:-1],
+                            static_distance=static_distance[:, 1:-1],
                         )
                     history["margin"].append(parameters["margin"])
                     history["target_velocity"].append(target_velocity)
@@ -671,6 +729,8 @@ class ZhangTrainer:
                     # Source velocity history is post-step; preserve it before same-step autoreset.
                     history["position"].append(terminal_state.position)
                     history["velocity"].append(terminal_state.velocity)
+                    if self.velocity_ema is not None:
+                        history["velocity_ema"].append(self.velocity_ema.update(terminal_state.velocity))
                     if self.cfg.variant == "dcol":
                         # Use the first collision's actual physical substep, including its
                         # obstacle poses. A later policy-end position can already have passed
@@ -718,6 +778,7 @@ class ZhangTrainer:
                             self.env.max_episode_length,
                             transition["action_delay_steps"],
                         )
+                        endpoint = self._with_velocity_memory(endpoint)
                         live_value = self.actor_critic.actor_value(endpoint)
                         if diagnostic_update:
                             value_probes.append(
@@ -734,6 +795,8 @@ class ZhangTrainer:
                         history["absorbing_terminal"].append(terminated)
                         history["time_truncated"].append(timeout & ~terminated)
                         critic_history.reset(done)
+                    if self.velocity_ema is not None:
+                        self.velocity_ema.reset(done)
                     hidden = torch.where(done[:, None], torch.zeros_like(hidden), hidden)
                     previous_command = torch.where(done[:, None], torch.zeros_like(command), command)
                     action_history.reset(done)
@@ -951,8 +1014,7 @@ class ZhangTrainer:
                     metrics["gradient_diagnostic_s"] = gradient_record["diagnostic_s"]
                 log.write(json.dumps(metrics, allow_nan=False) + "\n")
                 log.flush()
-                for name, value in metrics.items():
-                    writer.add_scalar(name, value, self.completed_updates)
+                write_training_scalars(writer, metrics, self.completed_updates)
                 print("ZHANG_UPDATE " + json.dumps(metrics), flush=True)
                 report = record_curriculum(
                     self.env.curriculum, self.completed_updates, self.log_dir, writer, self._checkpoint

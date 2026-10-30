@@ -28,7 +28,7 @@ class _TrackedEnv(AnalyticEnv):
 
     def nearest_obstacle_signed_distance(self, query):
         distance = super().nearest_obstacle_signed_distance(query)
-        self.signed_queries.append(distance.detach().clone())
+        self.signed_queries.append(torch.minimum(distance, query[..., 2] - 0.01).detach().clone())
         return distance
 
 

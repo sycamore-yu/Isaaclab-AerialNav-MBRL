@@ -9,7 +9,15 @@
 
 ## 训练与验收
 
-当前默认采用 20 Hz 同步 DCOL+BPTT、完整 2 秒速度窗口和 `navrl_range` 高度损失。P0/P1 的更改、诊断证据和验证边界见 [实施报告](docs/P0_P1_20261030.md)。旧训练已按用户批准在更新边界停止并保留检查点；第 6 节的超参对照未启动。
+当前默认采用 20 Hz 同步 DCOL+BPTT、完整 2 秒速度窗口和 `navrl_range` 高度损失。动态障碍前视位置已按查询时刻预测。旧训练已停止并保留检查点。此前 P0/P1 诊断见 [实施报告](docs/P0_P1_20261030.md)。当前六组固定微调 S1 对照见 [实验说明](docs/TIME_ALIGNED_AVOIDANCE_20261030.md)。
+
+后续对照默认从随机权重启动 `finetune_s1`。六组均使用 256 环境、seed 0，每份报告至少 1024 个完整回合。达到 80% 后继续训练，以观察成功率保持情况。队列默认按本地时间生成目录名，源码来自指定提交的独立快照：
+
+```bash
+PYTHONPATH=src .venv/bin/python scripts/run_comparison_queue.py \
+  --plan configs/experiments/zhang_finetune_s1.json \
+  --commit "$(git rev-parse HEAD)"
+```
 
 新管线从已提交源码生成独立快照，并在阶段切换及实际导入时核验。队列支持固定 commit 的干净功能分支。正式五阶段依次为预训练 S0、S1、S2 和微调 S1、S2；各阶段自然首次到达率达到 80% 后晋级。
 
@@ -21,12 +29,12 @@
 | 微调 S1 | 300 | 60 | 开启 |
 | 微调 S2 | 400 | 100 | 开启 |
 
-预训练从随机初始化开始。后续阶段加载本次实验的前序检查点，保留网络和优化器。每阶段重建地图并清空回合历史。正式验收默认使用1024个并行环境且至少1024，无更新次数上限。小规模比较须显式使用`--screening`，即使五阶段门槛均通过也不标记正式验收。输出目录必须不存在。
+预训练从随机初始化开始。后续阶段加载本次实验的前序检查点，保留网络和优化器。每阶段重建地图并清空回合历史。正式验收默认使用 1024 个并行环境。每份报告至少包含 1024 个完整回合，无更新次数上限。小规模比较须显式使用 `--screening`，即使五阶段门槛均通过也不标记正式验收。输出目录必须不存在。
 
 ```bash
 cd /home/tong/tongworkspace/free/isaaclab-navrl
 .venv/bin/python scripts/run_acceptance.py \
-  --method zhang --output logs/curriculum/sim2real_zhang_seed0 --train_seed 0 \
+  --method zhang --output "logs/curriculum/$(date +%Y-%m-%d_%H-%M-%S)_sim2real_zhang_seed0" --train_seed 0 \
   --train_args --variant dcol --timesteps 150 --max_grad_norm 5 --camera_batch_size 64
 ```
 
@@ -74,7 +82,9 @@ actor默认AdamW、weight_decay=.01，可显式选Adam；预训练lr默认.001�
 
 两任务共用 `SimToRealCfg`。位置、速度、姿态、LiDAR、深度噪声，观测和动作延迟，控制响应，质量、惯量、推力系数均可独立配置。观测扰动仅进入策略输入。延迟由官方 `DelayBuffer` 按策略步推进，部分回合重置清空对应历史。
 
-训练日志记录首次到达率、碰撞率、超时率、成功到达时间、return 和每步 reward。Zhang 另记原损失、梯度范数和 `executed_action_max_error`。动作差分在 Zhang 中沿用已有 Jerk 损失。参数监控另记 Optim/param_norm、Optim/update_norm、Optim/update_ratio，以及每层和六维输出行的变化率；稳定模型按5%起每5个百分点保存历史；性能退化先降学习率，观察后再恢复同阶段最高稳定档，见[分档协议](docs/migration/RECOVERY_LADDER_20261029.md)。归一化与 Plateau 在取得训练对照证据前均不替换默认。
+TensorBoard 使用统一的 `Train/success_rate`、`Train/episodes` 等标签。同一实验跨课程共用事件目录，课程编号单独记在 `Curriculum/stage`。Zhang 指标按 Loss、Optimization、Timing、Motion、Failures、ActorCritic 和 Memory 分类。逐层优化器指标仍保存在 `updates.jsonl`，不再显示在仪表盘。
+
+稳定模型从 5% 起每 5 个百分点保存一次。性能退化先降低学习率，观察后再恢复同阶段的最高稳定档。详见 [分档协议](docs/migration/RECOVERY_LADDER_20261029.md)。归一化与 Plateau 保持可选。
 
 真实成功率来自 `training_statistics.jsonl`；阶段状态来自 `training_result.json`。TensorBoard 服务使用已有地址 `http://100.92.244.71:6012/`，日志根目录为 `logs/curriculum/`。
 

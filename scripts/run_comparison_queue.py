@@ -58,8 +58,9 @@ def command_for(source, output, plan, run, device):
     ]
     if "report_episodes" in plan:
         command += ["--report_episodes", str(plan["report_episodes"])]
-    if "start_stage" in run:
-        command += ["--start_stage", run["start_stage"]]
+    command += ["--start_stage", run.get("start_stage", plan.get("start_stage", "finetune_s1"))]
+    if plan.get("fixed_stage", True):
+        command += ["--fixed_stage"]
     tokens = train_tokens(run)
     if tokens:
         command += ["--train_args", *tokens]
@@ -166,6 +167,10 @@ def launched_zhang_manifest(jobs, plan):
         "algorithm",
         "lr_schedule",
         "velocity_loss_mode",
+        "collision_metric",
+        "approach_mode",
+        "lateral_avoidance",
+        "risk_speed_floor",
         "height_loss_mode",
         "optimizer",
         "weight_decay",
@@ -185,7 +190,7 @@ def launched_zhang_manifest(jobs, plan):
                 "seed": plan["seed"],
                 "normalization": config.get("observation_normalization", False),
                 "num_envs": plan["num_envs"],
-                "start_stage": job.get("start_stage", "pretrain_s0"),
+                "start_stage": job.get("start_stage", plan.get("start_stage", "finetune_s1")),
                 **{key: config[key] for key in fields if key in config},
             }
         )
@@ -195,7 +200,11 @@ def launched_zhang_manifest(jobs, plan):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--plan", type=Path, required=True)
-    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=Path("logs/curriculum") / (datetime.now().strftime("%Y-%m-%d_%H-%M-%S") + "_comparison"),
+    )
     parser.add_argument("--commit", required=True, help="Full frozen commit SHA")
     parser.add_argument("--source_root", type=Path, help="Frozen training worktree; defaults to dispatcher tree")
     parser.add_argument("--gpu", default="0", help="Physical nvidia-smi GPU selector")
@@ -247,8 +256,12 @@ def main():
         if run["method"] not in ("zhang", "navrl"):
             parser.error("Unsupported method")
         protocol["parse_train_args"](train_tokens(run))
+        run["start_stage"] = run.get("start_stage", plan.get("start_stage", "finetune_s1"))
         protocol["selected_stages"](
-            run.get("start_stage", "pretrain_s0"), screening=plan["screening"], method=run["method"]
+            run["start_stage"],
+            screening=plan["screening"],
+            method=run["method"],
+            fixed_stage=plan.get("fixed_stage", True),
         )
         if run["method"] == "navrl" and run.get("train_args"):
             parser.error("PPO must not receive Zhang train_args")
