@@ -1300,6 +1300,49 @@
       "passed": false,
       "reason": "optional MoviePy dependency missing"
     },
-    "upstream_navrl_commit": "3725bcc2e7c1be4ecf1455d922299ae85042603a"
+    "upstream_navrl_commit": "3725bcc2e7c1be4ecf1455d922299ae85042603a",
+    "frozen_pipeline": {
+      "passed": true,
+      "commit": "32e384d6667465dc76e84327a64eb5d44841a093",
+      "status": "stopped",
+      "completed_updates": 2,
+      "num_envs": 16,
+      "H": 2,
+      "child": {
+        "pid": 1568380,
+        "command": [
+          "/home/tong/tongworkspace/free/isaaclab-navrl/.venv/bin/python",
+          "/home/tong/.local/state/codex-with-chatgpt/reviews/isaaclab-navrl-20261030/diagnostics/frozen_pipeline_smoke/source/scripts/train_zhang.py",
+          "--stage",
+          "pretrain_s0",
+          "--log_dir",
+          "/home/tong/.local/state/codex-with-chatgpt/reviews/isaaclab-navrl-20261030/diagnostics/frozen_pipeline_smoke/zhang/pretrain_s0",
+          "--num_envs",
+          "16",
+          "--seed",
+          "0",
+          "--terrain_seed",
+          "0",
+          "--device",
+          "cuda:0",
+          "--stop_after_acceptance",
+          "--report_episodes",
+          "1024",
+          "--timesteps",
+          "2"
+        ]
+      },
+      "process_elapsed_s": 49.56485488102771,
+      "learning_elapsed_s": 3.112943992950022,
+      "source_root": "/home/tong/.local/state/codex-with-chatgpt/reviews/isaaclab-navrl-20261030/diagnostics/frozen_pipeline_smoke/source",
+      "checkpoint": "/home/tong/.local/state/codex-with-chatgpt/reviews/isaaclab-navrl-20261030/diagnostics/frozen_pipeline_smoke/zhang/pretrain_s0/checkpoint_stopped.pt",
+      "checkpoint_sha256": "6284b0e5bccea4b7c1923144293e9e1b188161510b82ab37fceb6ebb5e35e2ae"
+    },
+    "ruff": {
+      "lint_passed": true,
+      "formatted_files": 123,
+      "reformatted_files": 103,
+      "ast_unchanged": true
+    }
   }
 }
