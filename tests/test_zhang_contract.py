@@ -410,18 +410,19 @@ def test_original_network_matches_published_model():
     torch.testing.assert_close(actual_hidden, expected_hidden, rtol=0, atol=0)
 
 
-def test_activation_checkpointing_preserves_recurrent_outputs_and_gradients():
+@pytest.mark.parametrize("recurrent_model", ("gru", "sru_lstm_gated"))
+def test_activation_checkpointing_preserves_recurrent_outputs_and_gradients(recurrent_model):
     import copy
 
     torch.manual_seed(29)
-    original = ZhangPolicy()
+    original = ZhangPolicy(recurrent_model)
     checkpointed = copy.deepcopy(original)
     depth = torch.randn(4, 1, 12, 16)
     state = torch.randn(4, 10)
     outputs, gradients, saved_counts = [], [], []
     for model, forward in ((original, original.forward), (checkpointed, checkpointed.forward_checkpointed)):
         state_input = state.clone().requires_grad_()
-        hidden = torch.zeros(4, 192)
+        hidden = torch.zeros(4, model.recurrent_state_size)
         saved = []
 
         def pack(tensor, saved=saved):
@@ -760,10 +761,12 @@ class AnalyticEnv:
         return {}, torch.zeros(2), done, torch.zeros(2, dtype=torch.bool), {"transition": transition}
 
 
-def test_two_bptt_updates_survive_resets_and_save_independent_inference(tmp_path):
+@pytest.mark.parametrize("recurrent_model", ("gru", "sru_lstm_gated"))
+def test_two_bptt_updates_survive_resets_and_save_independent_inference(tmp_path, recurrent_model):
     torch.manual_seed(3)
     env = AnalyticEnv()
     cfg = ZhangTrainCfg(
+        recurrent_model=recurrent_model,
         physics_dt=0.01,
         policy_dt=0.1,
         variant="step",
@@ -802,7 +805,8 @@ def test_two_bptt_updates_survive_resets_and_save_independent_inference(tmp_path
         load_zhang_policy(env, legacy)
 
 
-def test_stage_handoff_preserves_weights_optimizer_and_counts_actual_transitions(tmp_path):
+@pytest.mark.parametrize("recurrent_model", ("gru", "sru_lstm_gated"))
+def test_stage_handoff_preserves_weights_optimizer_and_counts_actual_transitions(tmp_path, recurrent_model):
     checkpoint = None
     previous_weights = None
     expected_steps = 0
@@ -811,6 +815,7 @@ def test_stage_handoff_preserves_weights_optimizer_and_counts_actual_transitions
         env.cfg.training_stage = stage
         env.cfg.sim_to_real.enabled = stage.startswith("finetune")
         cfg = ZhangTrainCfg(
+            recurrent_model=recurrent_model,
             physics_dt=0.01,
             policy_dt=0.1,
             variant="step",

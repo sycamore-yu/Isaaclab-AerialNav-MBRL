@@ -12,6 +12,7 @@ ZHANG_ALGORITHMS = ("bptt", "shac", "ahac")
 class ZhangTrainCfg:
     variant: Literal["step", "continuous", "dcol"] = "dcol"
     algorithm: Literal["bptt", "shac", "ahac"] = "bptt"
+    recurrent_model: Literal["gru", "sru_lstm_gated"] = "gru"
     timesteps: int = 150
     max_iterations: int | None = None
     stop_after_acceptance: bool = False
@@ -97,6 +98,10 @@ class ZhangTrainCfg:
             raise ValueError(f"variant must be one of {ZHANG_VARIANTS}")
         if self.algorithm not in ZHANG_ALGORITHMS:
             raise ValueError(f"algorithm must be one of {ZHANG_ALGORITHMS}")
+        if self.recurrent_model not in ("gru", "sru_lstm_gated"):
+            raise ValueError("recurrent_model must be gru or sru_lstm_gated")
+        if self.recurrent_model == "sru_lstm_gated" and self.algorithm != "bptt":
+            raise ValueError("SRU-LSTM-Gated currently requires --algorithm bptt; SHAC/AHAC are not supported")
         _ = self.resolved_velocity_loss_mode
         if self.collision_metric not in ("dcol", "sdf") or (self.collision_metric == "sdf" and self.variant != "dcol"):
             raise ValueError("collision_metric must be dcol or sdf; sdf comparison requires variant dcol timing")

@@ -23,7 +23,7 @@ class ZhangInference:
         self.cfg = ZhangTrainCfg(**payload["train_cfg"])
         self.cfg.validate()
         self.env = env
-        self.model = ZhangPolicy().to(env.device).eval()
+        self.model = ZhangPolicy(self.cfg.recurrent_model).to(env.device).eval()
         self.model.load_state_dict(payload["model_state_dict"], strict=True)
         self.normalizer = PolicyObservationNormalizer(
             self.cfg.observation_normalization, self.cfg.normalization_variance_floor, device=env.device
@@ -31,7 +31,7 @@ class ZhangInference:
         if payload["format_version"] == 3:
             self.normalizer.load_state_dict(payload["normalizer_state_dict"], strict=True)
         self.normalization_snapshot = self.normalizer.begin_rollout()
-        self.hidden = torch.zeros(env.num_envs, 192, device=env.device)
+        self.hidden = torch.zeros(env.num_envs, self.model.recurrent_state_size, device=env.device)
         self.episode_id = torch.full((env.num_envs,), -1, device=env.device, dtype=torch.long)
 
     @torch.no_grad()

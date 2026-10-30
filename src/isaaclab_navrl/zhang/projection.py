@@ -145,7 +145,7 @@ class ActionUpdateProbe:
         projected, projection_metrics = height_priority_gradient(total_flat, height_flat, height_weight)
         self._height = height_flat.detach().clone()
         self._total = total_flat.detach().clone()
-        self._probe = self._snapshot_probe(probe)
+        self._probe = self._snapshot_probe(probe, model.recurrent_state_size)
         active_gradients = [parameter.grad is not None for _, parameter in named]
         optimized = [
             parameter for group in optimizer.param_groups for parameter in group["params"] if parameter.requires_grad
@@ -241,7 +241,7 @@ class ActionUpdateProbe:
         _synchronize(self._device)
         self.diagnostic_s = time.perf_counter() - started
 
-    def _snapshot_probe(self, probe):
+    def _snapshot_probe(self, probe, recurrent_state_size):
         required = ("depth", "features", "hidden", "heading", "thrust_error")
         if any(name not in probe for name in required):
             raise ValueError(f"Action probes require {required}")
@@ -257,7 +257,7 @@ class ActionUpdateProbe:
             result["features"].shape != (count, 10)
             or result["heading"].shape != (count, 3, 3)
             or result["thrust_error"].shape != (count, 1)
-            or (result["hidden"] is not None and result["hidden"].shape != (count, 192))
+            or (result["hidden"] is not None and result["hidden"].shape != (count, recurrent_state_size))
         ):
             raise ValueError("Action probe state/heading/thrust/hidden shapes must match ZhangPolicy")
         if any(

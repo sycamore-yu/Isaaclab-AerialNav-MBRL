@@ -65,7 +65,7 @@ class GradientDiagnostic:
                     "flat_offset": offset,
                 }
             )
-            if name.startswith(("stem.", "v_proj.", "gru.")):
+            if name.startswith(("stem.", "v_proj.", "gru.", "sru.")):
                 trunk.append((offset, end))
             if name == "fc.weight":
                 if parameter.ndim != 2 or parameter.shape[0] != 6:

@@ -72,6 +72,7 @@ def main():
                         break
             result = {
                 "method": args.method,
+                **({"recurrent_model": policy.cfg.recurrent_model} if args.method == "zhang" else {}),
                 "checkpoint": str(args.checkpoint.resolve()),
                 "seed": args.seed,
                 "terrain_seed": args.terrain_seed,

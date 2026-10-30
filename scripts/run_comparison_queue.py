@@ -165,6 +165,7 @@ def launched_zhang_manifest(jobs, plan):
     fields = (
         "variant",
         "algorithm",
+        "recurrent_model",
         "lr_schedule",
         "velocity_loss_mode",
         "collision_metric",

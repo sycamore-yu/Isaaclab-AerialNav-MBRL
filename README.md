@@ -7,6 +7,22 @@
 | NavRL | `Isaac-NavRL-Hummingbird-Direct-v0` | 官方 RSL-RL PPO、共享编码器、Beta 速度动作 |
 | Zhang | `Isaac-NavRL-Zhang-Hummingbird-Direct-v0` | CNN + GRU192、PhysX 前向、可微质点模型反向，前向状态取自 PhysX |
 
+Zhang BPTT 可通过 `--recurrent_model sru_lstm_gated` 选择 SRU-LSTM-Gated，默认仍为 `gru`。
+SRU 沿用 CNN、10 维状态及 6 维输出，完整维护 192 维 `h` 和 192 维 `c`。
+检查点记录模型类型，推理按记录自动加载；GRU 与 SRU 检查点不能互换。
+SRU 暂不支持 SHAC/AHAC，参数验证会在创建环境前报错。
+来源与适配范围见 [SRU 适配说明](docs/SRU_LSTM_GATED_ADAPTATION.md)。
+
+单条 SRU 长期训练使用 256 环境、seed 0、固定 `finetune_s1` 和随机初始化。
+配置复用下述基线，仅改变循环模型；每份报告至少 1024 个完整回合，达到 80% 后继续训练。
+运行前需提交源码，以便管线生成可核验的独立快照：
+
+```bash
+PYTHONPATH=src .venv/bin/python scripts/run_comparison_queue.py \
+  --plan configs/experiments/zhang_sru_lstm_gated.json \
+  --commit "$(git rev-parse HEAD)"
+```
+
 ## 训练与验收
 
 当前默认采用 20 Hz 同步 DCOL+BPTT、完整 2 秒速度窗口和 `navrl_range` 高度损失。动态障碍前视位置已按查询时刻预测。旧训练已停止并保留检查点。此前 P0/P1 诊断见 [实施报告](docs/P0_P1_20261030.md)。当前六组固定微调 S1 对照见 [实验说明](docs/TIME_ALIGNED_AVOIDANCE_20261030.md)。

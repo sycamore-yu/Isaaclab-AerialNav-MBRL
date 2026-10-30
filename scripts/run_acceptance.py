@@ -94,6 +94,7 @@ def validate_stage_result(
     parent_checkpoint: Path | None,
     variant: str = "dcol",
     algorithm: str = "bptt",
+    recurrent_model: str = "gru",
     report_episodes: int | None = None,
     velocity_loss_mode: str | None = None,
     screening: bool = False,
@@ -116,6 +117,10 @@ def validate_stage_result(
     if method == "zhang":
         expect(result.get("variant") == variant, "Zhang variant does not match the launched experiment")
         expect(result.get("algorithm") == algorithm, "Zhang algorithm does not match the launched experiment")
+        expect(
+            result.get("recurrent_model", "gru") == recurrent_model,
+            "Zhang recurrent_model does not match the launched experiment",
+        )
         resolved_mode = velocity_loss_mode
         if velocity_loss_mode == "variant_default":
             resolved_mode = "per_step" if variant == "step" else "truncated_window"
@@ -350,6 +355,7 @@ def run_pipeline(args: argparse.Namespace, train_args: dict[str, TrainArgValue])
                         parent_checkpoint=parent_checkpoint,
                         variant=train_args.get("variant", "dcol"),
                         algorithm=train_args.get("algorithm", "bptt"),
+                        recurrent_model=train_args.get("recurrent_model", "gru"),
                         report_episodes=getattr(args, "report_episodes", None),
                         velocity_loss_mode=train_args.get("velocity_loss_mode"),
                         screening=screening,

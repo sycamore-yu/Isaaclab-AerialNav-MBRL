@@ -80,7 +80,7 @@ class ZhangTrainer:
             raise ValueError("The environment and trainer must use the same episode target height range")
         self.env, self.cfg = env, cfg
         self.log_dir = Path(log_dir).resolve()
-        self.model = ZhangPolicy().to(env.device)
+        self.model = ZhangPolicy(cfg.recurrent_model).to(env.device)
         optimizer_type = torch.optim.AdamW if cfg.optimizer == "adamw" else torch.optim.Adam
         self.optimizer = optimizer_type(self.model.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)
         self.normalizer = PolicyObservationNormalizer(
@@ -149,7 +149,7 @@ class ZhangTrainer:
         observation = self.env.get_zhang_observation()
         zero = torch.zeros_like(observation["velocity"])
         state = PointMassState(observation["position"].detach(), observation["velocity"].detach(), zero, zero)
-        hidden = zero.new_zeros(self.env.num_envs, 192)
+        hidden = zero.new_zeros(self.env.num_envs, self.model.recurrent_state_size)
         action_history = DifferentiableDelay(self.env.perturbation.action_buffer.history_length)
         observation_history = DifferentiableDelay(self.env.perturbation.observation_buffer.history_length)
         critic_history = CriticHistory(self.cfg.velocity_window_steps, zero)
@@ -421,6 +421,7 @@ class ZhangTrainer:
             "method": "zhang",
             "variant": self.cfg.variant,
             "algorithm": self.cfg.algorithm,
+            "recurrent_model": self.cfg.recurrent_model,
             "collision_metric": self.cfg.collision_metric,
             "approach_mode": self.cfg.approach_mode,
             "lateral_avoidance": self.cfg.lateral_avoidance,

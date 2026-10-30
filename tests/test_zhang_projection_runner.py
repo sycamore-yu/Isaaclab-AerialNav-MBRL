@@ -63,8 +63,12 @@ def _trainer(path, cfg):
 
 
 @pytest.mark.parametrize("projection", ("none", "height_priority"))
-def test_runner_probe_uses_pre_call_state_and_changes_no_training_update(tmp_path, monkeypatch, projection):
+@pytest.mark.parametrize("recurrent_model", ("gru", "sru_lstm_gated"))
+def test_runner_probe_uses_pre_call_state_and_changes_no_training_update(
+    tmp_path, monkeypatch, projection, recurrent_model
+):
     cfg = ZhangTrainCfg(
+        recurrent_model=recurrent_model,
         physics_dt=0.01,
         policy_dt=0.1,
         variant="step",
@@ -167,6 +171,9 @@ def test_runner_probe_uses_pre_call_state_and_changes_no_training_update(tmp_pat
     records = [json.loads(line) for line in (measured.log_dir / "gradient_diagnostics.jsonl").read_text().splitlines()]
     assert len(records) == 1 and records[0]["update"] == 7
     record = records[0]
+    assert record["groups"]["trunk"]["parameter_count"] == (
+        sum(parameter.numel() for parameter in measured.model.parameters()) - measured.model.fc.weight.numel()
+    )
     assert record["applied_gradient_projection"] == projection
     assert record["total_gradient_check"]["relative_l2_error"] < 2e-5
     probe_record = record["optimizer_action_probe"]
@@ -190,6 +197,6 @@ def test_runner_probe_uses_pre_call_state_and_changes_no_training_update(tmp_pat
     for name in ("depth", "features", "hidden"):
         torch.testing.assert_close(observed["probe_inputs"][name], calls[-1][name][expected_ids], rtol=0, atol=0)
     # Recurrent state after the selected call is distinct, so the test would
-    # detect accidentally probing one extra GRU transition.
+    # detect accidentally probing one extra recurrent transition.
     assert not torch.equal(observed["probe_inputs"]["hidden"], calls[-1]["hidden_after_call"][expected_ids])
     assert not any(value.requires_grad for value in observed["probe_inputs"].values())

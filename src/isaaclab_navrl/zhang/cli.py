@@ -42,6 +42,7 @@ TRAIN_ARG_TYPES = {
     "target_speed_max": float,
     "variant": str,
     "algorithm": str,
+    "recurrent_model": str,
     "lr_schedule": str,
     "observation_normalization": parse_binary_flag,
     "normalization_variance_floor": float,
@@ -149,6 +150,8 @@ def parse_train_args(tokens: list[str]) -> dict[str, TrainArgValue]:
     if values.get("failure_terminal_cost", 0) and values.get("algorithm", "bptt") == "bptt":
         raise ValueError("failure_terminal_cost requires SHAC or AHAC")
     if values.get("algorithm", "bptt") != "bptt":
+        if values.get("recurrent_model", "gru") == "sru_lstm_gated":
+            raise ValueError("SRU-LSTM-Gated currently requires --algorithm bptt; SHAC/AHAC are not supported")
         if values.get("variant", "dcol") != "dcol":
             raise ValueError("SHAC/AHAC comparisons require --variant dcol")
         if values.get("gradient_projection", "none") != "none":

@@ -1,4 +1,4 @@
-"""CNN and GRU architecture from HenryHuYu/DiffPhysDrone/model.py.
+"""Zhang CNN policy with the original GRU or an SRU-LSTM-Gated memory.
 
 The six outputs are interleaved [ax, vx, ay, vy, az, vz], not two contiguous
 three-vectors. Inputs retain the ten-dimensional odometry configuration.
@@ -8,10 +8,16 @@ import torch
 from torch import nn
 from torch.utils.checkpoint import checkpoint
 
+from .sru import LSTMSRUGateCell
+
 
 class ZhangPolicy(nn.Module):
-    def __init__(self):
+    def __init__(self, recurrent_model="gru"):
         super().__init__()
+        if recurrent_model not in ("gru", "sru_lstm_gated"):
+            raise ValueError("recurrent_model must be gru or sru_lstm_gated")
+        self.recurrent_model = recurrent_model
+        self.recurrent_state_size = 192 if recurrent_model == "gru" else 384
         self.stem = nn.Sequential(
             nn.Conv2d(1, 32, 2, 2, bias=False),
             nn.LeakyReLU(0.05),
@@ -23,7 +29,10 @@ class ZhangPolicy(nn.Module):
             nn.Linear(128 * 2 * 4, 192, bias=False),
         )
         self.v_proj = nn.Linear(10, 192)
-        self.gru = nn.GRUCell(192, 192)
+        if recurrent_model == "gru":
+            self.gru = nn.GRUCell(192, 192)
+        else:
+            self.sru = LSTMSRUGateCell(192, 192)
         self.fc = nn.Linear(192, 6, bias=False)
         self.act = nn.LeakyReLU(0.05)
         with torch.no_grad():
@@ -32,8 +41,17 @@ class ZhangPolicy(nn.Module):
 
     def forward(self, depth_features, state, hidden=None):
         feature = self.act(self.stem(depth_features) + self.v_proj(state))
-        hidden = self.gru(feature, hidden)
-        return self.fc(self.act(hidden)), hidden
+        if self.recurrent_model == "gru":
+            hidden = self.gru(feature, hidden)
+            output_hidden = hidden
+        else:
+            if hidden is None:
+                hidden = feature.new_zeros(len(feature), self.recurrent_state_size)
+            h, c = self.sru(feature, *hidden.split(192, dim=-1))
+            # Pack both states so existing per-environment reset/detach/probes cover the full memory.
+            hidden = torch.cat((h, c), dim=-1)
+            output_hidden = h
+        return self.fc(self.act(output_hidden)), hidden
 
     def forward_checkpointed(self, depth_features, state, hidden):
         """Recompute neural activations during backward; never replay PhysX."""
