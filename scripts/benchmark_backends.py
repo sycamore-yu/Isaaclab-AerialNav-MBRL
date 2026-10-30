@@ -419,12 +419,17 @@ def main():
     parser.add_argument("--updates", type=int, default=5, help="Total updates per fresh training subprocess")
     parser.add_argument("--warmup", type=int, default=2, help="Leading updates excluded from stable-update statistics")
     parser.add_argument("--rounds", type=int, default=3)
+    parser.add_argument(
+        "--num-envs", type=int, default=256, help="Parallel drones per backend; lower when GPU is shared"
+    )
     parser.add_argument("--device", default="cuda:0")
     args = parser.parse_args()
-    if args.updates <= args.warmup or args.warmup < 0 or args.rounds < 1:
-        parser.error("Require updates > warmup >= 0 and rounds >= 1")
+    if args.updates <= args.warmup or args.warmup < 0 or args.rounds < 1 or args.num_envs < 1:
+        parser.error("Require updates > warmup >= 0, rounds >= 1, num-envs >= 1")
     if not args.device.startswith("cuda"):
         parser.error("This comparison requires --device cuda[:index]")
+    global NUM_ENVS
+    NUM_ENVS = args.num_envs
     root = Path(__file__).resolve().parents[1]
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=False)
@@ -433,6 +438,7 @@ def main():
         "created_at": datetime.now(UTC).isoformat(),
         "source_root": str(root),
         "device": args.device,
+        "num_envs": NUM_ENVS,
         "updates": args.updates,
         "warmup": args.warmup,
         "rounds": args.rounds,

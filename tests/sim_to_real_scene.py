@@ -322,11 +322,25 @@ def main():
                 policy_depth = camera.data.output["policy_depth"].torch
                 assert policy_depth.shape == (env.num_envs, 12, 16, 1)
                 assert torch.isfinite(policy_depth).all()
-                obstacle_poses = env.dynamic_collection.data.body_pose_w.torch
-                torch.testing.assert_close(obstacle_poses, obstacle_poses[:1].expand_as(obstacle_poses), atol=1e-6, rtol=0)
-                torch.testing.assert_close(
-                    obstacle_poses[0, env._active_obstacle_ids, :3], env.motion.position, atol=1e-6, rtol=0
-                )
+                if env.dynamic_collection is not None:
+                    obstacle_poses = env.dynamic_collection.data.body_pose_w.torch
+                    torch.testing.assert_close(
+                        obstacle_poses, obstacle_poses[:1].expand_as(obstacle_poses), atol=1e-6, rtol=0
+                    )
+                    torch.testing.assert_close(
+                        obstacle_poses[0, env._active_obstacle_ids, :3], env.motion.position, atol=1e-6, rtol=0
+                    )
+                else:
+                    import warp as wp
+
+                    camera._update_mesh_transforms()
+                    obstacle_poses = wp.to_torch(camera._mesh_positions_w)
+                    torch.testing.assert_close(
+                        obstacle_poses, obstacle_poses[:1].expand_as(obstacle_poses), atol=1e-6, rtol=0
+                    )
+                    torch.testing.assert_close(
+                        obstacle_poses[0, env._active_obstacle_ids + 2], env.motion.position, atol=1e-6, rtol=0
+                    )
                 begin, end, raw_depth = camera.last_depth_batch
                 assert raw_depth.shape == (end - begin, 1, 120, 160)
                 assert torch.isfinite(raw_depth).all()

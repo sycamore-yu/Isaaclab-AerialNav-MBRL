@@ -21,8 +21,9 @@ def isolated_methods(filename, class_name, names, namespace=None):
 
 
 def test_static_only_camera_initializes_and_skips_dynamic_transform_fetch():
-    names = ("_clear_shared_mesh_tracking", "_initialize_shared_mesh_tracking", "_update_mesh_transforms")
+    names = ("_initialize_shared_mesh_tracking", "_update_mesh_transforms")
     methods = isolated_methods("depth_camera.py", "BatchedDepthCamera", names)
+    methods.update(isolated_methods("sensor_mixins.py", "_BatchedDepthCameraMixin", ("_clear_shared_mesh_tracking",)))
     camera = SimpleNamespace(
         _mesh_views=[None, None],
         _raycast_targets_cfg=[

@@ -7,8 +7,8 @@ import sys
 
 PHYSICS_PRESETS = ("isaacsim_physx", "newton_mjwarp")
 FRONTENDS = ("torch", "warp")
-DEFAULT_PHYSICS = "isaacsim_physx"
-DEFAULT_FRONTEND = "torch"
+DEFAULT_PHYSICS = "newton_mjwarp"
+DEFAULT_FRONTEND = "warp"
 
 
 def validate_runtime(physics: str, frontend: str) -> None:
@@ -53,7 +53,11 @@ def parse_physics_args(parser: argparse.ArgumentParser, argv: list[str] | None =
         parser.error("Specify physics=NAME and --frontend at most once each")
     physics = physics_selectors[0] if physics_selectors else DEFAULT_PHYSICS
     args = parser.parse_args(remaining)
-    args.frontend = frontend_selectors[0] if frontend_selectors else DEFAULT_FRONTEND
+    # An explicit PhysX physics preset selects its only supported frontend.
+    # Explicit incompatible combinations still fail validation below.
+    args.frontend = (
+        frontend_selectors[0] if frontend_selectors else ("torch" if physics == "isaacsim_physx" else DEFAULT_FRONTEND)
+    )
     try:
         validate_runtime(physics, args.frontend)
     except ValueError as exc:

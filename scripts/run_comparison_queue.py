@@ -39,7 +39,9 @@ def train_tokens(run):
     return tokens
 
 
-def command_for(source, output, plan, run, device, physics=DEFAULT_PHYSICS, frontend=DEFAULT_FRONTEND):
+def command_for(source, output, plan, run, device, physics=DEFAULT_PHYSICS, frontend=None):
+    if frontend is None:
+        frontend = "torch" if physics == "isaacsim_physx" else DEFAULT_FRONTEND
     validate_runtime(physics, frontend)
     command = [
         sys.executable,

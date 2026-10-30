@@ -38,12 +38,15 @@ class ZhangTrainConfigTests(unittest.TestCase):
     def test_torch_frontend_accepts_both_physics_backends(self):
         for physics in ("isaacsim_physx", "newton_mjwarp"):
             with self.subTest(physics=physics):
-                args = parse_physics_args(
-                    argparse.ArgumentParser(), ["--frontend", "torch", f"physics={physics}"]
-                )
+                args = parse_physics_args(argparse.ArgumentParser(), ["--frontend", "torch", f"physics={physics}"])
                 self.assertEqual((args.physics_preset, args.frontend), (physics, "torch"))
                 self.assertFalse(hasattr(args, "physics"))
                 ZhangTrainCfg(physics=args.physics_preset, frontend=args.frontend).validate()
+
+    def test_explicit_physx_without_frontend_uses_compatible_torch(self):
+        args = parse_physics_args(argparse.ArgumentParser(), ["physics=isaacsim_physx"])
+        self.assertEqual((args.physics_preset, args.frontend), ("isaacsim_physx", "torch"))
+        ZhangTrainCfg(physics=args.physics_preset, frontend=args.frontend).validate()
 
     def test_invalid_physics_selector_cannot_silently_launch_physx(self):
         for tokens in (["physics=newton"], ["physics=newton_mjwarp", "physics=isaacsim_physx"]):

@@ -49,8 +49,10 @@ def build_command(
     fresh_stage: bool = False,
     fixed_stage: bool = False,
     physics: str = DEFAULT_PHYSICS,
-    frontend: str = DEFAULT_FRONTEND,
+    frontend: str | None = None,
 ) -> list[str]:
+    if frontend is None:
+        frontend = "torch" if physics == "isaacsim_physx" else DEFAULT_FRONTEND
     validate_runtime(physics, frontend)
     command = [
         executable,

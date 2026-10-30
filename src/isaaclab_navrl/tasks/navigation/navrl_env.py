@@ -71,13 +71,19 @@ class NavRLEnv(DirectRLEnv):
             self.physics_dt if cfg.method == "zhang" else self.step_dt,
             cfg.dynamic_speed_range,
         )
-        self.dynamic_collection = self.scene["dynamic_obstacles"] if cfg.num_dynamic_obstacles else None
+        self.dynamic_collection = (
+            self.scene["dynamic_obstacles"]
+            if cfg.num_dynamic_obstacles and self.drone.__backend_name__ != "newton"
+            else None
+        )
         if self.dynamic_collection is not None:
             instances = self.dynamic_collection.data.body_pose_w.torch.shape[0]
             expected = self.num_envs if self.drone.__backend_name__ == "newton" else 1
             if instances != expected:
                 raise RuntimeError(f"Dynamic obstacle instances: expected {expected}, got {instances}.")
             self._dynamic_pose = self.dynamic_collection.data.body_pose_w.torch.clone()
+            self.set_active_obstacles(cfg.num_dynamic_obstacles)
+        elif self.drone.__backend_name__ == "newton":
             self.set_active_obstacles(cfg.num_dynamic_obstacles)
         self.target_pos = torch.zeros(self.num_envs, 3, device=self.device)
         self.target_dir = torch.zeros_like(self.target_pos)
@@ -198,9 +204,15 @@ class NavRLEnv(DirectRLEnv):
             self.cfg.dynamic_speed_range,
         )
         self.cfg.num_dynamic_obstacles = count
+        if getattr(getattr(self, "drone", None), "__backend_name__", None) == "newton":
+            self._bind_shared_dynamic_geometry()
         if self.dynamic_collection is not None:
             self._dynamic_pose[:, :, :3] = self._dynamic_pose.new_tensor((0.0, 0.0, -1000.0))
         self._write_dynamic_obstacles()
+
+    def _bind_shared_dynamic_geometry(self):
+        """Connect one global obstacle process to Newton's camera meshes."""
+        self.scene["depth_camera"].set_motion(self.motion, self._active_obstacle_ids)
 
     def advance_curriculum(self):
         count = self.curriculum.advance()

@@ -41,9 +41,7 @@ class NavigationPhysicsCfg(PresetCfg):
     newton_mjwarp = NewtonCfg(
         # MuJoCo mesh contacts use a convex hull. Newton's triangle contacts
         # preserve the original non-convex forest mesh and its free corridors.
-        solver_cfg=MJWarpSolverCfg(
-            integrator="implicitfast", disable_sensors=True, use_mujoco_contacts=False
-        ),
+        solver_cfg=MJWarpSolverCfg(integrator="implicitfast", disable_sensors=True, use_mujoco_contacts=False),
         load_visual_shapes=True,
     )
     default = {"isaacsim_physx": isaacsim_physx, "newton_mjwarp": newton_mjwarp}[DEFAULT_PHYSICS]
@@ -81,17 +79,15 @@ class SharedNavigationSceneCfg(InteractiveSceneCfg):
     depth_camera: MultiMeshRayCasterCameraCfg | None = None
 
 
-def make_dynamic_cfg(count: int, seed: int, *, newton: bool = False) -> RigidObjectCollectionCfg | None:
+def make_dynamic_cfg(count: int, seed: int) -> RigidObjectCollectionCfg | None:
     if count == 0:
         return None
     positions, sizes = dynamic_layout(count, seed)
-    root = "{ENV_REGEX_NS}/Dynamic" if newton else "/World/Dynamic"
+    root = "/World/Dynamic"
     objects = {}
     for index, (position, size) in enumerate(zip(positions, sizes, strict=True)):
         properties = {
             "rigid_props": [UsdPhysicsRigidBodyCfg(kinematic_enabled=True), PhysxRigidBodyCfg(disable_gravity=True)],
-            # Collision-free geometry has no inferred mass in Newton's importer.
-            # Positive authored mass retains the kinematic body's free joint.
             "mass_props": MassCfg(mass=1.0),
             "collision_props": UsdPhysicsCollisionCfg(collision_enabled=False),
             "visual_material": sim_utils.PreviewSurfaceCfg(diffuse_color=(0.0, 1.0, 0.0), metallic=0.2),
@@ -104,9 +100,34 @@ def make_dynamic_cfg(count: int, seed: int, *, newton: bool = False) -> RigidObj
             prim_path=f"{root}/obstacle_{index:03d}",
             spawn=spawn,
             init_state=RigidObjectCfg.InitialStateCfg(pos=tuple(float(x) for x in position)),
-            collision_group=0 if newton else -1,
+            collision_group=-1,
         )
     return RigidObjectCollectionCfg(rigid_objects=objects)
+
+
+def make_shared_dynamic_geometry(count: int, seed: int) -> dict[str, AssetBaseCfg]:
+    """Author one global render/raycast geometry set, without Newton rigid bodies.
+
+    Dynamic obstacles use analytic signed clearance, not solver contacts. The
+    camera receives their live shared transforms directly from the motion state.
+    AssetBaseCfg's geometry-only spawners retain the source cuboid/cylinder
+    meshes while avoiding N-world kinematic link duplication.
+    """
+    positions, sizes = dynamic_layout(count, seed)
+    result = {}
+    for index, (position, size) in enumerate(zip(positions, sizes, strict=True)):
+        geometry = (
+            sim_utils.CylinderCfg(radius=float(size[0] / 2), height=5.0)
+            if size[2] > 1
+            else sim_utils.CuboidCfg(size=tuple(float(x) for x in size))
+        )
+        result[f"dynamic_visual_{index:03d}"] = AssetBaseCfg(
+            prim_path=f"/World/Dynamic/obstacle_{index:03d}",
+            spawn=geometry,
+            init_state=AssetBaseCfg.InitialStateCfg(pos=tuple(float(x) for x in position)),
+            collision_group=0,
+        )
+    return result
 
 
 @configclass
@@ -184,8 +205,8 @@ class NavRLEnvCfg(DirectRLEnvCfg):
     def configure_scene(self):
         """Apply task counts after command-line overrides and before launch."""
         newton = isinstance(self.sim.physics, NewtonCfg)
-        # MJWarp forbids global dynamic bodies. Each Newton world has kinematic
-        # copies driven by the same authoritative motion; the terrain stays shared.
+        # Newton's global geometry is read by one camera BVH; movement comes
+        # from shared GPU tensors. No dynamic rigid body enters any MJWarp world.
         self.scene.replicate_physics = newton
         self.scene.env_spacing = 0.0 if newton else 8.0
         self.scene.lidar.class_type = ResolvableString(
@@ -204,7 +225,15 @@ class NavRLEnvCfg(DirectRLEnvCfg):
         else:
             self.events.inertia = None
         self.scene.terrain = build_terrain_cfg(self.scene.num_envs, self.num_static_obstacles, self.terrain_seed)
-        self.scene.dynamic_obstacles = make_dynamic_cfg(self.dynamic_capacity(), self.terrain_seed, newton=newton)
+        self.scene.dynamic_obstacles = None if newton else make_dynamic_cfg(self.dynamic_capacity(), self.terrain_seed)
+        # configure_scene is idempotent, including when preset resolution runs
+        # before the final CLI/backend selection.
+        for name in list(vars(self.scene)):
+            if name.startswith("dynamic_visual_"):
+                delattr(self.scene, name)
+        if newton:
+            for name, asset_cfg in make_shared_dynamic_geometry(self.dynamic_capacity(), self.terrain_seed).items():
+                setattr(self.scene, name, asset_cfg)
         self.scene.lidar.update_period = self.sim.dt * self.decimation
 
         # NavRL ros1/map_manager/cfg/dynamic_map_param.yaml and quadcopter.urdf.
@@ -213,9 +242,9 @@ class NavRLEnvCfg(DirectRLEnvCfg):
             target(prim_expr="/World/ground", is_shared=True, track_mesh_transforms=False),
             target(prim_expr="/World/defaultGroundPlane", is_shared=True, track_mesh_transforms=False),
         ]
-        dynamic_root = "{ENV_REGEX_NS}/Dynamic" if newton else "/World/Dynamic"
+        dynamic_root = "/World/Dynamic"
         meshes.extend(
-            target(prim_expr=f"{dynamic_root}/obstacle_{i:03d}", is_shared=True, track_mesh_transforms=True)
+            target(prim_expr=f"{dynamic_root}/obstacle_{i:03d}", is_shared=True, track_mesh_transforms=not newton)
             for i in range(self.dynamic_capacity())
         )
         self.scene.depth_camera = BatchedDepthCameraCfg(
