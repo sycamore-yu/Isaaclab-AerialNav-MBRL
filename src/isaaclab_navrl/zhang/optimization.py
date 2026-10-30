@@ -114,8 +114,14 @@ def make_plateau_scheduler(
     if any(not math.isfinite(value) or value < 0 for value in (threshold, min_lr)):
         raise ValueError("plateau threshold and min_lr must be finite and nonnegative")
     return torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode="max", factor=factor, patience=patience, threshold=threshold,
-        threshold_mode="abs", cooldown=cooldown, min_lr=min_lr,
+        optimizer,
+        mode="max",
+        factor=factor,
+        patience=patience,
+        threshold=threshold,
+        threshold_mode="abs",
+        cooldown=cooldown,
+        min_lr=min_lr,
     )
 
 
@@ -139,14 +145,22 @@ class RecoveryConfig:
     def validate(self) -> None:
         if type(self.enabled) is not bool:
             raise ValueError("Recovery enabled must be bool")
-        if any(type(value) is not int or value < 1 for value in (
-            self.stable_reports, self.degrade_reports, self.observe_reports
-        )):
+        if any(
+            type(value) is not int or value < 1
+            for value in (self.stable_reports, self.degrade_reports, self.observe_reports)
+        ):
             raise ValueError("Recovery report counts must be positive integers")
         if type(self.cooldown_reports) is not int or self.cooldown_reports < 0:
             raise ValueError("Recovery cooldown must be a nonnegative integer")
-        for name in ("stable_min_success", "stable_level_step", "stable_max_success", "stable_max_spread",
-                     "degrade_abs_drop", "degrade_min_drop", "degrade_relative_drop"):
+        for name in (
+            "stable_min_success",
+            "stable_level_step",
+            "stable_max_success",
+            "stable_max_spread",
+            "degrade_abs_drop",
+            "degrade_min_drop",
+            "degrade_relative_drop",
+        ):
             value = getattr(self, name)
             if not math.isfinite(value) or not 0 <= value <= 1:
                 raise ValueError(f"{name} must be finite and in [0, 1]")
@@ -214,8 +228,9 @@ class RecoveryController:
         self.pending: RecoveryDecision | None = None
 
     def _decision(self, action: str, reason: str, **kwargs) -> RecoveryDecision:
-        return RecoveryDecision(action, self.stage, self.last_report_update, reason,
-                                reference_success=self.reference_success, **kwargs)
+        return RecoveryDecision(
+            action, self.stage, self.last_report_update, reason, reference_success=self.reference_success, **kwargs
+        )
 
     @property
     def degradation_threshold(self) -> float | None:
@@ -225,8 +240,9 @@ class RecoveryController:
         reference = Decimal(str(self.reference_success))
         margin = min(
             Decimal(str(self.config.degrade_abs_drop)),
-            max(Decimal(str(self.config.degrade_min_drop)),
-                Decimal(str(self.config.degrade_relative_drop)) * reference),
+            max(
+                Decimal(str(self.config.degrade_min_drop)), Decimal(str(self.config.degrade_relative_drop)) * reference
+            ),
         )
         return float(reference - margin)
 
@@ -267,8 +283,9 @@ class RecoveryController:
             return self._decision("none", "degradation_did_not_persist")
         self.bad_reports = self.bad_reports + 1 if degraded else 0
         if self.bad_reports >= self.config.degrade_reports:
-            self.pending = self._decision("reduce_lr", "consecutive_degraded_reports",
-                                          lr_factor=self.config.lr_factor, min_lr=self.config.min_lr)
+            self.pending = self._decision(
+                "reduce_lr", "consecutive_degraded_reports", lr_factor=self.config.lr_factor, min_lr=self.config.min_lr
+            )
             self.state = "reduce_requested"
             return self.pending
         if len(self.window) == self.config.stable_reports and not degraded:
@@ -278,7 +295,9 @@ class RecoveryController:
             stable = spread <= self.config.stable_max_spread or math.isclose(
                 spread, self.config.stable_max_spread, rel_tol=0, abs_tol=1e-12
             )
-            levels = tuple(level for level in self.levels if level <= reference and level not in self.stable_checkpoints)
+            levels = tuple(
+                level for level in self.levels if level <= reference and level not in self.stable_checkpoints
+            )
             if stable and levels:
                 self.pending = RecoveryDecision(
                     "save_stable", self.stage, update, "stable_success_window", reference, levels=levels
@@ -304,8 +323,11 @@ class RecoveryController:
             # entry. Several newly attained levels may point to the same state.
             for level in self.pending.levels:
                 self.stable_checkpoints[level] = {
-                    "level": level, "stage": self.stage, "update": self.pending.update,
-                    "reference_success": self.pending.reference_success, "checkpoint": checkpoints[level],
+                    "level": level,
+                    "stage": self.stage,
+                    "update": self.pending.update,
+                    "reference_success": self.pending.reference_success,
+                    "checkpoint": checkpoints[level],
                 }
             highest = self.stable_checkpoints[max(self.stable_checkpoints)]
             self.stable_checkpoint = highest["checkpoint"]
@@ -327,12 +349,19 @@ class RecoveryController:
 
     def state_dict(self) -> dict:
         return {
-            "version": 2, "config": asdict(self.config), "stage": self.stage, "state": self.state,
-            "last_report_update": self.last_report_update, "restore_count": self.restore_count,
-            "window": [dict(entry) for entry in self.window], "stable_checkpoint": self.stable_checkpoint,
+            "version": 2,
+            "config": asdict(self.config),
+            "stage": self.stage,
+            "state": self.state,
+            "last_report_update": self.last_report_update,
+            "restore_count": self.restore_count,
+            "window": [dict(entry) for entry in self.window],
+            "stable_checkpoint": self.stable_checkpoint,
             "stable_checkpoints": [dict(entry) for _, entry in sorted(self.stable_checkpoints.items())],
-            "reference_success": self.reference_success, "bad_reports": self.bad_reports,
-            "observed_reports": self.observed_reports, "observed_bad_reports": self.observed_bad_reports,
+            "reference_success": self.reference_success,
+            "bad_reports": self.bad_reports,
+            "observed_reports": self.observed_reports,
+            "observed_bad_reports": self.observed_bad_reports,
             "cooldown_remaining": self.cooldown_remaining,
             "pending": asdict(self.pending) if self.pending is not None else None,
         }
@@ -341,15 +370,26 @@ class RecoveryController:
         if state.get("version") != 2 or state.get("stage") != self.stage or state.get("config") != asdict(self.config):
             raise ValueError("Recovery state must have the same version, stage, and configuration")
         checkpoints = {entry["level"]: dict(entry) for entry in state["stable_checkpoints"]}
-        if (len(checkpoints) != len(state["stable_checkpoints"])
-                or any(level not in self.levels or entry["stage"] != self.stage for level, entry in checkpoints.items())):
+        if len(checkpoints) != len(state["stable_checkpoints"]) or any(
+            level not in self.levels or entry["stage"] != self.stage for level, entry in checkpoints.items()
+        ):
             raise ValueError("Stable checkpoint levels must be unique and belong to this stage")
-        for name in ("state", "last_report_update", "restore_count", "stable_checkpoint", "reference_success",
-                     "bad_reports", "observed_reports", "observed_bad_reports", "cooldown_remaining"):
+        for name in (
+            "state",
+            "last_report_update",
+            "restore_count",
+            "stable_checkpoint",
+            "reference_success",
+            "bad_reports",
+            "observed_reports",
+            "observed_bad_reports",
+            "cooldown_remaining",
+        ):
             setattr(self, name, state[name])
         self.window = deque((dict(entry) for entry in state["window"]), maxlen=self.config.stable_reports)
         self.stable_checkpoints = checkpoints
         self.pending = (
             RecoveryDecision(**{**state["pending"], "levels": tuple(state["pending"]["levels"])})
-            if state["pending"] is not None else None
+            if state["pending"] is not None
+            else None
         )

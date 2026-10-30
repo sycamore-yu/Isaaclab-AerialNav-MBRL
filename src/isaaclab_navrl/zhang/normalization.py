@@ -73,9 +73,7 @@ class _RunningMoments(nn.Module):
         inverse_std = torch.where(ready, variance.clamp_min(variance_floor).rsqrt(), torch.ones_like(self.mean))
         # These tensors own their storage; subsequent updates cannot invalidate
         # an autograd saved tensor or alter a checkpoint recomputation.
-        return MomentSnapshot(
-            mean.float().clone(), inverse_std.float().clone(), self.count.clone()
-        )
+        return MomentSnapshot(mean.float().clone(), inverse_std.float().clone(), self.count.clone())
 
 
 class PolicyObservationNormalizer(nn.Module):
@@ -87,9 +85,7 @@ class PolicyObservationNormalizer(nn.Module):
     fixed inverse standard deviation.  ``variance_floor`` bounds that gain.
     """
 
-    def __init__(
-        self, enabled: bool = False, variance_floor: float = 1e-4, device: str | torch.device | None = None
-    ):
+    def __init__(self, enabled: bool = False, variance_floor: float = 1e-4, device: str | torch.device | None = None):
         super().__init__()
         self._validate(enabled, variance_floor)
         self.enabled = enabled

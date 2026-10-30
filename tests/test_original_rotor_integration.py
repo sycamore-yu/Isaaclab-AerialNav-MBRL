@@ -18,10 +18,7 @@ from torch.func import functional_call, vmap
 
 def test_original_rotor_group(num_envs=8, num_steps=250):
     root = NAVRL
-    param_file = (
-        root
-        / "isaac-training/third_party/OmniDrones/omni_drones/robots/assets/usd/hummingbird.yaml"
-    )
+    param_file = root / "isaac-training/third_party/OmniDrones/omni_drones/robots/assets/usd/hummingbird.yaml"
     with param_file.open(encoding="utf-8") as stream:
         config = yaml.safe_load(stream)
     rotor_cfg = config["rotor_configuration"]
@@ -73,10 +70,7 @@ def test_original_rotor_group(num_envs=8, num_steps=250):
     max_passthrough_error = 0.0
     max_moment_error = 0.0
     directions = torch.tensor(rotor_cfg["directions"])
-    ratio = (
-        torch.tensor(rotor_cfg["moment_constants"])
-        / torch.tensor(rotor_cfg["force_constants"])
-    )
+    ratio = torch.tensor(rotor_cfg["moment_constants"]) / torch.tensor(rotor_cfg["force_constants"])
 
     with torch.no_grad():
         for step in range(num_steps):
@@ -85,22 +79,16 @@ def test_original_rotor_group(num_envs=8, num_steps=250):
             thrust_old = torch.stack(thrust_old)
             moment_old = torch.stack(moment_old)
             thrust_batch, moment_batch = vmap(
-                lambda state, command: functional_call(
-                    rotor, state, (command,), strict=True
-                ),
+                lambda state, command: functional_call(rotor, state, (command,), strict=True),
                 randomness="different",
             )(params, cmds)
-            applied = passthrough.compute(
-                MultiRotorActions(thrusts=thrust_batch, thruster_indices=slice(None))
-            ).thrusts
+            applied = passthrough.compute(MultiRotorActions(thrusts=thrust_batch, thruster_indices=slice(None))).thrusts
             max_rotor_error = max(
                 max_rotor_error,
                 (thrust_batch - thrust_old).abs().max().item(),
                 (moment_batch - moment_old).abs().max().item(),
             )
-            max_passthrough_error = max(
-                max_passthrough_error, (applied - thrust_batch).abs().max().item()
-            )
+            max_passthrough_error = max(max_passthrough_error, (applied - thrust_batch).abs().max().item())
             # The native allocation matrix must reproduce this yaw row.
             native_yaw_moment = (applied * (-directions * ratio)).sum(dim=-1)
             max_moment_error = max(

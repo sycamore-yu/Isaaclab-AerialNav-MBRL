@@ -18,8 +18,10 @@ def test_formal_curriculum_starts_without_dynamic_obstacles():
     transition = {
         "first_event_code": torch.tensor([1] * 8 + [3] * 2),
         "first_event_time_s": torch.full((10,), 4.5),
-        "terminated": torch.zeros(10, dtype=torch.bool), "timeout": torch.zeros(10, dtype=torch.bool),
-        "episode_return": torch.full((10,), 20.0), "step": torch.full((10,), 50),
+        "terminated": torch.zeros(10, dtype=torch.bool),
+        "timeout": torch.zeros(10, dtype=torch.bool),
+        "episode_return": torch.full((10,), 20.0),
+        "step": torch.full((10,), 50),
     }
     curriculum.observe(transition)
     assert curriculum.pop_report(update=1) is None and not curriculum.stage_passed
@@ -38,11 +40,16 @@ def test_named_stage_requires_eighty_percent_and_has_no_internal_map_switch(stag
     curriculum = TrainingCurriculum(10, "cpu", stage=stage)
     for successes in (7, 8):
         code = torch.tensor([1] * successes + [2] * (10 - successes))
-        curriculum.observe({
-            "first_event_code": code, "first_event_time_s": torch.full((10,), 4.5),
-            "terminated": torch.ones(10, dtype=torch.bool), "timeout": torch.zeros(10, dtype=torch.bool),
-            "episode_return": torch.full((10,), 20.0), "step": torch.full((10,), 50),
-        })
+        curriculum.observe(
+            {
+                "first_event_code": code,
+                "first_event_time_s": torch.full((10,), 4.5),
+                "terminated": torch.ones(10, dtype=torch.bool),
+                "timeout": torch.zeros(10, dtype=torch.bool),
+                "episode_return": torch.full((10,), 20.0),
+                "step": torch.full((10,), 50),
+            }
+        )
         report = curriculum.pop_report(update=successes)
         assert report["success_rate"] == successes / 10
         assert report["static_obstacles"] == STAGE_CONFIG[stage]["static_obstacles"]

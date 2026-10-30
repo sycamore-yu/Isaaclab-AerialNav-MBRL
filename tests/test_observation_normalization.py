@@ -32,10 +32,8 @@ def test_population_moments_merge_and_snapshot_survives_later_observations():
         normalizer.observe(depth[start:end], state[start:end])
     torch.testing.assert_close(normalizer.depth_moments.mean, depth.mean())
     torch.testing.assert_close(normalizer.state_moments.mean, state.mean(0))
-    torch.testing.assert_close(normalizer.depth_moments.m2 / normalizer.depth_moments.count,
-                               depth.var(correction=0))
-    torch.testing.assert_close(normalizer.state_moments.m2 / normalizer.state_moments.count,
-                               state.var(0, correction=0))
+    torch.testing.assert_close(normalizer.depth_moments.m2 / normalizer.depth_moments.count, depth.var(correction=0))
+    torch.testing.assert_close(normalizer.state_moments.m2 / normalizer.state_moments.count, state.var(0, correction=0))
     assert int(normalizer.depth_moments.count) == depth.numel()
     assert int(normalizer.state_moments.count) == state.shape[0]
     fixed = normalizer.begin_rollout()
@@ -100,7 +98,8 @@ def test_disabled_is_identity_and_inference_restores_all_normalization_state():
             assert inference.state_dict()[key] == value
     for actual, expected in zip(
         inference.normalize(depth, state, inference.begin_rollout()),
-        trained.normalize(depth, state, trained.begin_rollout()), strict=True,
+        trained.normalize(depth, state, trained.begin_rollout()),
+        strict=True,
     ):
         torch.testing.assert_close(actual, expected, rtol=0, atol=0)
 

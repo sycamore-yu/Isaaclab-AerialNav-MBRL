@@ -77,12 +77,18 @@ class Tolerance:
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--device", default="cuda:0")
-    parser.add_argument("--transitions", type=int, default=150, help="Connected policy steps before one backward; N is fixed at 1024.")
-    parser.add_argument("--warmup", type=int, default=1, help="Additional full-rollout warmups per implementation/branch.")
+    parser.add_argument(
+        "--transitions", type=int, default=150, help="Connected policy steps before one backward; N is fixed at 1024."
+    )
+    parser.add_argument(
+        "--warmup", type=int, default=1, help="Additional full-rollout warmups per implementation/branch."
+    )
     parser.add_argument("--repeats", type=int, default=5)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--output", type=Path, required=True, help="New JSON file; existing files are refused.")
-    parser.add_argument("--zhang_dir", type=Path, default=Path(__file__).resolve().parents[1] / "src/isaaclab_navrl/zhang")
+    parser.add_argument(
+        "--zhang_dir", type=Path, default=Path(__file__).resolve().parents[1] / "src/isaaclab_navrl/zhang"
+    )
     parser.add_argument("--check_only", action="store_true")
     parser.add_argument("--benchmark_on_mismatch", action="store_true")
     parser.add_argument("--forward_atol", type=float, default=1e-5)
@@ -123,12 +129,12 @@ def load_source(zhang_dir: Path) -> tuple[Any, Any]:
     package.__package__ = package_name
     package.__spec__ = importlib.machinery.ModuleSpec(package_name, loader=None, is_package=True)
     sys.modules[package_name] = package
-    return (importlib.import_module(f"{package_name}.config"),
-            importlib.import_module(f"{package_name}.dynamics"))
+    return (importlib.import_module(f"{package_name}.config"), importlib.import_module(f"{package_name}.dynamics"))
 
 
-def make_fixture(torch: Any, dynamics: Any, device: Any, case: str,
-                 transitions: int, seed: int, *, parameter_seed: int | None = None) -> dict[str, Any]:
+def make_fixture(
+    torch: Any, dynamics: Any, device: Any, case: str, transitions: int, seed: int, *, parameter_seed: int | None = None
+) -> dict[str, Any]:
     generator = torch.Generator(device="cpu").manual_seed(seed)
 
     def normal(shape: tuple[int, ...], scale: float = 1.0) -> Any:
@@ -176,19 +182,26 @@ def make_fixture(torch: Any, dynamics: Any, device: Any, case: str,
             parameters[name].zero_()
         for name in ("z_drag_coef", "control_gain_scale", "mass_scale", "inertia_scale", "thrust_scale"):
             parameters[name].fill_(1.0)
-    return {"state": (position, velocity, acceleration, actuator), "commands": commands,
-            "rotation": rotation, "parameters": parameters}
+    return {
+        "state": (position, velocity, acceleration, actuator),
+        "commands": commands,
+        "rotation": rotation,
+        "parameters": parameters,
+    }
 
 
-def make_cotangents(torch: Any, fixture: dict[str, Any], record_positions: bool,
-                    seed: int) -> dict[str, Any]:
+def make_cotangents(torch: Any, fixture: dict[str, Any], record_positions: bool, seed: int) -> dict[str, Any]:
     shape = tuple(fixture["commands"].shape)
     shapes = {name: shape for name in STATE_FIELDS}
     if record_positions:
         shapes["recorded_positions"] = (shape[0], NUM_ENVS, 10, 3)
     generator = torch.Generator(device="cpu").manual_seed(seed)
-    return {name: (2 * torch.randint(0, 2, size, generator=generator) - 1).to(
-        device=fixture["commands"].device, dtype=torch.float32) for name, size in shapes.items()}
+    return {
+        name: (2 * torch.randint(0, 2, size, generator=generator) - 1).to(
+            device=fixture["commands"].device, dtype=torch.float32
+        )
+        for name, size in shapes.items()
+    }
 
 
 def synchronize(torch: Any, device: Any) -> None:
@@ -196,9 +209,15 @@ def synchronize(torch: Any, device: Any) -> None:
         torch.cuda.synchronize(device)
 
 
-def run_trial(torch: Any, dynamics: Any, transition: Any, cfg: Any,
-              fixture: dict[str, Any], record_positions: bool,
-              cotangents: dict[str, Any] | None = None) -> dict[str, Any]:
+def run_trial(
+    torch: Any,
+    dynamics: Any,
+    transition: Any,
+    cfg: Any,
+    fixture: dict[str, Any],
+    record_positions: bool,
+    cotangents: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """One connected graph, one backward; detached CPU snapshots only for checks."""
     device = fixture["commands"].device
     leaves = tuple(value.detach().clone().requires_grad_(True) for value in fixture["state"])
@@ -216,8 +235,9 @@ def run_trial(torch: Any, dynamics: Any, transition: Any, cfg: Any,
         start_event.record()
     started = time.perf_counter()
     for command in commands:
-        result = transition(state, command, fixture["rotation"], fixture["parameters"],
-                            cfg, record_positions=record_positions)
+        result = transition(
+            state, command, fixture["rotation"], fixture["parameters"], cfg, record_positions=record_positions
+        )
         if record_positions:
             state, positions = result
             history["recorded_positions"].append(positions)
@@ -239,42 +259,61 @@ def run_trial(torch: Any, dynamics: Any, transition: Any, cfg: Any,
         end_event.record()
     synchronize(torch, device)
     elapsed = time.perf_counter() - started
-    trial = {"wall_s": elapsed, "cuda_event_s": None, "allocated_baseline_bytes": None,
-             "peak_allocated_bytes": None, "peak_increment_bytes": None}
+    trial = {
+        "wall_s": elapsed,
+        "cuda_event_s": None,
+        "allocated_baseline_bytes": None,
+        "peak_allocated_bytes": None,
+        "peak_increment_bytes": None,
+    }
     if device.type == "cuda":
-        trial.update(cuda_event_s=start_event.elapsed_time(end_event) / 1000.0,
-                     allocated_baseline_bytes=baseline_bytes,
-                     peak_allocated_bytes=torch.cuda.max_memory_allocated(device),
-                     peak_increment_bytes=torch.cuda.max_memory_allocated(device) - baseline_bytes)
+        trial.update(
+            cuda_event_s=start_event.elapsed_time(end_event) / 1000.0,
+            allocated_baseline_bytes=baseline_bytes,
+            peak_allocated_bytes=torch.cuda.max_memory_allocated(device),
+            peak_increment_bytes=torch.cuda.max_memory_allocated(device) - baseline_bytes,
+        )
     if any(value.grad is None for value in leaves + commands):
         raise RuntimeError("Missing gradient for an initial-state field or policy command")
     # All validation/synchronizing .item()/.cpu() operations are outside timing.
     trial["loss_finite"] = bool(torch.isfinite(loss).item())
     state_gradients = torch.stack([value.grad for value in leaves])
     command_gradients = torch.stack([value.grad for value in commands])
-    trial["gradients_finite"] = bool((torch.isfinite(state_gradients).all()
-                                     & torch.isfinite(command_gradients).all()).item())
+    trial["gradients_finite"] = bool(
+        (torch.isfinite(state_gradients).all() & torch.isfinite(command_gradients).all()).item()
+    )
     if cotangents is not None:
         trial["outputs"] = {name: value.detach().cpu() for name, value in outputs.items()}
         trial["gradients"] = {name: value.grad.detach().cpu() for name, value in zip(STATE_FIELDS, leaves, strict=True)}
         trial["gradients"]["commands"] = command_gradients.detach().cpu()
         trial["recorded_endpoint_exact"] = (
             bool(torch.equal(outputs["recorded_positions"][:, :, -1], outputs["position"]))
-            if record_positions else None)
+            if record_positions
+            else None
+        )
     return trial
 
 
 def tensor_comparison(torch: Any, expected: Any, actual: Any, tolerance: Tolerance) -> dict[str, Any]:
     if expected.shape != actual.shape or expected.dtype != actual.dtype:
-        return {"passed": False, "error": "shape/dtype mismatch",
-                "expected_shape": list(expected.shape), "actual_shape": list(actual.shape),
-                "expected_dtype": str(expected.dtype), "actual_dtype": str(actual.dtype)}
+        return {
+            "passed": False,
+            "error": "shape/dtype mismatch",
+            "expected_shape": list(expected.shape),
+            "actual_shape": list(actual.shape),
+            "expected_dtype": str(expected.dtype),
+            "actual_dtype": str(actual.dtype),
+        }
     ref, got = expected.double(), actual.double()
     ref_finite, got_finite = torch.isfinite(ref), torch.isfinite(got)
     finite = bool((ref_finite & got_finite).all().item())
-    result = {"shape": list(ref.shape), "passed": False, "finite": finite,
-              "reference_nonfinite": int((~ref_finite).sum().item()),
-              "candidate_nonfinite": int((~got_finite).sum().item())}
+    result = {
+        "shape": list(ref.shape),
+        "passed": False,
+        "finite": finite,
+        "reference_nonfinite": int((~ref_finite).sum().item()),
+        "candidate_nonfinite": int((~got_finite).sum().item()),
+    }
     if not finite:
         return result
     difference = (got - ref).abs()
@@ -288,13 +327,22 @@ def tensor_comparison(torch: Any, expected: Any, actual: Any, tolerance: Toleran
         coordinates.append(flat_index % dimension)
         flat_index //= dimension
     coordinates.reverse()
-    result.update(passed=mismatches == 0, mismatch_count=mismatches, elements=ref.numel(),
-                  max_abs=float(difference.max().item()), mean_abs=float(difference.mean().item()),
-                  max_scaled_error=float((difference / permitted).max().item()),
-                  reference_l2=reference_norm, difference_l2=difference_norm,
-                  relative_l2=difference_norm / reference_norm if reference_norm else (0.0 if difference_norm == 0 else None))
-    result.update(max_abs_index=coordinates, expected_at_max_abs=float(ref[tuple(coordinates)].item()),
-                  actual_at_max_abs=float(got[tuple(coordinates)].item()))
+    result.update(
+        passed=mismatches == 0,
+        mismatch_count=mismatches,
+        elements=ref.numel(),
+        max_abs=float(difference.max().item()),
+        mean_abs=float(difference.mean().item()),
+        max_scaled_error=float((difference / permitted).max().item()),
+        reference_l2=reference_norm,
+        difference_l2=difference_norm,
+        relative_l2=difference_norm / reference_norm if reference_norm else (0.0 if difference_norm == 0 else None),
+    )
+    result.update(
+        max_abs_index=coordinates,
+        expected_at_max_abs=float(ref[tuple(coordinates)].item()),
+        actual_at_max_abs=float(got[tuple(coordinates)].item()),
+    )
     return result
 
 
@@ -302,13 +350,19 @@ def summarize_timings(trials: list[dict[str, Any]], transitions: int) -> dict[st
     wall = [trial["wall_s"] for trial in trials]
     cuda = [trial["cuda_event_s"] for trial in trials if trial["cuda_event_s"] is not None]
     median = statistics.median(wall)
-    return {"samples": len(wall), "median_wall_s": median, "min_wall_s": min(wall),
-            "max_wall_s": max(wall), "wall_stdev_s": statistics.stdev(wall) if len(wall) > 1 else None,
-            "median_cuda_event_s": statistics.median(cuda) if cuda else None,
-            "environment_policy_transitions_per_s": NUM_ENVS * transitions / median,
-            "environment_physics_substeps_per_s": NUM_ENVS * transitions * 10 / median,
-            "all_losses_finite": all(trial["loss_finite"] for trial in trials),
-            "all_gradients_finite": all(trial["gradients_finite"] for trial in trials), "trials": trials}
+    return {
+        "samples": len(wall),
+        "median_wall_s": median,
+        "min_wall_s": min(wall),
+        "max_wall_s": max(wall),
+        "wall_stdev_s": statistics.stdev(wall) if len(wall) > 1 else None,
+        "median_cuda_event_s": statistics.median(cuda) if cuda else None,
+        "environment_policy_transitions_per_s": NUM_ENVS * transitions / median,
+        "environment_physics_substeps_per_s": NUM_ENVS * transitions * 10 / median,
+        "all_losses_finite": all(trial["loss_finite"] for trial in trials),
+        "all_gradients_finite": all(trial["gradients_finite"] for trial in trials),
+        "trials": trials,
+    }
 
 
 def execute(args: argparse.Namespace, report: dict[str, Any]) -> int:
@@ -328,18 +382,31 @@ def execute(args: argparse.Namespace, report: dict[str, Any]) -> int:
     cfg.validate()
     if round(cfg.policy_dt / cfg.physics_dt) != 10:
         raise RuntimeError("The benchmark requires exactly ten physics substeps per policy transition")
-    report["runtime"] = {"python": platform.python_version(), "torch": torch.__version__,
-                         "cuda_build": torch.version.cuda, "device": str(device),
-                         "device_name": torch.cuda.get_device_name(device) if device.type == "cuda" else platform.processor(),
-                         "float32_matmul_precision": torch.get_float32_matmul_precision(),
-                         "torch_logs": os.environ.get("TORCH_LOGS"), "num_threads": torch.get_num_threads()}
-    report["source"] = {"directory": str(args.zhang_dir.resolve()),
-                        "sha256": {name: hashlib.sha256((args.zhang_dir / name).read_bytes()).hexdigest()
-                                   for name in ("config.py", "dynamics.py", "model.py")}}
+    report["runtime"] = {
+        "python": platform.python_version(),
+        "torch": torch.__version__,
+        "cuda_build": torch.version.cuda,
+        "device": str(device),
+        "device_name": torch.cuda.get_device_name(device) if device.type == "cuda" else platform.processor(),
+        "float32_matmul_precision": torch.get_float32_matmul_precision(),
+        "torch_logs": os.environ.get("TORCH_LOGS"),
+        "num_threads": torch.get_num_threads(),
+    }
+    report["source"] = {
+        "directory": str(args.zhang_dir.resolve()),
+        "sha256": {
+            name: hashlib.sha256((args.zhang_dir / name).read_bytes()).hexdigest()
+            for name in ("config.py", "dynamics.py", "model.py")
+        },
+    }
     report["config"] = asdict(cfg)
-    report["compile"] = {"call": "torch.compile(policy_transition, fullgraph=True, dynamic=False)",
-                         "backend": "inductor", "mode": "default", "hot_stance": "fail_on_recompile",
-                         "cache_may_exist_from_an_earlier_process": True}
+    report["compile"] = {
+        "call": "torch.compile(policy_transition, fullgraph=True, dynamic=False)",
+        "backend": "inductor",
+        "mode": "default",
+        "hot_stance": "fail_on_recompile",
+        "cache_may_exist_from_an_earlier_process": True,
+    }
     eager = dynamics.policy_transition
     compiled = torch.compile(dynamics.policy_transition, fullgraph=True, dynamic=False)
     forward_tolerance = Tolerance(args.forward_atol, args.forward_rtol)
@@ -349,40 +416,69 @@ def execute(args: argparse.Namespace, report: dict[str, Any]) -> int:
 
     # The resample pair has identical non-parameter inputs. All cases use the
     # same dictionary schema, sizes, dtype and requires_grad pattern.
-    checks = (("randomized_flight", 1, None), ("parameter_resample", 1, args.seed + 2000),
-              ("nominal_hover", 1, None), ("tilted_near_collinear", 1, None),
-              ("connected_rollout", args.transitions, None))
+    checks = (
+        ("randomized_flight", 1, None),
+        ("parameter_resample", 1, args.seed + 2000),
+        ("nominal_hover", 1, None),
+        ("tilted_near_collinear", 1, None),
+        ("connected_rollout", args.transitions, None),
+    )
     callable_by_branch: dict[bool, bool] = {}
     for record_positions in (False, True):
         callable_by_branch[record_positions] = True
         for case, transitions, parameter_seed in checks:
-            entry: dict[str, Any] = {"case": case, "record_positions": record_positions,
-                                     "transitions": transitions, "passed": False}
+            entry: dict[str, Any] = {
+                "case": case,
+                "record_positions": record_positions,
+                "transitions": transitions,
+                "passed": False,
+            }
             print(f"[check] record_positions={record_positions} {case} H={transitions}", flush=True)
             try:
-                fixture = make_fixture(torch, dynamics, device, case, transitions, args.seed,
-                                       parameter_seed=parameter_seed)
+                fixture = make_fixture(
+                    torch, dynamics, device, case, transitions, args.seed, parameter_seed=parameter_seed
+                )
                 cotangents = make_cotangents(torch, fixture, record_positions, args.seed + 3000)
                 reference = run_trial(torch, dynamics, eager, cfg, fixture, record_positions, cotangents)
                 candidate = run_trial(torch, dynamics, compiled, cfg, fixture, record_positions, cotangents)
                 entry["eager_first_use_wall_s"] = reference["wall_s"]
                 entry["compiled_first_use_wall_s"] = candidate["wall_s"]
-                entry["forward"] = {name: tensor_comparison(torch, expected, candidate["outputs"][name], forward_tolerance)
-                                     for name, expected in reference["outputs"].items()}
-                entry["gradient"] = {name: tensor_comparison(torch, expected, candidate["gradients"][name], gradient_tolerance)
-                                      for name, expected in reference["gradients"].items()}
+                entry["forward"] = {
+                    name: tensor_comparison(torch, expected, candidate["outputs"][name], forward_tolerance)
+                    for name, expected in reference["outputs"].items()
+                }
+                entry["gradient"] = {
+                    name: tensor_comparison(torch, expected, candidate["gradients"][name], gradient_tolerance)
+                    for name, expected in reference["gradients"].items()
+                }
                 entry["recorded_endpoint_exact"] = {
-                    "eager": reference["recorded_endpoint_exact"], "compiled": candidate["recorded_endpoint_exact"]}
+                    "eager": reference["recorded_endpoint_exact"],
+                    "compiled": candidate["recorded_endpoint_exact"],
+                }
                 entry["passed"] = (
-                    all(metric["passed"] for group in (entry["forward"], entry["gradient"]) for metric in group.values())
-                    and reference["loss_finite"] and candidate["loss_finite"]
-                    and reference["gradients_finite"] and candidate["gradients_finite"]
-                    and (not record_positions or (reference["recorded_endpoint_exact"] and candidate["recorded_endpoint_exact"]))
+                    all(
+                        metric["passed"] for group in (entry["forward"], entry["gradient"]) for metric in group.values()
+                    )
+                    and reference["loss_finite"]
+                    and candidate["loss_finite"]
+                    and reference["gradients_finite"]
+                    and candidate["gradients_finite"]
+                    and (
+                        not record_positions
+                        or (reference["recorded_endpoint_exact"] and candidate["recorded_endpoint_exact"])
+                    )
                 )
-                failed_fields = [f"{group}.{name}" for group in ("forward", "gradient")
-                                 for name, metric in entry[group].items() if not metric["passed"]]
-                print(f"  {'PASS' if entry['passed'] else 'FAIL'}; fields={failed_fields}; "
-                      f"compiled first-use {candidate['wall_s']:.3f}s", flush=True)
+                failed_fields = [
+                    f"{group}.{name}"
+                    for group in ("forward", "gradient")
+                    for name, metric in entry[group].items()
+                    if not metric["passed"]
+                ]
+                print(
+                    f"  {'PASS' if entry['passed'] else 'FAIL'}; fields={failed_fields}; "
+                    f"compiled first-use {candidate['wall_s']:.3f}s",
+                    flush=True,
+                )
                 del reference, candidate, cotangents, fixture
             except Exception as error:
                 entry["error"] = f"{type(error).__name__}: {error}"
@@ -395,9 +491,13 @@ def execute(args: argparse.Namespace, report: dict[str, Any]) -> int:
                 break
 
     report["validation_passed"] = len(report["checks"]) == 2 * len(checks) and all(
-        entry["passed"] for entry in report["checks"])
-    may_benchmark = (all(callable_by_branch.values()) and not args.check_only
-                     and (report["validation_passed"] or args.benchmark_on_mismatch))
+        entry["passed"] for entry in report["checks"]
+    )
+    may_benchmark = (
+        all(callable_by_branch.values())
+        and not args.check_only
+        and (report["validation_passed"] or args.benchmark_on_mismatch)
+    )
     if may_benchmark:
         fixture = make_fixture(torch, dynamics, device, "connected_rollout", args.transitions, args.seed)
         for record_positions in (False, True):
@@ -411,37 +511,64 @@ def execute(args: argparse.Namespace, report: dict[str, Any]) -> int:
                 order = ("eager", "compiled") if repeat % 2 == 0 else ("compiled", "eager")
                 order_log.append(list(order))
                 for name in order:
-                    print(f"[time] record_positions={record_positions} repeat={repeat + 1}/{args.repeats} {name}", flush=True)
+                    print(
+                        f"[time] record_positions={record_positions} repeat={repeat + 1}/{args.repeats} {name}",
+                        flush=True,
+                    )
                     # Warmup must have captured leaf and recurrent non-leaf
                     # states. A guard miss now invalidates hot timing instead
                     # of hiding compilation or eager fallback in the sample.
                     with torch.compiler.set_stance("fail_on_recompile"):
-                        samples[name].append(run_trial(torch, dynamics, eager if name == "eager" else compiled,
-                                                       cfg, fixture, record_positions))
+                        samples[name].append(
+                            run_trial(
+                                torch, dynamics, eager if name == "eager" else compiled, cfg, fixture, record_positions
+                            )
+                        )
             eager_summary = summarize_timings(samples["eager"], args.transitions)
             compiled_summary = summarize_timings(samples["compiled"], args.transitions)
-            benchmark = {"record_positions": record_positions, "transitions": args.transitions,
-                         "order": order_log, "eager": eager_summary, "compiled": compiled_summary,
-                         "median_wall_speedup": eager_summary["median_wall_s"] / compiled_summary["median_wall_s"],
-                         "median_paired_wall_speedup": statistics.median([
-                             ref["wall_s"] / got["wall_s"] for ref, got in zip(samples["eager"], samples["compiled"], strict=True)])}
+            benchmark = {
+                "record_positions": record_positions,
+                "transitions": args.transitions,
+                "order": order_log,
+                "eager": eager_summary,
+                "compiled": compiled_summary,
+                "median_wall_speedup": eager_summary["median_wall_s"] / compiled_summary["median_wall_s"],
+                "median_paired_wall_speedup": statistics.median(
+                    [
+                        ref["wall_s"] / got["wall_s"]
+                        for ref, got in zip(samples["eager"], samples["compiled"], strict=True)
+                    ]
+                ),
+            }
             report["benchmarks"].append(benchmark)
             write_report(args.output, report)
-            print(f"  median wall speedup {benchmark['median_wall_speedup']:.3f}x "
-                  f"(numeric gate={'PASS' if report['validation_passed'] else 'FAIL'})", flush=True)
+            print(
+                f"  median wall speedup {benchmark['median_wall_speedup']:.3f}x "
+                f"(numeric gate={'PASS' if report['validation_passed'] else 'FAIL'})",
+                flush=True,
+            )
     else:
         report["benchmark_skipped_reason"] = (
-            "check_only" if args.check_only else
-            "An eager/compiled call raised an error" if not all(callable_by_branch.values()) else
-            "Numeric validation failed; --benchmark_on_mismatch was not supplied")
+            "check_only"
+            if args.check_only
+            else "An eager/compiled call raised an error"
+            if not all(callable_by_branch.values())
+            else "Numeric validation failed; --benchmark_on_mismatch was not supplied"
+        )
     report["candidate_eligible_for_further_training_profile"] = (
-        report["validation_passed"] and bool(report["benchmarks"])
-        and all(item[name]["all_losses_finite"] and item[name]["all_gradients_finite"]
-                for item in report["benchmarks"] for name in ("eager", "compiled")))
+        report["validation_passed"]
+        and bool(report["benchmarks"])
+        and all(
+            item[name]["all_losses_finite"] and item[name]["all_gradients_finite"]
+            for item in report["benchmarks"]
+            for name in ("eager", "compiled")
+        )
+    )
     report["status"] = "completed" if report["validation_passed"] else "validation_failed"
     if report["benchmarks"] and not all(
         item[name]["all_losses_finite"] and item[name]["all_gradients_finite"]
-        for item in report["benchmarks"] for name in ("eager", "compiled")
+        for item in report["benchmarks"]
+        for name in ("eager", "compiled")
     ):
         report["status"] = "benchmark_failed"
     return 0 if report["status"] == "completed" else 2
@@ -459,10 +586,16 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Refusing existing output: {args.output}", file=sys.stderr)
         return 1
     report: dict[str, Any] = {
-        "status": "running", "created_at": datetime.now(UTC).isoformat(),
-        "num_envs": NUM_ENVS, "physics_hz": 100, "policy_hz": 10, "physics_substeps": 10,
+        "status": "running",
+        "created_at": datetime.now(UTC).isoformat(),
+        "num_envs": NUM_ENVS,
+        "physics_hz": 100,
+        "policy_hz": 10,
+        "physics_substeps": 10,
         "arguments": {key: str(value) if isinstance(value, Path) else value for key, value in vars(args).items()},
-        "checks": [], "benchmarks": [], "validation_passed": False,
+        "checks": [],
+        "benchmarks": [],
+        "validation_passed": False,
         "candidate_eligible_for_further_training_profile": False,
         "notes": [
             "This is a synthetic pure-dynamics differential test, not training acceptance.",
@@ -479,8 +612,12 @@ def main(argv: list[str] | None = None) -> int:
     try:
         exit_code = execute(args, report)
     except (Exception, KeyboardInterrupt) as error:
-        report.update(status="error", error=f"{type(error).__name__}: {error}",
-                      traceback=traceback.format_exc(), candidate_eligible_for_further_training_profile=False)
+        report.update(
+            status="error",
+            error=f"{type(error).__name__}: {error}",
+            traceback=traceback.format_exc(),
+            candidate_eligible_for_further_training_profile=False,
+        )
         print(report["error"], file=sys.stderr, flush=True)
         exit_code = 1
     report["finished_at"] = datetime.now(UTC).isoformat()

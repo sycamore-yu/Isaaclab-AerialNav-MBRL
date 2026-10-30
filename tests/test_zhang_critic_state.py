@@ -30,14 +30,25 @@ def test_value_state_retains_position_hidden_and_pending_action_but_not_sensor_t
     state = PointMassState(position, zero, zero, zero)
     depth = torch.ones(2, 1, 12, 16, requires_grad=True)
     target = torch.full((2, 3), 3.0, requires_grad=True)
-    observation = {"target": target, "depth_features": depth,
-                   "quaternion": torch.tensor([[0., 0., 0., 1.]]).repeat(2, 1),
-                   "input_delay_steps": torch.zeros(2, dtype=torch.long)}
+    observation = {
+        "target": target,
+        "depth_features": depth,
+        "quaternion": torch.tensor([[0.0, 0.0, 0.0, 1.0]]).repeat(2, 1),
+        "input_delay_steps": torch.zeros(2, dtype=torch.long),
+    }
     action_delay, observation_delay = DifferentiableDelay(2), DifferentiableDelay(5)
     action_delay.push(pending, torch.zeros(2, dtype=torch.long))
     features = critic_observation(
-        state, observation, hidden, zero, {"margin": torch.full((2,), .3)},
-        CriticHistory(20, position), action_delay, observation_delay, torch.zeros(2), 400,
+        state,
+        observation,
+        hidden,
+        zero,
+        {"margin": torch.full((2,), 0.3)},
+        CriticHistory(20, position),
+        action_delay,
+        observation_delay,
+        torch.zeros(2),
+        400,
         torch.zeros(2, dtype=torch.long),
     )
     features.sum().backward()

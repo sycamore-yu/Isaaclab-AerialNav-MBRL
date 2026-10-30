@@ -31,14 +31,14 @@ def main() -> None:
     sampled_vel = rsl_distribution.sample()
     assert sampled_vel.shape == (32, 3)
     assert (sampled_vel >= -2).all() and (sampled_vel <= 2).all()
-    old_log_prob = torch.distributions.Beta(old_alpha, old_beta).log_prob(
-        ((sampled_vel + 2.0) / 4.0).clamp(1e-6, 1.0 - 1e-6)
-    ).sum(dim=-1)
+    old_log_prob = (
+        torch.distributions.Beta(old_alpha, old_beta)
+        .log_prob(((sampled_vel + 2.0) / 4.0).clamp(1e-6, 1.0 - 1e-6))
+        .sum(dim=-1)
+    )
     new_log_prob = rsl_distribution.log_prob(sampled_vel)
     # A constant log-Jacobian factor changes log density under rescaling.
-    log_prob_error = (
-        (old_log_prob - 3.0 * math.log(4.0)) - new_log_prob
-    ).abs().max().item()
+    log_prob_error = ((old_log_prob - 3.0 * math.log(4.0)) - new_log_prob).abs().max().item()
 
     print(f"beta_mean_max_abs_velocity_error_mps={mean_error:.9g}")
     print(f"beta_logprob_max_abs_error={log_prob_error:.9g}")

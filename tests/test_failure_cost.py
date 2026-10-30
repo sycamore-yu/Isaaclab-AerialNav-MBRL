@@ -1,4 +1,5 @@
 """An absorbing failure is charged once, in the same actor/TD cost units."""
+
 import copy
 
 import pytest
@@ -26,16 +27,18 @@ def test_terminal_failure_cost_is_shared_by_actor_and_td_without_bootstrapping_f
     torch.testing.assert_close(cost - old_cost, 300 * failed.float())
     assert losses["failure_terminal"] == 50
     done = torch.tensor([[True, True, True], [False, False, False]])
-    next_values = torch.tensor([[0., 0., 100.], [100., 100., 100.]])
+    next_values = torch.tensor([[0.0, 0.0, 100.0], [100.0, 100.0, 100.0]])
     targets = td_lambda_cost_targets(cost, next_values, done)
     assert targets[0, 0] == cost[0, 0]
     assert targets[0, 2] == cost[0, 2] + 99
     objective = short_horizon_cost_objective(cost, next_values, done)
     original = short_horizon_cost_objective(old_cost, next_values, done)
     assert float((objective["objective"] - original["objective"]).detach()) == pytest.approx(50)
-    torch.testing.assert_close(torch.autograd.grad(cost.sum(), velocity, retain_graph=True)[0],
-                               torch.autograd.grad(old_cost.sum(), velocity)[0])
-    upper = torch.tensor([[0., 0., 3.9]], requires_grad=True)
+    torch.testing.assert_close(
+        torch.autograd.grad(cost.sum(), velocity, retain_graph=True)[0],
+        torch.autograd.grad(old_cost.sum(), velocity)[0],
+    )
+    upper = torch.tensor([[0.0, 0.0, 3.9]], requires_grad=True)
     assert torch.autograd.grad(height_boundary_loss(upper), upper)[0][0, 2] > 0
 
 

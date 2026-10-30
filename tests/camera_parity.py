@@ -43,10 +43,15 @@ def main():
     cfg.scene.reference_depth = cfg.scene.depth_camera.copy()
     cfg.scene.reference_depth.class_type = ResolvableString("isaaclab.sensors:MultiMeshRayCasterCamera")
     result = {
-        "status": "running", "num_envs": num_envs, "camera_batch_size": batch_size,
+        "status": "running",
+        "num_envs": num_envs,
+        "camera_batch_size": batch_size,
         "dynamic_obstacles": args.dynamic_obstacles,
-        "full_resolution": [120, 160], "pooled_resolution": [12, 16],
-        "atol": 2e-5, "rtol": 1e-5, "stages": {},
+        "full_resolution": [120, 160],
+        "pooled_resolution": [12, 16],
+        "atol": 2e-5,
+        "rtol": 1e-5,
+        "stages": {},
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
 
@@ -58,11 +63,16 @@ def main():
         bad = ~torch.isclose(actual, expected, atol=result["atol"], rtol=result["rtol"])
         coordinates = bad.nonzero()[:10]
         return {
-            "elements": actual.numel(), "max_abs_error": float(absolute.max()),
-            "mean_abs_error": float(absolute.mean()), "mismatches": int(bad.sum()),
+            "elements": actual.numel(),
+            "max_abs_error": float(absolute.max()),
+            "mean_abs_error": float(absolute.mean()),
+            "mismatches": int(bad.sum()),
             "examples": [
-                {"index": index.tolist(), "actual": float(actual[tuple(index)]),
-                 "native": float(expected[tuple(index)])}
+                {
+                    "index": index.tolist(),
+                    "actual": float(actual[tuple(index)]),
+                    "native": float(expected[tuple(index)]),
+                }
                 for index in coordinates
             ],
         }
@@ -113,8 +123,11 @@ def main():
                 # official per-target refresh, on the same stream as the clones.
                 pose_tables = [wp.to_torch(camera._mesh_positions_w), wp.to_torch(camera._mesh_orientations_w)]
                 aggregate_poses = [table.clone() for table in pose_tables]
-                stream = (wp.stream_from_torch(torch.cuda.current_stream(env.device))
-                          if str(env.device).startswith("cuda") else None)
+                stream = (
+                    wp.stream_from_torch(torch.cuda.current_stream(env.device))
+                    if str(env.device).startswith("cuda")
+                    else None
+                )
                 with wp.ScopedStream(stream) if stream is not None else nullcontext():
                     super(depth_module.BatchedDepthCamera, camera)._update_mesh_transforms()
                 chosen = slice(None) if selected is None else selected
@@ -125,9 +138,13 @@ def main():
                     "pooled": errors(pooled, expected),
                     "pixel_noise_std": camera.cfg.pixel_noise_std,
                     "mesh_pose_table": {
-                        label: {"max_abs_error": float((actual - expected_table).abs().max()),
-                                "mismatches": int((actual != expected_table).sum()),
-                                "elements": actual.numel(), "atol": 0.0, "rtol": 0.0}
+                        label: {
+                            "max_abs_error": float((actual - expected_table).abs().max()),
+                            "mismatches": int((actual != expected_table).sum()),
+                            "elements": actual.numel(),
+                            "atol": 0.0,
+                            "rtol": 0.0,
+                        }
                         for label, actual, expected_table in zip(
                             ("position", "orientation"), aggregate_poses, pose_tables, strict=True
                         )
@@ -137,16 +154,22 @@ def main():
                 persist()
                 if details["depth"]["mismatches"] or details["pooled"]["mismatches"]:
                     failure_file = args.output.with_suffix(".failure.pt")
-                    torch.save({
-                        "stage": name, "raw": raw.cpu(), "native": native.cpu(),
-                        "pooled": pooled.cpu(), "expected_pooled": expected.cpu(),
-                        "drone_state": env.root_state().cpu(),
-                        "camera_position": camera.data.pos_w.torch.cpu(),
-                        "camera_quaternion": camera.data.quat_w_world.torch.cpu(),
-                        "intrinsics": camera.data.intrinsic_matrices.torch.cpu(),
-                        "dynamic_poses": env.dynamic_collection.data.body_pose_w.torch.cpu(),
-                        "selected_env_ids": details["selected_env_ids"],
-                    }, failure_file)
+                    torch.save(
+                        {
+                            "stage": name,
+                            "raw": raw.cpu(),
+                            "native": native.cpu(),
+                            "pooled": pooled.cpu(),
+                            "expected_pooled": expected.cpu(),
+                            "drone_state": env.root_state().cpu(),
+                            "camera_position": camera.data.pos_w.torch.cpu(),
+                            "camera_quaternion": camera.data.quat_w_world.torch.cpu(),
+                            "intrinsics": camera.data.intrinsic_matrices.torch.cpu(),
+                            "dynamic_poses": env.dynamic_collection.data.body_pose_w.torch.cpu(),
+                            "selected_env_ids": details["selected_env_ids"],
+                        },
+                        failure_file,
+                    )
                     result["failure_snapshot"] = str(failure_file.resolve())
                     persist()
                 torch.testing.assert_close(raw[chosen], native[chosen], atol=2e-5, rtol=1e-5)
@@ -231,7 +254,8 @@ def main():
                 camera._create_tracked_target_view = create_view
             assert shuffled_request == list(reversed(camera.mesh_transform_info["mesh_order_body_paths"]))
             result["shuffled_mesh_transform_request"] = {
-                "requested_body_paths": shuffled_request, "actual_tracking": camera.mesh_transform_info,
+                "requested_body_paths": shuffled_request,
+                "actual_tracking": camera.mesh_transform_info,
             }
             measure("shuffled_tracked_view_request")
             result["cached_local_rays_exact"] = True

@@ -34,12 +34,20 @@ class ZhangInference:
         self.episode_id.copy_(observation["episode_id"])
         parameters = self.env.zhang_parameters
         state, heading, _, _ = policy_state(
-            observation["policy_position"], observation["policy_velocity"], observation["policy_quaternion"],
-            observation["policy_target"], parameters["max_speed"], parameters["margin"],
+            observation["policy_position"],
+            observation["policy_velocity"],
+            observation["policy_quaternion"],
+            observation["policy_target"],
+            parameters["max_speed"],
+            parameters["margin"],
         )
         _, heading, _, _ = policy_state(
-            observation["position"], observation["velocity"], observation["quaternion"],
-            observation["target"], parameters["max_speed"], parameters["margin"],
+            observation["position"],
+            observation["velocity"],
+            observation["quaternion"],
+            observation["target"],
+            parameters["max_speed"],
+            parameters["margin"],
         )
         depth, state = self.normalizer.normalize(
             observation["policy_depth_features"], state, self.normalization_snapshot

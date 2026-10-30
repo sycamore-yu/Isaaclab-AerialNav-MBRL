@@ -41,13 +41,16 @@ def _assert_equal_tree(actual, expected):
 
 def _inputs(device):
     generator = torch.Generator().manual_seed(81)
-    heading = torch.tensor([[[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]],
-                            [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]], device=device)
+    heading = torch.tensor(
+        [[[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]], [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]],
+        device=device,
+    )
     return {
         "depth": torch.randn(2, 1, 12, 16, generator=generator).to(device),
         "features": torch.randn(2, 10, generator=generator).to(device),
         "hidden": torch.randn(2, 192, generator=generator).to(device),
-        "heading": heading, "thrust_error": torch.tensor([[0.9], [1.1]], device=device),
+        "heading": heading,
+        "thrust_error": torch.tensor([[0.9], [1.1]], device=device),
     }
 
 
@@ -103,8 +106,9 @@ def test_adam_momentum_can_reverse_the_raw_height_projection_guarantee():
     parameter.grad = torch.full_like(parameter, -10.0)
     optimizer.step()  # A previous gradient leaves a negative first moment.
     before = parameter.detach().clone()
-    projected, metrics = height_priority_gradient(torch.tensor([-1.0], dtype=parameter.dtype),
-                                                  torch.ones_like(parameter), 1.0)
+    projected, metrics = height_priority_gradient(
+        torch.tensor([-1.0], dtype=parameter.dtype), torch.ones_like(parameter), 1.0
+    )
     assert metrics["applied"] and metrics["height_dot_total_after"] > 0
     parameter.grad = projected
     torch.nn.utils.clip_grad_norm_([parameter], 5.0)
@@ -118,14 +122,15 @@ def test_adam_momentum_can_reverse_the_raw_height_projection_guarantee():
 @pytest.mark.parametrize("applied_projection", ("none", "height_priority"))
 @pytest.mark.parametrize("device", ("cpu", "cuda"))
 def test_probe_preserves_real_state_and_rng_and_matches_actual_complete_step(
-    optimizer_type, applied_projection, device,
+    optimizer_type,
+    applied_projection,
+    device,
 ):
     if device == "cuda" and not torch.cuda.is_available():
         pytest.skip("CUDA is not available")
     torch.manual_seed(73)
     model = ZhangPolicy().to(device)
-    optimizer = optimizer_type(model.parameters(), lr=0.0005, betas=(0.9, 0.99),
-                               weight_decay=0.02, eps=1e-7)
+    optimizer = optimizer_type(model.parameters(), lr=0.0005, betas=(0.9, 0.99), weight_decay=0.02, eps=1e-7)
     inputs = _inputs(device)
     # Use nonempty, nontrivial Adam moments. Clipping is active in both the
     # warmup and the measured full optimizer step.
@@ -147,8 +152,13 @@ def test_probe_preserves_real_state_and_rng_and_matches_actual_complete_step(
     rng = torch.get_rng_state().clone()
     cuda_rng = torch.cuda.get_rng_state(device).clone() if device == "cuda" else None
     probe = ActionUpdateProbe(
-        model, optimizer, total_flat=total_flat, height_flat=height_flat, height_weight=1.0,
-        max_grad_norm=0.01, probe=inputs,
+        model,
+        optimizer,
+        total_flat=total_flat,
+        height_flat=height_flat,
+        height_weight=1.0,
+        max_grad_norm=0.01,
+        probe=inputs,
     )
     _assert_equal_tree(model.state_dict(), expected_model)
     _assert_equal_tree(optimizer.state_dict(), expected_optimizer)
@@ -192,7 +202,9 @@ def test_probe_preserves_real_state_and_rng_and_matches_actual_complete_step(
     assert record["actual_step"]["command_match_error"]["max_abs"] <= tolerance
     branch = "original" if applied_projection == "none" else "height_priority"
     assert record["actual_step"]["height_gradient_dot_parameter_delta"] == pytest.approx(
-        record["branches"][branch]["height_gradient_dot_parameter_delta"], rel=1e-5, abs=tolerance,
+        record["branches"][branch]["height_gradient_dot_parameter_delta"],
+        rel=1e-5,
+        abs=tolerance,
     )
     assert record["diagnostic_s"] >= 0
     json.dumps(record, allow_nan=False)
@@ -203,8 +215,7 @@ def test_diagnostic_component_gradient_is_an_independent_detached_copy():
     model = ZhangPolicy()
     output = _output(model, _inputs("cpu"))
     cfg = ZhangTrainCfg()
-    losses = {name: (output + index * 0.1).square().mean()
-              for index, (name, _) in enumerate(LOSS_COEFFICIENTS)}
+    losses = {name: (output + index * 0.1).square().mean() for index, (name, _) in enumerate(LOSS_COEFFICIENTS)}
     losses["total"] = sum(getattr(cfg, attribute) * losses[name] for name, attribute in LOSS_COEFFICIENTS)
     expected = _flat(torch.autograd.grad(losses["height_boundary"], tuple(model.parameters()), retain_graph=True))
     diagnostic = GradientDiagnostic(model, losses, cfg)

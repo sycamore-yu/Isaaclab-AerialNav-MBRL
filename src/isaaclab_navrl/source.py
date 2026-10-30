@@ -17,7 +17,8 @@ def freeze_source(source, target):
     source, target = Path(source).resolve(), Path(target).resolve()
     status = subprocess.check_output(
         ["git", "status", "--porcelain", "--untracked-files=all", "--", *RUNTIME_PATHS],
-        cwd=source, text=True,
+        cwd=source,
+        text=True,
     )
     if status:
         raise RuntimeError("Commit runtime source changes before starting a pipeline")
@@ -26,8 +27,9 @@ def freeze_source(source, target):
     target.mkdir(parents=True, exist_ok=False)
     with tarfile.open(fileobj=io.BytesIO(archive)) as stream:
         stream.extractall(target, filter="data")
-    hashes = {str(p.relative_to(target)): hashlib.sha256(p.read_bytes()).hexdigest()
-              for p in target.rglob("*") if p.is_file()}
+    hashes = {
+        str(p.relative_to(target)): hashlib.sha256(p.read_bytes()).hexdigest() for p in target.rglob("*") if p.is_file()
+    }
     identity = {"commit": commit, "root": str(target), "files": hashes}
     write_json(target / "source_identity.json", identity)
     return identity

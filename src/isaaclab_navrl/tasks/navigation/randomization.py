@@ -62,8 +62,9 @@ class PolicyPerturbation:
         ):
             buffer.reset(ids)
             if self.cfg.enabled and active:
-                lag = torch.randint(bounds[0], bounds[1] + 1, (len(ids),), device=self.device,
-                                    generator=self.generator, dtype=torch.int)
+                lag = torch.randint(
+                    bounds[0], bounds[1] + 1, (len(ids),), device=self.device, generator=self.generator, dtype=torch.int
+                )
                 buffer.time_lags[ids] = lag
             else:
                 buffer.time_lags[ids] = nominal
@@ -80,8 +81,7 @@ class PolicyPerturbation:
         self._observation_key = None
 
     def normal(self, value, std):
-        return value + torch.randn(value.shape, device=value.device, dtype=value.dtype,
-                                   generator=self.generator) * std
+        return value + torch.randn(value.shape, device=value.device, dtype=value.dtype, generator=self.generator) * std
 
     def state(self, position, velocity, quaternion):
         if not self.noisy:
@@ -125,7 +125,7 @@ class DifferentiableDelay:
     def push(self, value, lags, *, zero_until_ready=False):
         if self.ages is None:
             self.ages = torch.zeros(value.shape[0], dtype=torch.long, device=value.device)
-        self.history = (self.history + [value])[-(self.history_length + 1):]
+        self.history = (self.history + [value])[-(self.history_length + 1) :]
         lag = torch.minimum(lags.long(), self.ages).clamp_max(len(self.history) - 1)
         stacked = torch.stack(self.history)
         selected = stacked[len(self.history) - 1 - lag, torch.arange(len(value), device=value.device)]
@@ -139,8 +139,10 @@ class DifferentiableDelay:
         if self.ages is None:
             return
         self.ages = torch.where(done, torch.zeros_like(self.ages), self.ages)
-        self.history = [torch.where(done.reshape(-1, *([1] * (item.ndim - 1))),
-                                    torch.zeros_like(item), item) for item in self.history]
+        self.history = [
+            torch.where(done.reshape(-1, *([1] * (item.ndim - 1))), torch.zeros_like(item), item)
+            for item in self.history
+        ]
 
     def detach(self):
         self.history = [item.detach() for item in self.history]
@@ -168,7 +170,9 @@ def reset_sim_to_real(env, env_ids):
     controller = env.controller.controller if env.cfg.method == "zhang" else env.controller
     controller.velocity_gain[ids] = controller.nominal_velocity_gain * env.perturbation.control_gain_scale[ids]
     for name in ("KF", "KM"):
-        controller.rotor_parameters[name][ids] = getattr(controller.rotor_group, name) * env.perturbation.thrust_scale[ids]
+        controller.rotor_parameters[name][ids] = (
+            getattr(controller.rotor_group, name) * env.perturbation.thrust_scale[ids]
+        )
     masses = env.drone.data.body_mass.torch
     inertias = env.drone.data.body_inertia.torch
     env.mass_scale[ids] = (masses[ids].sum(-1) / env.nominal_body_mass[ids].sum(-1))[:, None]

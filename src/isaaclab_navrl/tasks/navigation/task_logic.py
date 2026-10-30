@@ -86,9 +86,7 @@ class DynamicObstacleMotion:
         self.goal[self.cylinders, 2] = 2.5
         if self.step_count % max(1, int(2.0 / self.dt)) == 0:
             lo, hi = self.speed_range
-            speed = lo + (hi - lo) * torch.rand(
-                len(self.position), 1, generator=self.rng, device=self.position.device
-            )
+            speed = lo + (hi - lo) * torch.rand(len(self.position), 1, generator=self.rng, device=self.position.device)
             delta = self.goal - self.position
             self.velocity = speed * delta / delta.norm(dim=-1, keepdim=True).clamp_min(1e-6)
         self.position.add_(self.velocity * self.dt)
@@ -148,10 +146,15 @@ def navigation_terms(position, velocity, target, direction, lidar_distance, moti
     height = below.square() + above.square()
     reward = velocity_reward + 1 + safety_static + safety_dynamic - 0.1 * smooth - 8 * height
     return {
-        "state": state, "lidar": lidar_scan, "dynamic_obstacle": dynamic,
+        "state": state,
+        "lidar": lidar_scan,
+        "dynamic_obstacle": dynamic,
         "reward": reward,
         "bounds": (position[:, 2] < 0.2) | (position[:, 2] > 4.0),
         "reached": distance[:, 0] < 0.5,
-        "reward_velocity": velocity_reward, "reward_static": safety_static,
-        "reward_dynamic": safety_dynamic, "penalty_smooth": smooth, "penalty_height": height,
+        "reward_velocity": velocity_reward,
+        "reward_static": safety_static,
+        "reward_dynamic": safety_dynamic,
+        "penalty_smooth": smooth,
+        "penalty_height": height,
     }

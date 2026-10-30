@@ -71,8 +71,8 @@ def _scale_from_coordinates(coordinates, extents, radius):
         # At an active-set tie roundoff can reject all intervals.  Select the
         # analytic candidate with the smallest original-equation residual.
         residuals = (
-            (coordinates[..., None, :] - candidates[..., :, None] * extents[..., None, :])
-            .clamp_min(0).norm(dim=-1) - candidates * radius[..., None]
+            (coordinates[..., None, :] - candidates[..., :, None] * extents[..., None, :]).clamp_min(0).norm(dim=-1)
+            - candidates * radius[..., None]
         ).abs()
         fallback = candidates.gather(-1, residuals.argmin(-1, keepdim=True)).squeeze(-1)
         alpha = torch.where(torch.isfinite(alpha), alpha, fallback)
@@ -151,8 +151,15 @@ def dynamic_min_alpha(query, radius, positions, sizes, *, obstacle_chunk_size=32
     """
     if obstacle_chunk_size < 1:
         raise ValueError("obstacle_chunk_size must be positive")
-    if (query.ndim < 1 or query.shape[-1] != 3 or positions.ndim < 2 or positions.shape[-1] != 3
-            or sizes.ndim != 2 or sizes.shape[-1] != 3 or positions.shape[-2] != sizes.shape[0]):
+    if (
+        query.ndim < 1
+        or query.shape[-1] != 3
+        or positions.ndim < 2
+        or positions.shape[-1] != 3
+        or sizes.ndim != 2
+        or sizes.shape[-1] != 3
+        or positions.shape[-2] != sizes.shape[0]
+    ):
         raise ValueError("Expected query (..., 3), positions (..., obstacles, 3), and shared sizes (obstacles, 3)")
     shape = query.shape[:-1]
     try:
@@ -179,8 +186,10 @@ def dynamic_min_alpha(query, radius, positions, sizes, *, obstacle_chunk_size=32
             stop = min(start + obstacle_chunk_size, obstacle_count)
             chunk_positions = positions[..., start:stop, :].reshape(-1, stop - start, 3)
             alpha = _dynamic_pair_alpha(
-                point.detach()[:, None, :], radii.detach()[:, None],
-                chunk_positions, sizes[None, start:stop],
+                point.detach()[:, None, :],
+                radii.detach()[:, None],
+                chunk_positions,
+                sizes[None, start:stop],
             )
             value, index = alpha.min(-1)
             improve = value < best
@@ -220,8 +229,9 @@ def hybrid_collision_gap(query, radius, static_signed_distance, positions, sizes
 
 def height_bounded_gap(query, obstacle_gap, height_bounds=(0.2, 4.0)):
     """Metre clearance to obstacles and the environment's centre-height bounds."""
-    return torch.minimum(obstacle_gap, torch.minimum(query[..., 2] - height_bounds[0],
-                                                     height_bounds[1] - query[..., 2]))
+    return torch.minimum(
+        obstacle_gap, torch.minimum(query[..., 2] - height_bounds[0], height_bounds[1] - query[..., 2])
+    )
 
 
 def metric_navigation_gap(query, static_signed_distance, positions, sizes, radius=0.3):

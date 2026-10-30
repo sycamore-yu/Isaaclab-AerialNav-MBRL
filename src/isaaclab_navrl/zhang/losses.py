@@ -15,7 +15,7 @@ def _velocity_window_samples(velocity, target, episode_ids, window, current_star
         return values, torch.zeros_like(values, dtype=torch.bool)
     cumulative = velocity.cumsum(dim=0)
     average = (cumulative[window:] - cumulative[:-window]) / window
-    target_window = target[1:1 - window] if window > 1 else target[1:]
+    target_window = target[1 : 1 - window] if window > 1 else target[1:]
     ids = episode_ids.unfold(0, window, 1)[1:]
     valid = (ids == ids[..., :1]).all(dim=-1)
     endpoints = torch.arange(window, velocity.shape[0], device=velocity.device)
@@ -56,31 +56,36 @@ def _truncated_terminal_samples(velocity, target, episode, window, current_start
     shape = velocity[current_start:].shape[:2]
     if any(value.shape != shape for value in fields.values()):
         raise ValueError("truncated_window terminal history must match current [T, N] samples")
-    if (any(fields[name].dtype != torch.bool for name in names[:-1])
-            or fields["episode_step"].dtype not in (torch.int32, torch.int64)):
+    if any(fields[name].dtype != torch.bool for name in names[:-1]) or fields["episode_step"].dtype not in (
+        torch.int32,
+        torch.int64,
+    ):
         raise ValueError("truncated_window requires boolean events and integer episode_step")
     time = torch.arange(velocity.shape[0], device=velocity.device)[:, None]
     changed = torch.cat((torch.ones_like(episode[:1], dtype=torch.bool), episode[1:] != episode[:-1]), dim=0)
     start = torch.where(changed, time, 0).cummax(dim=0).values[current_start:]
     visible_length = time[current_start:] - start + 1
     actual_length = fields["episode_step"]
-    full_padding = torch.zeros(min(window, velocity.shape[0]), velocity.shape[1],
-                               dtype=torch.bool, device=velocity.device)
+    full_padding = torch.zeros(
+        min(window, velocity.shape[0]), velocity.shape[1], dtype=torch.bool, device=velocity.device
+    )
     full_scored = torch.cat((full_padding, full_valid), dim=0)[current_start:]
-    eligible = (fields["done"] & (fields["collision"] | fields["bounds"] | fields["timeout"])
-                & ~fields["invalid"])
+    eligible = fields["done"] & (fields["collision"] | fields["bounds"] | fields["timeout"]) & ~fields["invalid"]
     valid = eligible & (actual_length <= window) & ~full_scored
     # start==0 can be a bounded cache's left edge, not the true episode start.
     # Known internal episode starts must agree, and terminal completion always
     # needs all actual samples; fail instead of silently averaging a suffix.
-    inconsistent = ((actual_length < 1) | (actual_length < visible_length)
-                    | ((start > 0) & (actual_length != visible_length))
-                    | (valid & (actual_length != visible_length)))
+    inconsistent = (
+        (actual_length < 1)
+        | (actual_length < visible_length)
+        | ((start > 0) & (actual_length != visible_length))
+        | (valid & (actual_length != visible_length))
+    )
     if bool(inconsistent.any()):
         raise ValueError("truncated_window episode_step disagrees with visible episode samples")
     gather_start = start[..., None].expand(-1, -1, velocity.shape[-1])
     cumulative = torch.cat((torch.zeros_like(velocity[:1]), velocity.cumsum(dim=0)), dim=0)
-    average = (cumulative[current_start + 1:] - cumulative.gather(0, gather_start)) / actual_length[..., None]
+    average = (cumulative[current_start + 1 :] - cumulative.gather(0, gather_start)) / actual_length[..., None]
     start_target = target.gather(0, gather_start)
     delta = (average - start_target).norm(dim=-1)
     return F.smooth_l1_loss(delta, torch.zeros_like(delta), reduction="none"), valid
@@ -195,9 +200,7 @@ def zhang_transition_costs(history, cfg, velocity_history=None):
         else:
             all_velocity, all_target, all_episode = velocity, target, episode
         window = cfg.velocity_window_steps
-        values, valid = _velocity_window_samples(
-            all_velocity, all_target, all_episode, window, prefix_length
-        )
+        values, valid = _velocity_window_samples(all_velocity, all_target, all_episode, window, prefix_length)
         valid_samples = valid.sum()
         # The source omits its first velocity sample, so its first full-window
         # score is at index W. Preserve this alignment, then remove old prefix
@@ -207,7 +210,13 @@ def zhang_transition_costs(history, cfg, velocity_history=None):
         if cfg.resolved_velocity_loss_mode == "truncated_window":
             full_samples = valid_samples
             short_values, short_valid = _truncated_terminal_samples(
-                all_velocity, all_target, all_episode, window, prefix_length, valid, history,
+                all_velocity,
+                all_target,
+                all_episode,
+                window,
+                prefix_length,
+                valid,
+                history,
             )
             short_samples = short_valid.sum()
             valid_samples = valid_samples + short_samples
@@ -233,26 +242,39 @@ def zhang_transition_costs(history, cfg, velocity_history=None):
         height_cost = navrl_height_loss(position, torch.stack(history["height_range"]))
     elif cfg.height_loss_mode == "boundary_huber":
         height_cost = height_boundary_loss(
-            position, cfg.height_bounds, cfg.boundary_margin, cfg.boundary_scale, reduction="none",
+            position,
+            cfg.height_bounds,
+            cfg.boundary_margin,
+            cfg.boundary_scale,
+            reduction="none",
         )
     else:
         height_cost = height_target_loss(
-            position, torch.stack(history["height_target"]), cfg.height_loss_mode, reduction="none",
+            position,
+            torch.stack(history["height_target"]),
+            cfg.height_loss_mode,
+            reduction="none",
         )
     terms = {
         "velocity": velocity_cost,
-        "velocity_prediction": F.mse_loss(torch.stack(history["velocity_prediction"]),
-                                           torch.stack(history["observed_velocity"]), reduction="none").mean(dim=-1),
+        "velocity_prediction": F.mse_loss(
+            torch.stack(history["velocity_prediction"]), torch.stack(history["observed_velocity"]), reduction="none"
+        ).mean(dim=-1),
         "obstacle_avoidance": (approach * (1 - distance[:, :, 1:]).relu().square()).mean(dim=-1),
         "collision": (F.softplus(-32 * collision_gap) * approach).mean(dim=-1),
         "acceleration": command.square().sum(dim=-1),
         "jerk": ((command - command_previous) / cfg.policy_dt).square().sum(dim=-1),
         "height_boundary": height_cost,
     }
-    cost = (cfg.coef_v * terms["velocity"] + cfg.coef_v_pred * terms["velocity_prediction"]
-            + cfg.coef_obj_avoidance * terms["obstacle_avoidance"] + cfg.coef_collide * terms["collision"]
-            + cfg.coef_d_acc * terms["acceleration"] + cfg.coef_d_jerk * terms["jerk"]
-            + cfg.coef_height_boundary * terms["height_boundary"])
+    cost = (
+        cfg.coef_v * terms["velocity"]
+        + cfg.coef_v_pred * terms["velocity_prediction"]
+        + cfg.coef_obj_avoidance * terms["obstacle_avoidance"]
+        + cfg.coef_collide * terms["collision"]
+        + cfg.coef_d_acc * terms["acceleration"]
+        + cfg.coef_d_jerk * terms["jerk"]
+        + cfg.coef_height_boundary * terms["height_boundary"]
+    )
     if cfg.failure_terminal_cost:
         # One immediate cost at absorbing failure, shared by actor and TD targets.
         # Keep a differentiable height/clearance penalty; this event has no path derivative.

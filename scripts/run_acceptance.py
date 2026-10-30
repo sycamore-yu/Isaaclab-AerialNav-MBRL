@@ -24,9 +24,7 @@ def selected_stages(start_stage="pretrain_s0", *, screening=False, method="zhang
         raise ValueError(f"Unknown start stage: {start_stage}")
     if start_stage != STAGES[0] and (not screening or method != "zhang"):
         raise ValueError("Direct stage starts require --screening --method zhang")
-    return STAGES[STAGES.index(start_stage):]
-
-
+    return STAGES[STAGES.index(start_stage) :]
 
 
 def build_command(
@@ -48,12 +46,18 @@ def build_command(
     command = [
         executable,
         str(scripts_dir / f"train_{method}.py"),
-        "--stage", stage,
-        "--log_dir", str(log_dir),
-        "--num_envs", str(num_envs),
-        "--seed", str(seed),
-        "--terrain_seed", str(seed),
-        "--device", device,
+        "--stage",
+        stage,
+        "--log_dir",
+        str(log_dir),
+        "--num_envs",
+        str(num_envs),
+        "--seed",
+        str(seed),
+        "--terrain_seed",
+        str(seed),
+        "--device",
+        device,
         "--stop_after_acceptance",
     ]
     if parent_checkpoint is not None:
@@ -108,25 +112,37 @@ def validate_stage_result(
             resolved_mode = "per_step" if variant == "step" else "truncated_window"
         elif velocity_loss_mode == "full_window":
             resolved_mode = "window"
-        expect(result.get("velocity_loss_mode") == velocity_loss_mode,
-               "Zhang velocity_loss_mode does not match the launched experiment")
-        expect(result.get("resolved_velocity_loss_mode") == resolved_mode,
-               "Zhang resolved_velocity_loss_mode does not match the launched experiment")
+        expect(
+            result.get("velocity_loss_mode") == velocity_loss_mode,
+            "Zhang velocity_loss_mode does not match the launched experiment",
+        )
+        expect(
+            result.get("resolved_velocity_loss_mode") == resolved_mode,
+            "Zhang resolved_velocity_loss_mode does not match the launched experiment",
+        )
     expect(result.get("status") == "completed", "training status is not completed")
     expect(result.get("stage") == stage, "training stage does not match")
     report_episodes = num_envs if report_episodes is None else report_episodes
-    expect(result.get("num_envs") == num_envs and num_envs >= (1 if screening else 1024),
-           "num_envs must match; formal acceptance requires at least 1024")
+    expect(
+        result.get("num_envs") == num_envs and num_envs >= (1 if screening else 1024),
+        "num_envs must match; formal acceptance requires at least 1024",
+    )
     expect(report_episodes >= (1 if screening else 1024), "formal reports require at least 1024 episodes")
     expect(result.get("stage_passed") is True, "trainer has not passed the stage")
     expect(result.get("max_updates") is None, "training has a maximum update limit")
     expected_parent = str(parent_checkpoint) if parent_checkpoint is not None else None
     expect(fresh_start_stage in STAGES, "unknown fresh start stage")
-    expect(fresh_start_stage == STAGES[0] or (screening and method == "zhang"),
-           "direct stage starts are Zhang screening comparisons only")
-    expect((stage == fresh_start_stage) is (parent_checkpoint is None),
-           "training must start fresh only at its declared start stage and inherit every later stage")
-    expect(result.get("parent_checkpoint") == expected_parent, "parent checkpoint is not the previous stage of this run")
+    expect(
+        fresh_start_stage == STAGES[0] or (screening and method == "zhang"),
+        "direct stage starts are Zhang screening comparisons only",
+    )
+    expect(
+        (stage == fresh_start_stage) is (parent_checkpoint is None),
+        "training must start fresh only at its declared start stage and inherit every later stage",
+    )
+    expect(
+        result.get("parent_checkpoint") == expected_parent, "parent checkpoint is not the previous stage of this run"
+    )
     expect(result.get("fresh") is (parent_checkpoint is None), "fresh-run flag disagrees with the checkpoint lineage")
 
     curriculum = result.get("curriculum")
@@ -135,7 +151,10 @@ def validate_stage_result(
     expect(curriculum.get("stage") == stage, "curriculum stage does not match")
     expect(curriculum.get("stage_passed") is True, "curriculum has not passed the stage")
     expect(curriculum.get("stage_config") == expected, "curriculum obstacle counts or randomization do not match")
-    expect(curriculum.get("active_dynamic_obstacles") == expected["dynamic_obstacles"], "active dynamic obstacle count does not match")
+    expect(
+        curriculum.get("active_dynamic_obstacles") == expected["dynamic_obstacles"],
+        "active dynamic obstacle count does not match",
+    )
     expect(curriculum.get("promotion_success_rate") == 0.8, "curriculum promotion threshold must be 0.8")
     expect(curriculum.get("episodes_per_report_min") == report_episodes, "episode report threshold does not match")
 
@@ -153,12 +172,12 @@ def validate_stage_result(
         "current-stage first-arrival success rate is below 0.8 or invalid",
     )
     if stage == STAGES[-1]:
-        expect(result.get("acceptance_passed") is (num_envs >= 1024),
-               "final-stage trainer acceptance does not match the validated environment scale")
+        expect(
+            result.get("acceptance_passed") is (num_envs >= 1024),
+            "final-stage trainer acceptance does not match the validated environment scale",
+        )
         expect(curriculum.get("acceptance_passed") is True, "final-stage curriculum acceptance has not passed")
     return errors
-
-
 
 
 def run_pipeline(args: argparse.Namespace, train_args: dict[str, TrainArgValue]) -> int:
@@ -182,7 +201,7 @@ def run_pipeline(args: argparse.Namespace, train_args: dict[str, TrainArgValue])
         "train_args": train_args,
         "start_stage": start_stage,
         "stage_order": list(stages),
-        "skipped_stages": list(STAGES[:STAGES.index(start_stage)]),
+        "skipped_stages": list(STAGES[: STAGES.index(start_stage)]),
         "complete_curriculum_passed": False,
         "started_at": datetime.now(UTC).isoformat(),
         "methods": {},
@@ -191,8 +210,13 @@ def run_pipeline(args: argparse.Namespace, train_args: dict[str, TrainArgValue])
     summary_path = output / "training_result.json"
     write_json(summary_path, summary)
     environment = os.environ.copy()
-    environment.update(OPENBLAS_NUM_THREADS="1", OMP_NUM_THREADS="1", MKL_NUM_THREADS="1",
-                       OMNI_KIT_ACCEPT_EULA="YES", PYTHONUNBUFFERED="1")
+    environment.update(
+        OPENBLAS_NUM_THREADS="1",
+        OMP_NUM_THREADS="1",
+        MKL_NUM_THREADS="1",
+        OMNI_KIT_ACCEPT_EULA="YES",
+        PYTHONUNBUFFERED="1",
+    )
     current_method: dict[str, Any] | None = None
     current_stage: dict[str, Any] | None = None
     try:
@@ -202,8 +226,12 @@ def run_pipeline(args: argparse.Namespace, train_args: dict[str, TrainArgValue])
             raise RuntimeError("Pipeline snapshot differs from the dispatcher's pinned commit")
         summary["source_identity"] = source_identity
         scripts_dir = Path(source_identity["root"]) / "scripts"
-        environment.update(PYTHONPATH=str(scripts_dir.parent / "src"), PYTHONDONTWRITEBYTECODE="1",
-                           NAVRL_SOURCE_ROOT=source_identity["root"], NAVRL_SOURCE_COMMIT=source_identity["commit"])
+        environment.update(
+            PYTHONPATH=str(scripts_dir.parent / "src"),
+            PYTHONDONTWRITEBYTECODE="1",
+            NAVRL_SOURCE_ROOT=source_identity["root"],
+            NAVRL_SOURCE_COMMIT=source_identity["commit"],
+        )
         write_json(summary_path, summary)
         for method in methods:
             current_method = {"status": "running", "acceptance_passed": False, "stages": []}
@@ -216,9 +244,16 @@ def run_pipeline(args: argparse.Namespace, train_args: dict[str, TrainArgValue])
                 log_dir.mkdir(parents=True)
                 stdout_log = log_dir.parent / f"{stage}.stdout.log"
                 command = build_command(
-                    method=method, stage=stage, log_dir=log_dir, scripts_dir=scripts_dir,
-                    num_envs=args.num_envs, seed=args.train_seed, device=args.device,
-                    finetune_lr=args.finetune_lr, train_args=train_args, parent_checkpoint=parent_checkpoint,
+                    method=method,
+                    stage=stage,
+                    log_dir=log_dir,
+                    scripts_dir=scripts_dir,
+                    num_envs=args.num_envs,
+                    seed=args.train_seed,
+                    device=args.device,
+                    finetune_lr=args.finetune_lr,
+                    train_args=train_args,
+                    parent_checkpoint=parent_checkpoint,
                     report_episodes=getattr(args, "report_episodes", None),
                     fresh_stage=stage == start_stage and start_stage != STAGES[0],
                 )
@@ -240,8 +275,12 @@ def run_pipeline(args: argparse.Namespace, train_args: dict[str, TrainArgValue])
                 environment["NAVRL_STAGE_STARTED_MONOTONIC"] = str(time.monotonic())
                 with stdout_log.open("w", encoding="utf-8") as stream:
                     process = subprocess.run(
-                        command, cwd=scripts_dir.parent, env=environment,
-                        stdout=stream, stderr=subprocess.STDOUT, check=False,
+                        command,
+                        cwd=scripts_dir.parent,
+                        env=environment,
+                        stdout=stream,
+                        stderr=subprocess.STDOUT,
+                        check=False,
                     )
                 current_stage["exit_code"] = process.returncode
                 result_path = log_dir / "training_result.json"
@@ -258,16 +297,29 @@ def run_pipeline(args: argparse.Namespace, train_args: dict[str, TrainArgValue])
                     reported_checkpoint = result.get("checkpoint")
                     if result.get("error") is not None:
                         raise RuntimeError(f"Stopped trainer reported an error: {result['error']}")
-                    if (not isinstance(reported_checkpoint, str)
-                            or Path(reported_checkpoint).resolve() != checkpoint.resolve()
-                            or not checkpoint.is_file()):
+                    if (
+                        not isinstance(reported_checkpoint, str)
+                        or Path(reported_checkpoint).resolve() != checkpoint.resolve()
+                        or not checkpoint.is_file()
+                    ):
                         raise RuntimeError(f"Stopped trainer checkpoint is missing or mismatched: {checkpoint}")
-                    current_stage.update(status="stopped", stage_passed=False, acceptance_passed=False,
-                                         checkpoint=str(checkpoint), error=None)
-                    current_method.update(status="stopped", acceptance_passed=False,
-                                          checkpoint=str(checkpoint), error=None)
-                    summary.update(status="stopped", acceptance_passed=False, checkpoint=str(checkpoint),
-                                   error=None, finished_at=datetime.now(UTC).isoformat())
+                    current_stage.update(
+                        status="stopped",
+                        stage_passed=False,
+                        acceptance_passed=False,
+                        checkpoint=str(checkpoint),
+                        error=None,
+                    )
+                    current_method.update(
+                        status="stopped", acceptance_passed=False, checkpoint=str(checkpoint), error=None
+                    )
+                    summary.update(
+                        status="stopped",
+                        acceptance_passed=False,
+                        checkpoint=str(checkpoint),
+                        error=None,
+                        finished_at=datetime.now(UTC).isoformat(),
+                    )
                     write_json(summary_path, summary)
                     print(f"Stopped {method}/{stage}: {checkpoint}", flush=True)
                     return 0
@@ -278,8 +330,11 @@ def run_pipeline(args: argparse.Namespace, train_args: dict[str, TrainArgValue])
                     errors.append("trainer did not write a training_result.json object")
                 else:
                     errors += validate_stage_result(
-                        current_stage["result"], method=method, stage=stage,
-                        num_envs=args.num_envs, parent_checkpoint=parent_checkpoint,
+                        current_stage["result"],
+                        method=method,
+                        stage=stage,
+                        num_envs=args.num_envs,
+                        parent_checkpoint=parent_checkpoint,
                         variant=train_args.get("variant", "dcol"),
                         algorithm=train_args.get("algorithm", "bptt"),
                         report_episodes=getattr(args, "report_episodes", None),
@@ -326,10 +381,17 @@ def main() -> int:
     parser.add_argument("--output", required=True)
     parser.add_argument("--num_envs", type=int, default=1024)
     parser.add_argument("--report_episodes", type=int, default=None)
-    parser.add_argument("--screening", action="store_true",
-                        help="Allow reduced-env fresh comparisons; never label them as formal acceptance")
-    parser.add_argument("--start_stage", choices=STAGES, default=STAGES[0],
-                        help="Zhang screening only: start fresh here, then follow the remaining stage order")
+    parser.add_argument(
+        "--screening",
+        action="store_true",
+        help="Allow reduced-env fresh comparisons; never label them as formal acceptance",
+    )
+    parser.add_argument(
+        "--start_stage",
+        choices=STAGES,
+        default=STAGES[0],
+        help="Zhang screening only: start fresh here, then follow the remaining stage order",
+    )
     parser.add_argument("--train_seed", type=int, default=0)
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--finetune_lr", type=float, default=5e-5)

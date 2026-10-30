@@ -22,9 +22,14 @@ class ContinuousNavRLRunner(OnPolicyRunner):
     def __init__(self, env, train_cfg, log_dir=None, device="cpu"):
         super().__init__(env, train_cfg, log_dir, device)
         self.logger = ContinuousLogger(
-            log_dir=log_dir, cfg=self.cfg, env_cfg=env.cfg, num_envs=env.num_envs,
-            is_distributed=self.is_distributed, gpu_world_size=self.gpu_world_size,
-            gpu_global_rank=self.gpu_global_rank, device=device,
+            log_dir=log_dir,
+            cfg=self.cfg,
+            env_cfg=env.cfg,
+            num_envs=env.num_envs,
+            is_distributed=self.is_distributed,
+            gpu_world_size=self.gpu_world_size,
+            gpu_global_rank=self.gpu_global_rank,
+            device=device,
         )
 
     def save(self, path, infos=None):

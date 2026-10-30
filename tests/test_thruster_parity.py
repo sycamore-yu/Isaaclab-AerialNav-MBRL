@@ -21,10 +21,7 @@ from isaaclab_contrib.utils.types import MultiRotorActions
 
 
 def load_legacy_rotor_group(navrl_root: Path):
-    path = (
-        navrl_root
-        / "isaac-training/third_party/OmniDrones/omni_drones/actuators/rotor_group.py"
-    )
+    path = navrl_root / "isaac-training/third_party/OmniDrones/omni_drones/actuators/rotor_group.py"
     spec = importlib.util.spec_from_file_location("navrl_legacy_rotor_group", path)
     if spec is None or spec.loader is None:
         raise RuntimeError(f"Cannot load {path}")
@@ -35,10 +32,7 @@ def load_legacy_rotor_group(navrl_root: Path):
 
 @torch.no_grad()
 def run(navrl_root: Path, num_envs: int, num_steps: int) -> None:
-    params_path = (
-        navrl_root
-        / "isaac-training/third_party/OmniDrones/omni_drones/robots/assets/usd/hummingbird.yaml"
-    )
+    params_path = navrl_root / "isaac-training/third_party/OmniDrones/omni_drones/robots/assets/usd/hummingbird.yaml"
     with params_path.open(encoding="utf-8") as stream:
         params = yaml.safe_load(stream)
 
@@ -105,19 +99,13 @@ def run(navrl_root: Path, num_envs: int, num_steps: int) -> None:
         old_forces = torch.stack([result[0] for result in old_results])
         old_yaw_moments = torch.stack([result[1] for result in old_results])
         requested_forces = torch.clamp((cmds + 1.0) / 2.0, 0.0, 1.0) * max_force
-        new_forces = new.compute(
-            MultiRotorActions(thrusts=requested_forces, thruster_indices=slice(None))
-        ).thrusts
-        max_abs_motor_error = max(
-            max_abs_motor_error, (old_forces - new_forces).abs().max().item()
-        )
+        new_forces = new.compute(MultiRotorActions(thrusts=requested_forces, thruster_indices=slice(None))).thrusts
+        max_abs_motor_error = max(max_abs_motor_error, (old_forces - new_forces).abs().max().item())
 
         old_wrench = old_forces @ allocation.T
         old_wrench[:, 5] = old_yaw_moments.sum(dim=1)
         new_wrench = new_forces @ allocation.T
-        max_abs_wrench_error = max(
-            max_abs_wrench_error, (old_wrench - new_wrench).abs().max().item()
-        )
+        max_abs_wrench_error = max(max_abs_wrench_error, (old_wrench - new_wrench).abs().max().item())
 
     print(f"envs={num_envs} rotors={rotor_count} steps={num_steps} dt={dt}")
     print(f"old_alpha={alpha} equivalent_new_tau_s={tau_s:.10f}")

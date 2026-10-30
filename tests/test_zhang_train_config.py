@@ -22,7 +22,11 @@ class ZhangTrainConfigTests(unittest.TestCase):
         ZhangTrainCfg(algorithm="ahac", variant="dcol", ahac_initial_horizon=200).validate()
 
     def test_default_velocity_mode_uses_terminal_completion_for_continuous_and_dcol(self):
-        for variant, expected in (("step", "per_step"), ("continuous", "truncated_window"), ("dcol", "truncated_window")):
+        for variant, expected in (
+            ("step", "per_step"),
+            ("continuous", "truncated_window"),
+            ("dcol", "truncated_window"),
+        ):
             with self.subTest(variant=variant):
                 cfg = ZhangTrainCfg(variant=variant, velocity_loss_mode="variant_default")
                 cfg.validate()
@@ -33,8 +37,9 @@ class ZhangTrainConfigTests(unittest.TestCase):
         for algorithm in ("bptt", "shac", "ahac"):
             for mode in ("per_step", "truncated_window", "full_window"):
                 with self.subTest(algorithm=algorithm, mode=mode):
-                    cfg = ZhangTrainCfg(variant="dcol", algorithm=algorithm, velocity_loss_mode=mode,
-                                        velocity_window_s=2.0)
+                    cfg = ZhangTrainCfg(
+                        variant="dcol", algorithm=algorithm, velocity_loss_mode=mode, velocity_window_s=2.0
+                    )
                     cfg.validate()
                     self.assertEqual(cfg.resolved_velocity_loss_mode, "window" if mode == "full_window" else mode)
                     self.assertEqual(cfg.velocity_window_steps, 40)
@@ -66,8 +71,12 @@ class ZhangTrainConfigTests(unittest.TestCase):
             for optimizer in ("adam", "adamw"):
                 for decay in (0.0, 0.01):
                     with self.subTest(mode=mode, optimizer=optimizer, decay=decay):
-                        cfg = ZhangTrainCfg(height_loss_mode=mode, height_target_range=(0.6, 2.4),
-                                            optimizer=optimizer, weight_decay=decay)
+                        cfg = ZhangTrainCfg(
+                            height_loss_mode=mode,
+                            height_target_range=(0.6, 2.4),
+                            optimizer=optimizer,
+                            weight_decay=decay,
+                        )
                         cfg.validate()
                         restored = ZhangTrainCfg(**json.loads(json.dumps(asdict(cfg))))
                         restored.validate()
@@ -78,8 +87,15 @@ class ZhangTrainConfigTests(unittest.TestCase):
         for mode in ("exp", "huber", "", None):
             with self.subTest(mode=mode), self.assertRaisesRegex(ValueError, "height_loss_mode"):
                 ZhangTrainCfg(height_loss_mode=mode).validate()
-        for bounds in ((0.2, 2.5), (0.5, 4.0), (2.5, 0.5), (1.0, 1.0), (0.5,),
-                       (float("nan"), 2.5), (0.5, float("inf"))):
+        for bounds in (
+            (0.2, 2.5),
+            (0.5, 4.0),
+            (2.5, 0.5),
+            (1.0, 1.0),
+            (0.5,),
+            (float("nan"), 2.5),
+            (0.5, float("inf")),
+        ):
             with self.subTest(bounds=bounds), self.assertRaisesRegex(ValueError, "height_target_range"):
                 ZhangTrainCfg(height_target_range=bounds).validate()
 
@@ -135,8 +151,7 @@ class ZhangTrainConfigTests(unittest.TestCase):
                     self.assertEqual(restored.critic_value_transform, transform)
 
     def test_rejects_unknown_transforms_and_inactive_bptt_option(self):
-        for algorithm, transform in (("bptt", "softplus"), ("shac", "relu"),
-                                     ("ahac", ""), ("shac", None)):
+        for algorithm, transform in (("bptt", "softplus"), ("shac", "relu"), ("ahac", ""), ("shac", None)):
             with self.subTest(algorithm=algorithm, transform=transform):
                 with self.assertRaisesRegex(ValueError, "critic_value_transform"):
                     ZhangTrainCfg(algorithm=algorithm, variant="dcol", critic_value_transform=transform).validate()

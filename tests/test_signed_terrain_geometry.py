@@ -54,21 +54,35 @@ def terrain():
 @pytest.mark.parametrize("reverse_winding", [False, True])
 def test_signed_top_side_and_height_overlap_escape_direction(reverse_winding):
     terrain = stepped_heightfield(reverse_winding=reverse_winding)
-    points = torch.tensor([
-        [-1.2, -0.4, 1.0], [-0.9, -0.4, 1.0], [-0.5, -0.4, 1.0],
-        [-0.5, 0.5, 3.2], [-0.5, 0.5, 2.9],
-        [-0.5, 0.1, 2.5], [-0.5, -0.1, 2.5],
-    ], requires_grad=True)
+    points = torch.tensor(
+        [
+            [-1.2, -0.4, 1.0],
+            [-0.9, -0.4, 1.0],
+            [-0.5, -0.4, 1.0],
+            [-0.5, 0.5, 3.2],
+            [-0.5, 0.5, 2.9],
+            [-0.5, 0.1, 2.5],
+            [-0.5, -0.1, 2.5],
+        ],
+        requires_grad=True,
+    )
     result = terrain.signed_query(points)
     expected = points.new_tensor([0.2, -0.1, -0.5, 0.2, -0.1, -0.1, 0.1])
     torch.testing.assert_close(result.distance, expected, rtol=0, atol=2e-6)
     assert result.inside.tolist() == [False, True, True, False, True, True, False]
     assert bool(result.has_surface.all())
     gradient = torch.autograd.grad(result.distance.sum(), points)[0]
-    expected_gradient = points.new_tensor([
-        [-1, 0, 0], [-1, 0, 0], [-1, 0, 0],
-        [0, 0, 1], [0, 0, 1], [0, -1, 0], [0, -1, 0],
-    ])
+    expected_gradient = points.new_tensor(
+        [
+            [-1, 0, 0],
+            [-1, 0, 0],
+            [-1, 0, 0],
+            [0, 0, 1],
+            [0, 0, 1],
+            [0, -1, 0],
+            [0, -1, 0],
+        ]
+    )
     torch.testing.assert_close(gradient, expected_gradient, rtol=0, atol=3e-5)
     # No old height-2 top is left underneath the overwritten height-3 cell.
     overwritten = terrain.signed_query(points.new_tensor([[-0.5, 0.5, 2.1]]))
@@ -106,8 +120,9 @@ def test_outside_projection_is_not_filled_and_ground_stays_signed(terrain):
 
 
 def test_actual_sloped_triangle_distance_and_derivative():
-    terrain = TerrainDistance([[-1, -1, 0.75], [1, -1, 1.25], [1, 1, 1.25], [-1, 1, 0.75]],
-                              [[0, 1, 2], [0, 2, 3]], "cpu")
+    terrain = TerrainDistance(
+        [[-1, -1, 0.75], [1, -1, 1.25], [1, 1, 1.25], [-1, 1, 0.75]], [[0, 1, 2], [0, 2, 3]], "cpu"
+    )
     points = torch.tensor([[0.0, 0.0, 0.9], [0.0, 0.0, 1.1]], requires_grad=True)
     result = terrain.signed_query(points)
     normal = points.new_tensor([-0.25, 0, 1]) / math.sqrt(1.0625)
@@ -125,8 +140,9 @@ def test_nonzero_signed_gradient_matches_requeried_finite_difference(terrain):
     for axis in range(3):
         offset = torch.zeros_like(points)
         offset[:, axis] = epsilon
-        finite_difference[:, axis] = (terrain.signed_distance(points.detach() + offset)
-                                     - terrain.signed_distance(points.detach() - offset)) / (2 * epsilon)
+        finite_difference[:, axis] = (
+            terrain.signed_distance(points.detach() + offset) - terrain.signed_distance(points.detach() - offset)
+        ) / (2 * epsilon)
     torch.testing.assert_close(gradient, finite_difference, rtol=0, atol=2e-4)
 
 
@@ -213,15 +229,17 @@ def _verify_original_mesh_exit(terrain, point, result):
 def test_partially_covered_triangle_keeps_exposed_piece_and_rejects_hidden_exit():
     # The broad z=1 roof is deliberately retained underneath the z=2 cap. Its
     # centroid is hidden, but points outside the cap remain valid real exits.
-    terrain = _quad_terrain([
-        [(-2, -2, 0), (2, -2, 0), (2, 2, 0), (-2, 2, 0)],
-        [(-1, -1, 1), (1, -1, 1), (1, 1, 1), (-1, 1, 1)],
-        [(-0.5, -0.5, 2), (0.5, -0.5, 2), (0.5, 0.5, 2), (-0.5, 0.5, 2)],
-        [(-0.5, -0.5, 1), (-0.5, 0.5, 1), (-0.5, 0.5, 2), (-0.5, -0.5, 2)],
-        [(0.5, -0.5, 1), (0.5, 0.5, 1), (0.5, 0.5, 2), (0.5, -0.5, 2)],
-        [(-0.5, -0.5, 1), (0.5, -0.5, 1), (0.5, -0.5, 2), (-0.5, -0.5, 2)],
-        [(-0.5, 0.5, 1), (0.5, 0.5, 1), (0.5, 0.5, 2), (-0.5, 0.5, 2)],
-    ])
+    terrain = _quad_terrain(
+        [
+            [(-2, -2, 0), (2, -2, 0), (2, 2, 0), (-2, 2, 0)],
+            [(-1, -1, 1), (1, -1, 1), (1, 1, 1), (-1, 1, 1)],
+            [(-0.5, -0.5, 2), (0.5, -0.5, 2), (0.5, 0.5, 2), (-0.5, 0.5, 2)],
+            [(-0.5, -0.5, 1), (-0.5, 0.5, 1), (-0.5, 0.5, 2), (-0.5, -0.5, 2)],
+            [(0.5, -0.5, 1), (0.5, 0.5, 1), (0.5, 0.5, 2), (0.5, -0.5, 2)],
+            [(-0.5, -0.5, 1), (0.5, -0.5, 1), (0.5, -0.5, 2), (-0.5, -0.5, 2)],
+            [(-0.5, 0.5, 1), (0.5, 0.5, 1), (0.5, 0.5, 2), (-0.5, 0.5, 2)],
+        ]
+    )
     exposed = torch.tensor([[-0.8, 0.0, 0.95]], requires_grad=True)
     exposed_result = terrain.signed_query(exposed)
     torch.testing.assert_close(exposed_result.distance, torch.tensor([-0.05]), rtol=0, atol=2e-6)
@@ -246,17 +264,27 @@ def test_partially_covered_triangle_keeps_exposed_piece_and_rejects_hidden_exit(
     assert float(direction[1, :2].norm()) > 0.99
     before = terrain.signed_query(result.closest_point - terrain._normal_probe * direction)
     after = terrain.signed_query(result.closest_point + terrain._normal_probe * direction)
-    assert bool((before.surface_height - (result.closest_point - terrain._normal_probe * direction)[:, 2]
-                 > terrain.exit_height_guard_m).all())
-    assert bool(((result.closest_point + terrain._normal_probe * direction)[:, 2] - after.surface_height
-                 > terrain.exit_height_guard_m).all())
+    assert bool(
+        (
+            before.surface_height - (result.closest_point - terrain._normal_probe * direction)[:, 2]
+            > terrain.exit_height_guard_m
+        ).all()
+    )
+    assert bool(
+        (
+            (result.closest_point + terrain._normal_probe * direction)[:, 2] - after.surface_height
+            > terrain.exit_height_guard_m
+        ).all()
+    )
 
 
 def test_zero_thickness_fin_keeps_original_exterior_distance_and_gradient():
-    terrain = _quad_terrain([
-        [(-2, -2, 0), (2, -2, 0), (2, 2, 0), (-2, 2, 0)],
-        [(0, -0.5, 1), (0, 0.5, 1), (0, 0.5, 2), (0, -0.5, 2)],
-    ])
+    terrain = _quad_terrain(
+        [
+            [(-2, -2, 0), (2, -2, 0), (2, 2, 0), (-2, 2, 0)],
+            [(0, -0.5, 1), (0, 0.5, 1), (0, 0.5, 2), (0, -0.5, 2)],
+        ]
+    )
     point = torch.tensor([[-0.05, 0, 1.5], [0.05, 0, 1.5]], requires_grad=True)
     result = terrain.signed_query(point)
     assert not bool(result.inside.any()) and not bool(result.used_exit_search.any())
@@ -273,13 +301,44 @@ def test_exact_installed_slope_converter_crossing_has_no_internal_zero_exit():
     # [[0,0,0,0],[0,1,1,0],[0,3,2,0],[0,0,0,0]], scales=1,
     # slope_threshold=.75. Faces 0 and 16 intersect strictly in their interiors
     # at (1.5,1.75,.5). This fixture preserves those actual crossing triangles.
-    vertices = [[1, 1, 0], [1, 2, 0], [1, 2, 0], [0, 3, 0],
-                [2, 1, 0], [2, 2, 1], [2, 2, 1], [1, 2, 0],
-                [2, 1, 0], [2, 1, 3], [2, 1, 2], [1, 2, 0],
-                [3, 0, 0], [2, 1, 0], [2, 1, 0], [2, 2, 0]]
-    faces = [[0, 5, 1], [0, 4, 5], [1, 6, 2], [1, 5, 6], [2, 7, 3], [2, 6, 7],
-             [4, 9, 5], [4, 8, 9], [5, 10, 6], [5, 9, 10], [6, 11, 7], [6, 10, 11],
-             [8, 13, 9], [8, 12, 13], [9, 14, 10], [9, 13, 14], [10, 15, 11], [10, 14, 15]]
+    vertices = [
+        [1, 1, 0],
+        [1, 2, 0],
+        [1, 2, 0],
+        [0, 3, 0],
+        [2, 1, 0],
+        [2, 2, 1],
+        [2, 2, 1],
+        [1, 2, 0],
+        [2, 1, 0],
+        [2, 1, 3],
+        [2, 1, 2],
+        [1, 2, 0],
+        [3, 0, 0],
+        [2, 1, 0],
+        [2, 1, 0],
+        [2, 2, 0],
+    ]
+    faces = [
+        [0, 5, 1],
+        [0, 4, 5],
+        [1, 6, 2],
+        [1, 5, 6],
+        [2, 7, 3],
+        [2, 6, 7],
+        [4, 9, 5],
+        [4, 8, 9],
+        [5, 10, 6],
+        [5, 9, 10],
+        [6, 11, 7],
+        [6, 10, 11],
+        [8, 13, 9],
+        [8, 12, 13],
+        [9, 14, 10],
+        [9, 13, 14],
+        [10, 15, 11],
+        [10, 14, 15],
+    ]
     terrain = TerrainDistance(vertices, faces, "cpu")
     point = torch.tensor([[1.5, 1.75, 0.5]], requires_grad=True)
     result = terrain.signed_query(point)

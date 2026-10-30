@@ -24,40 +24,56 @@ def _history(velocity, target=None, episode=None, done=None):
     vectors[..., 0] = 10.0
     zero = torch.zeros_like(velocity)
     return {
-        "velocity": list(velocity.unbind(0)), "target_velocity": list(target.unbind(0)),
-        "episode_id": list(episode.unbind(0)), "done": list(done.unbind(0)),
-        "collision": list(done.unbind(0)), "position": list(position.unbind(0)),
+        "velocity": list(velocity.unbind(0)),
+        "target_velocity": list(target.unbind(0)),
+        "episode_id": list(episode.unbind(0)),
+        "done": list(done.unbind(0)),
+        "collision": list(done.unbind(0)),
+        "position": list(position.unbind(0)),
         "obstacle_signed_distance": list(vectors.norm(dim=-1).unbind(0)),
         "height_target": [velocity.new_full((batch,), 2.0)] * count,
         "height_range": [velocity.new_full((batch, 2), 2.0)] * count,
         "dcol_gap": [velocity.new_full((batch, 9), 9.7)] * count,
         "margin": [velocity.new_full((batch,), 0.3)] * count,
-        "command": list(zero.unbind(0)), "previous_command": list(zero.unbind(0)),
-        "velocity_prediction": list(zero.unbind(0)), "observed_velocity": list(zero.unbind(0)),
+        "command": list(zero.unbind(0)),
+        "previous_command": list(zero.unbind(0)),
+        "velocity_prediction": list(zero.unbind(0)),
+        "observed_velocity": list(zero.unbind(0)),
     }
 
 
 def _velocity_only_cfg(**overrides):
     values = {
-        "physics_dt": 0.01, "policy_dt": 0.1,
-        "variant": "dcol", "velocity_loss_mode": "full_window", "coef_v_pred": 0.0, "coef_obj_avoidance": 0.0,
-        "coef_collide": 0.0, "coef_d_acc": 0.0, "coef_d_jerk": 0.0, "coef_height_boundary": 0.0,
+        "physics_dt": 0.01,
+        "policy_dt": 0.1,
+        "variant": "dcol",
+        "velocity_loss_mode": "full_window",
+        "coef_v_pred": 0.0,
+        "coef_obj_avoidance": 0.0,
+        "coef_collide": 0.0,
+        "coef_d_acc": 0.0,
+        "coef_d_jerk": 0.0,
+        "coef_height_boundary": 0.0,
     }
     values.update(overrides)
     return ZhangTrainCfg(**values)
 
 
 def test_dcol_per_step_scores_every_short_episode_sample_and_ignores_window_cache():
-    velocity = torch.tensor([[[2.0, 0, 0]], [[0, 3.0, 0]], [[0, 0, 4.0]], [[5.0, 0, 0]]],
-                            dtype=torch.float64, requires_grad=True)
+    velocity = torch.tensor(
+        [[[2.0, 0, 0]], [[0, 3.0, 0]], [[0, 0, 4.0]], [[5.0, 0, 0]]], dtype=torch.float64, requires_grad=True
+    )
     target = velocity.new_tensor([[[1.0, 0, 0]], [[0, 1.0, 0]], [[0, 0, 1.0]], [[1.0, 0, 0]]])
     episode = torch.tensor([[4], [4], [5], [5]])
     done = torch.tensor([[False], [True], [False], [True]])
     history = _history(velocity, target, episode, done)
     old_velocity = velocity.new_full((20, 1, 3), 100.0, requires_grad=True)
     old_target = velocity.new_full((20, 1, 3), -100.0, requires_grad=True)
-    prefix = {"velocity": old_velocity, "target_velocity": old_target,
-              "episode_id": torch.full((20, 1), 4, dtype=torch.long)}
+    prefix = {
+        "velocity": old_velocity,
+        "target_velocity": old_target,
+        "episode_id": torch.full((20, 1), 4, dtype=torch.long),
+    }
     cfg = _velocity_only_cfg(velocity_loss_mode="per_step")
     losses, cache, cost = zhang_transition_costs(history, cfg, prefix)
     expected = velocity.new_tensor([[0.5], [1.5], [2.5], [3.5]])
@@ -66,8 +82,9 @@ def test_dcol_per_step_scores_every_short_episode_sample_and_ignores_window_cach
     torch.testing.assert_close(losses["total"], cost.mean(), rtol=0, atol=0)
     assert cache is None and losses["velocity_valid_samples"] == 4
     assert losses["velocity_sample_fraction"] == 1
-    gradients = torch.autograd.grad(losses["total"], (velocity, old_velocity, old_target),
-                                    retain_graph=True, allow_unused=True)
+    gradients = torch.autograd.grad(
+        losses["total"], (velocity, old_velocity, old_target), retain_graph=True, allow_unused=True
+    )
     expected_gradient = velocity.new_tensor([[[1.0, 0, 0]], [[0, 1.0, 0]], [[0, 0, 1.0]], [[1.0, 0, 0]]]) / 4
     torch.testing.assert_close(gradients[0], expected_gradient, rtol=0, atol=0)
     assert gradients[1:] == (None, None)
@@ -95,7 +112,15 @@ def test_per_step_uses_terminal_velocity_before_same_step_reset():
     reset_velocity = predicted_velocity.new_tensor([[100.0, 20.0, 0]], requires_grad=True)
     done = torch.tensor([True])
     terminal, following = align_transition(
-        predicted, zero, measured_velocity, zero, done, zero, reset_velocity, 0.1, zero,
+        predicted,
+        zero,
+        measured_velocity,
+        zero,
+        done,
+        zero,
+        reset_velocity,
+        0.1,
+        zero,
     )
     torch.testing.assert_close(following.velocity, reset_velocity, rtol=0, atol=0)
     target = predicted_velocity.new_tensor([[[1.0, 0, 0]]])
@@ -104,7 +129,9 @@ def test_per_step_uses_terminal_velocity_before_same_step_reset():
     torch.testing.assert_close(cost, predicted_velocity.new_tensor([[2.5]]), rtol=0, atol=0)
     assert cache is None and losses["velocity_sample_fraction"] == 1
     predicted_gradient, reset_gradient = torch.autograd.grad(
-        losses["total"], (predicted_velocity, reset_velocity), allow_unused=True,
+        losses["total"],
+        (predicted_velocity, reset_velocity),
+        allow_unused=True,
     )
     torch.testing.assert_close(predicted_gradient, predicted_velocity.new_tensor([[1.0, 0, 0]]), rtol=0, atol=0)
     assert reset_gradient is None
@@ -126,8 +153,11 @@ def test_explicit_full_window_retains_known_values_gradients_and_detached_prefix
     target = torch.zeros_like(velocity)
     target[..., 0] = velocity.new_tensor([[1.0, 10.0], [2.0, 20.0], [3.0, 30.0], [4.0, 40.0]])
     episode = torch.tensor([[0, 1], [0, 1], [1, 1], [1, 1]])
-    prefix = {"velocity": previous, "target_velocity": previous_target,
-              "episode_id": torch.zeros(2, 2, dtype=torch.long)}
+    prefix = {
+        "velocity": previous,
+        "target_velocity": previous_target,
+        "episode_id": torch.zeros(2, 2, dtype=torch.long),
+    }
     cfg = _velocity_only_cfg(variant=variant, velocity_window_s=0.2)
     assert cfg.velocity_loss_mode == "full_window" and cfg.resolved_velocity_loss_mode == "window"
     done = torch.tensor([[False, False], [True, False], [False, False], [False, False]])
@@ -144,8 +174,7 @@ def test_explicit_full_window_retains_known_values_gradients_and_detached_prefix
     expected_gradient = torch.zeros_like(velocity)
     # Each scored two-sample average contributes 1/2 before the same rounded
     # endpoint scale and the eight-transition mean are applied.
-    expected_gradient[..., 0] = (velocity.new_tensor([[1.0, 0.5], [0.5, 1.0], [0.5, 1.0], [0.5, 0.5]])
-                                 * legacy_scale / 8)
+    expected_gradient[..., 0] = velocity.new_tensor([[1.0, 0.5], [0.5, 1.0], [0.5, 1.0], [0.5, 0.5]]) * legacy_scale / 8
     torch.testing.assert_close(gradients[0], expected_gradient, rtol=1e-12, atol=1e-12)
     assert gradients[1:] == (None, None)
     torch.testing.assert_close(cache["velocity"], velocity[-2:].detach(), rtol=0, atol=0)
@@ -154,24 +183,37 @@ def test_explicit_full_window_retains_known_values_gradients_and_detached_prefix
 
 
 def _rich_history():
-    velocity = torch.tensor([[[2.0, 0, 0], [0, 0.5, 0]], [[0, 3.0, 0], [0, 0, 4.0]],
-                             [[1.0, 2.0, 0], [0, 0, 2.0]]], dtype=torch.float64, requires_grad=True)
-    history = _history(velocity, episode=torch.tensor([[0, 0], [0, 1], [1, 1]]),
-                       done=torch.tensor([[False, True], [True, False], [False, False]]))
+    velocity = torch.tensor(
+        [[[2.0, 0, 0], [0, 0.5, 0]], [[0, 3.0, 0], [0, 0, 4.0]], [[1.0, 2.0, 0], [0, 0, 2.0]]],
+        dtype=torch.float64,
+        requires_grad=True,
+    )
+    history = _history(
+        velocity,
+        episode=torch.tensor([[0, 0], [0, 1], [1, 1]]),
+        done=torch.tensor([[False, True], [True, False], [False, False]]),
+    )
     vectors = velocity.new_zeros(3, 2, 10, 3)
-    vectors[..., 0] = (velocity.new_tensor([[0.8, 1.5], [0.5, 0.9], [2.0, 1.2]])[..., None]
-                       + torch.linspace(0.1, -0.1, 10, dtype=velocity.dtype))
+    vectors[..., 0] = velocity.new_tensor([[0.8, 1.5], [0.5, 0.9], [2.0, 1.2]])[..., None] + torch.linspace(
+        0.1, -0.1, 10, dtype=velocity.dtype
+    )
     vectors.requires_grad_()
     gap = velocity.new_tensor([[0.02, 0.4], [-0.1, 1.0], [0.3, -0.02]])[..., None].expand(-1, -1, 9).clone()
     gap.requires_grad_()
-    command = velocity.new_tensor([[[0.1, 0, 0], [0.2, 0, 0]], [[0.4, 0, 0], [0.5, 0, 0]],
-                                   [[0.3, 0, 0], [0.9, 0, 0]]]).requires_grad_()
+    command = velocity.new_tensor(
+        [[[0.1, 0, 0], [0.2, 0, 0]], [[0.4, 0, 0], [0.5, 0, 0]], [[0.3, 0, 0], [0.9, 0, 0]]]
+    ).requires_grad_()
     prediction = (command.detach() * 3).requires_grad_()
     position = torch.zeros_like(velocity)
     position[..., 2] = velocity.new_tensor([[0.4, 2.0], [3.8, 2.0], [-1.0, 5.0]])
     position.requires_grad_()
-    for name, value in (("obstacle_vector", vectors), ("dcol_gap", gap), ("command", command),
-                        ("velocity_prediction", prediction), ("position", position)):
+    for name, value in (
+        ("obstacle_vector", vectors),
+        ("dcol_gap", gap),
+        ("command", command),
+        ("velocity_prediction", prediction),
+        ("position", position),
+    ):
         history[name] = list(value.unbind(0))
     history["obstacle_signed_distance"] = list(vectors.norm(dim=-1).unbind(0))
     return velocity, history, (vectors, gap, command, prediction, position)
@@ -182,7 +224,8 @@ def test_step_variant_default_and_override_are_exactly_identical():
     cfg = ZhangTrainCfg(physics_dt=0.01, policy_dt=0.1, velocity_loss_mode="variant_default", variant="step")
     default, default_cache, default_cost = zhang_transition_costs(history, cfg)
     explicit, explicit_cache, explicit_cost = zhang_transition_costs(
-        history, replace(cfg, velocity_loss_mode="per_step"),
+        history,
+        replace(cfg, velocity_loss_mode="per_step"),
     )
     assert default_cache is explicit_cache is None
     for name in default:

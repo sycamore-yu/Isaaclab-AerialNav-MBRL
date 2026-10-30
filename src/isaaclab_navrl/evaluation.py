@@ -27,9 +27,10 @@ class EpisodeEvaluation:
         self.starts, self.goals, self.seed = starts, goals, seed
 
     def update(self, transition):
-        values = {key: transition[key].detach().cpu().tolist() for key in (
-            "reached", "collision", "bounds", "invalid", "timeout", "time_s", "step"
-        )}
+        values = {
+            key: transition[key].detach().cpu().tolist()
+            for key in ("reached", "collision", "bounds", "invalid", "timeout", "time_s", "step")
+        }
         substep_codes = transition.get("first_event_code")
         if substep_codes is not None:
             substep_codes = substep_codes.detach().cpu().tolist()
@@ -38,16 +39,20 @@ class EpisodeEvaluation:
             if row is not None:
                 continue
             if substep_codes is None:
-                result = first_outcome(**{key: values[key][index] for key in (
-                    "reached", "collision", "bounds", "invalid", "timeout"
-                )})
+                result = first_outcome(
+                    **{key: values[key][index] for key in ("reached", "collision", "bounds", "invalid", "timeout")}
+                )
             else:
                 result = (None, "success", "collision", "bounds", "invalid", "timeout")[substep_codes[index]]
             if result is not None:
                 self.rows[index] = {
-                    "episode": index, "seed": self.seed, "outcome": result,
-                    "time_s": values["time_s"][index], "step": values["step"][index],
-                    "start": self.starts[index], "goal": self.goals[index],
+                    "episode": index,
+                    "seed": self.seed,
+                    "outcome": result,
+                    "time_s": values["time_s"][index],
+                    "step": values["step"][index],
+                    "start": self.starts[index],
+                    "goal": self.goals[index],
                 }
 
     @property

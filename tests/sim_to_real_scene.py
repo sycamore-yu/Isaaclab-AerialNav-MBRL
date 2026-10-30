@@ -59,6 +59,7 @@ def check_zhang_collision_mode(env):
                         observed_dynamic_positions[index] = env.motion.position.clone()
                         observed_dynamic_velocities[index] = env.motion.velocity.clone()
             return terms
+
         return compute
 
     env._compute_terms = inject(original_terms)
@@ -83,7 +84,9 @@ def check_zhang_collision_mode(env):
                 observed_substep, observed_position = observed_collisions[index]
                 assert observed_substep == 1 and int(substeps[index]) == observed_substep
                 torch.testing.assert_close(positions[index], observed_position, rtol=0, atol=0)
-                torch.testing.assert_close(transition["collision_velocity"][index], observed_velocities[index], rtol=0, atol=0)
+                torch.testing.assert_close(
+                    transition["collision_velocity"][index], observed_velocities[index], rtol=0, atol=0
+                )
             else:
                 assert int(substeps[index]) == 0
                 torch.testing.assert_close(positions[index], action[index], rtol=0, atol=0)
@@ -95,8 +98,12 @@ def check_zhang_collision_mode(env):
             for index, observed in observed_dynamic_positions.items():
                 observed_substep = observed_collisions[index][0]
                 torch.testing.assert_close(dynamic[observed_substep - 1], observed, rtol=0, atol=0)
-                torch.testing.assert_close(transition["dynamic_velocities_by_substep"][observed_substep - 1],
-                                           observed_dynamic_velocities[index], rtol=0, atol=0)
+                torch.testing.assert_close(
+                    transition["dynamic_velocities_by_substep"][observed_substep - 1],
+                    observed_dynamic_velocities[index],
+                    rtol=0,
+                    atol=0,
+                )
         else:
             assert "dynamic_positions_by_substep" not in transition
             assert env._dynamic_positions_by_substep is None
@@ -111,7 +118,7 @@ def check_zhang_collision_mode(env):
         first_terminal_position = transition["position"][0].clone()
         terminal_displacement = float((first_terminal_position - first_position).norm())
         assert terminal_displacement > 1e-5, "The first-substep snapshot must precede the moving terminal pose"
-        first_dynamic = (transition["dynamic_positions_by_substep"].clone() if env.cfg.variant == "dcol" else None)
+        first_dynamic = transition["dynamic_positions_by_substep"].clone() if env.cfg.variant == "dcol" else None
         assert bool(transition["collision"][0])
         assert bool(terminated[0]) == (not continuous)
         assert bool(transition["terminated"][0]) == (not continuous)
@@ -181,19 +188,27 @@ def check_zhang_collision_mode(env):
         assert int(first_transition["collision_substep"][0]) == 1
         if first_dynamic is not None:
             torch.testing.assert_close(first_transition["dynamic_positions_by_substep"], first_dynamic, rtol=0, atol=0)
-        return {"variant": env.cfg.variant, "collision_terminates": not continuous,
-                "first_outcome_preserved": True, "reset_clears_outcome": True,
-                "synthetic_detector_events": True, "policy_steps": 6 if continuous else 2,
-                "collision_capture": {
-                    "first_substep": 1, "first_time_s": env.physics_dt,
-                    "first_position_m": first_position.tolist(),
-                    "terminal_position_m": first_terminal_position.tolist(),
-                    "terminal_displacement_m": terminal_displacement,
-                    "collision_after_success_recorded": True,
-                    "no_collision_uses_zero": True, "snapshot_survives_reset": True,
-                    "partial_reset_tested": continuous, "autoreset_tested": not continuous,
-                    "dynamic_positions_by_substep_shape": list(first_dynamic.shape) if first_dynamic is not None else None,
-                }}
+        return {
+            "variant": env.cfg.variant,
+            "collision_terminates": not continuous,
+            "first_outcome_preserved": True,
+            "reset_clears_outcome": True,
+            "synthetic_detector_events": True,
+            "policy_steps": 6 if continuous else 2,
+            "collision_capture": {
+                "first_substep": 1,
+                "first_time_s": env.physics_dt,
+                "first_position_m": first_position.tolist(),
+                "terminal_position_m": first_terminal_position.tolist(),
+                "terminal_displacement_m": terminal_displacement,
+                "collision_after_success_recorded": True,
+                "no_collision_uses_zero": True,
+                "snapshot_survives_reset": True,
+                "partial_reset_tested": continuous,
+                "autoreset_tested": not continuous,
+                "dynamic_positions_by_substep_shape": list(first_dynamic.shape) if first_dynamic is not None else None,
+            },
+        }
     finally:
         env._compute_terms = original_terms
         env._compute_first_events = original_events
@@ -259,7 +274,9 @@ def main():
             max_execution_error = 0.0
             for step in range(12):
                 command = torch.full((16, 3), 0.02 * (step + 1), device=env.device, requires_grad=True)
-                expected = history.push(command, env.perturbation.action_buffer.time_lags.clone(), zero_until_ready=True)
+                expected = history.push(
+                    command, env.perturbation.action_buffer.time_lags.clone(), zero_until_ready=True
+                )
                 observation, _, terminated, timeout, info = env.step(command.detach())
                 assert observation["policy"].shape == (env.num_envs, 202)
                 assert torch.isfinite(observation["policy"]).all()
@@ -279,12 +296,17 @@ def main():
                     first = env.get_zhang_observation()
                     pushes = env.perturbation.observation_buffer.num_pushes.clone()
                     second = env.get_zhang_observation()
-                    torch.testing.assert_close(first["policy_depth_features"], second["policy_depth_features"], rtol=0, atol=0)
+                    torch.testing.assert_close(
+                        first["policy_depth_features"], second["policy_depth_features"], rtol=0, atol=0
+                    )
                     torch.testing.assert_close(env.perturbation.observation_buffer.num_pushes, pushes)
                     torch.testing.assert_close(env.root_state(), clean, rtol=0, atol=0)
-                    for key, source in (("mass_scale", env.mass_scale), ("inertia_scale", env.inertia_scale),
-                                        ("thrust_scale", env.perturbation.thrust_scale),
-                                        ("control_gain_scale", env.perturbation.control_gain_scale)):
+                    for key, source in (
+                        ("mass_scale", env.mass_scale),
+                        ("inertia_scale", env.inertia_scale),
+                        ("thrust_scale", env.perturbation.thrust_scale),
+                        ("control_gain_scale", env.perturbation.control_gain_scale),
+                    ):
                         torch.testing.assert_close(env.zhang_parameters[key], source)
                 if step == 5:
                     env._reset_idx(torch.tensor([0], device=env.device, dtype=torch.int32))
@@ -296,13 +318,20 @@ def main():
             collision_check = check_zhang_collision_mode(env) if args.method == "zhang" else None
             policy_steps = 12 + (collision_check["policy_steps"] if collision_check is not None else 0)
             result = {
-                "method": args.method, "enabled": args.enabled, "num_envs": 16,
+                "method": args.method,
+                "enabled": args.enabled,
+                "num_envs": 16,
                 "variant": args.variant if args.method == "zhang" else None,
-                "physics_steps": policy_steps * cfg.decimation, "policy_steps": policy_steps,
-                "nominal_dynamics": env.nominal_dynamics, "sim_to_real": asdict(cfg.sim_to_real),
-                "mass_scale_min": float(mass_ratio.min()), "mass_scale_max": float(mass_ratio.max()),
-                "inertia_scale_min": float(inertia_ratio.min()), "inertia_scale_max": float(inertia_ratio.max()),
-                "executed_action_max_error": max_execution_error, "partial_reset_passed": True,
+                "physics_steps": policy_steps * cfg.decimation,
+                "policy_steps": policy_steps,
+                "nominal_dynamics": env.nominal_dynamics,
+                "sim_to_real": asdict(cfg.sim_to_real),
+                "mass_scale_min": float(mass_ratio.min()),
+                "mass_scale_max": float(mass_ratio.max()),
+                "inertia_scale_min": float(inertia_ratio.min()),
+                "inertia_scale_max": float(inertia_ratio.max()),
+                "executed_action_max_error": max_execution_error,
+                "partial_reset_passed": True,
                 "nonfinite_events": int(env.nonfinite_events),
                 "drone_collision_attributes": collision_attributes,
                 "collision_mode_check": collision_check,

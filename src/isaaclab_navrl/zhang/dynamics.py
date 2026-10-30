@@ -28,20 +28,20 @@ class PointMassState:
     actuator: torch.Tensor
 
     def detach(self):
-        return PointMassState(*(value.detach() for value in (
-            self.position, self.velocity, self.acceleration, self.actuator
-        )))
+        return PointMassState(
+            *(value.detach() for value in (self.position, self.velocity, self.acceleration, self.actuator))
+        )
 
 
 def _disturbance(velocity, rotation, parameters):
     relative_velocity = velocity - parameters["wind"]
     local_velocity = torch.einsum("bi,bij->bj", relative_velocity, rotation)
-    axes_scale = torch.cat((torch.ones_like(parameters["z_drag_coef"]).expand(-1, 2),
-                            parameters["z_drag_coef"]), dim=-1)
+    axes_scale = torch.cat(
+        (torch.ones_like(parameters["z_drag_coef"]).expand(-1, 2), parameters["z_drag_coef"]), dim=-1
+    )
     quadratic = torch.einsum("bij,bj->bi", rotation, local_velocity * local_velocity.abs() * axes_scale)
     linear = torch.einsum("bij,bj->bi", rotation, local_velocity * axes_scale)
-    return (parameters["dg"] - quadratic * parameters["drag_2"][:, :1]
-            - linear * parameters["drag_2"][:, 1:])
+    return parameters["dg"] - quadratic * parameters["drag_2"][:, :1] - linear * parameters["drag_2"][:, 1:]
 
 
 def disturbance_acceleration(velocity, quaternion_xyzw, parameters):
@@ -65,11 +65,14 @@ def point_mass_step(state, command, rotation, parameters, dt, grad_decay):
         angular_speed = torch.acos(cosine.clamp(-1, 1)) / dt
         airmode = previous_thrust / previous_norm * angular_speed * 0.5
     thrust_scale = parameters.get("thrust_scale", 1.0) / parameters.get("mass_scale", 1.0)
-    acceleration = (actuator + (actuator - gravity) * (thrust_scale - 1.0)
-                    + _disturbance(state.velocity, rotation, parameters) + airmode)
-    position = (gradient_decay(state.position, grad_decay ** dt) + state.velocity * dt
-                + 0.5 * state.acceleration * dt * dt)
-    velocity = gradient_decay(state.velocity, grad_decay ** dt) + 0.5 * (state.acceleration + acceleration) * dt
+    acceleration = (
+        actuator
+        + (actuator - gravity) * (thrust_scale - 1.0)
+        + _disturbance(state.velocity, rotation, parameters)
+        + airmode
+    )
+    position = gradient_decay(state.position, grad_decay**dt) + state.velocity * dt + 0.5 * state.acceleration * dt * dt
+    velocity = gradient_decay(state.velocity, grad_decay**dt) + 0.5 * (state.acceleration + acceleration) * dt
     return PointMassState(position, velocity, acceleration, actuator)
 
 
@@ -84,8 +87,17 @@ def policy_transition(state, command, rotation, parameters, cfg, *, record_posit
     return state
 
 
-def align_transition(prediction, measured_position, measured_velocity, prior_velocity, done,
-                     reset_position, reset_velocity, policy_dt, measured_actuator=None):
+def align_transition(
+    prediction,
+    measured_position,
+    measured_velocity,
+    prior_velocity,
+    done,
+    reset_position,
+    reset_velocity,
+    policy_dt,
+    measured_actuator=None,
+):
     """Align the terminal transition first; reset graphs only for the next state."""
     aligned = PointMassState(
         align_state(prediction.position, measured_position),
@@ -101,4 +113,3 @@ def align_transition(prediction, measured_position, measured_velocity, prior_vel
         torch.where(mask, torch.zeros_like(aligned.actuator), aligned.actuator),
     )
     return aligned, next_state
-

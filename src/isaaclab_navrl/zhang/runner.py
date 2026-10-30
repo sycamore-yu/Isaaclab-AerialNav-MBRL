@@ -79,8 +79,13 @@ class ZhangTrainer:
         )
         self.optimizer_monitor = OptimizerStepMonitor(self.model)
         self.scheduler = make_plateau_scheduler(
-            self.optimizer, cfg.lr_schedule, factor=cfg.plateau_factor, patience=cfg.plateau_patience,
-            threshold=cfg.plateau_threshold, cooldown=cfg.plateau_cooldown, min_lr=cfg.minimum_lr,
+            self.optimizer,
+            cfg.lr_schedule,
+            factor=cfg.plateau_factor,
+            patience=cfg.plateau_patience,
+            threshold=cfg.plateau_threshold,
+            cooldown=cfg.plateau_cooldown,
+            min_lr=cfg.minimum_lr,
         )
         self.recovery = RecoveryController(
             env.cfg.training_stage or f"dynamic_{env.cfg.num_dynamic_obstacles}",
@@ -95,11 +100,17 @@ class ZhangTrainer:
         if cfg.algorithm == "ahac":
             from .actor_critic import AdaptiveHorizonController, AHACSettings
 
-            self.horizon_controller = AdaptiveHorizonController(AHACSettings(
-                initial_horizon=cfg.ahac_initial_horizon, min_horizon=cfg.ahac_min_horizon,
-                max_horizon=cfg.ahac_max_horizon, risk_clearance=cfg.ahac_risk_clearance,
-                risk_scale=cfg.ahac_risk_scale, risk_budget=cfg.ahac_risk_budget, dual_lr=cfg.ahac_dual_lr,
-            ))
+            self.horizon_controller = AdaptiveHorizonController(
+                AHACSettings(
+                    initial_horizon=cfg.ahac_initial_horizon,
+                    min_horizon=cfg.ahac_min_horizon,
+                    max_horizon=cfg.ahac_max_horizon,
+                    risk_clearance=cfg.ahac_risk_clearance,
+                    risk_scale=cfg.ahac_risk_scale,
+                    risk_budget=cfg.ahac_risk_budget,
+                    dual_lr=cfg.ahac_dual_lr,
+                )
+            )
         self.stop_requested = None
         self.last_rollout_steps = None
         self.nonfinite_grad_events = 0
@@ -136,12 +147,20 @@ class ZhangTrainer:
         self.velocity_history = None
         return observation, zero, state, hidden, zero, action_history, observation_history, critic_history
 
-    def _critic_observation(self, state, observation, hidden, previous_command,
-                            critic_history, action_history, observation_history):
+    def _critic_observation(
+        self, state, observation, hidden, previous_command, critic_history, action_history, observation_history
+    ):
         return critic_observation(
-            state, observation, hidden, previous_command, self.env.zhang_parameters,
-            critic_history, action_history, observation_history,
-            self.env.episode_length_buf, self.env.max_episode_length,
+            state,
+            observation,
+            hidden,
+            previous_command,
+            self.env.zhang_parameters,
+            critic_history,
+            action_history,
+            observation_history,
+            self.env.episode_length_buf,
+            self.env.max_episode_length,
             self.env.perturbation.action_buffer.time_lags,
         )
 
@@ -149,11 +168,16 @@ class ZhangTrainer:
         if self.cfg.algorithm == "bptt" or self.actor_critic is not None:
             return
         settings = ActorCriticSettings(
-            algorithm=self.cfg.algorithm, discount=self.cfg.discount, td_lambda=self.cfg.td_lambda,
-            critic_lr=self.cfg.critic_lr, critic_iterations=self.cfg.critic_iterations,
-            critic_max_iterations=self.cfg.critic_max_iterations, seed=self.cfg.seed + 2718,
+            algorithm=self.cfg.algorithm,
+            discount=self.cfg.discount,
+            td_lambda=self.cfg.td_lambda,
+            critic_lr=self.cfg.critic_lr,
+            critic_iterations=self.cfg.critic_iterations,
+            critic_max_iterations=self.cfg.critic_max_iterations,
+            seed=self.cfg.seed + 2718,
             critic_min_iterations=min(6, self.cfg.critic_max_iterations),
-            value_transform=self.cfg.critic_value_transform, target_tau=self.cfg.critic_target_tau,
+            value_transform=self.cfg.critic_value_transform,
+            target_tau=self.cfg.critic_target_tau,
         )
         self.actor_critic = CostActorCritic(example.shape[-1], settings, device=self.env.device)
         self.critic_monitor = OptimizerStepMonitor(self.actor_critic.critics)
@@ -167,9 +191,11 @@ class ZhangTrainer:
 
         radius = radius.reshape(-1, *([1] * (query.ndim - 2))).expand(query.shape[:-1])
         return hybrid_collision_gap(
-            query, radius, (self.env.terrain_distance.signed_distance(query)
-                           if static_distance is None else static_distance),
-            self.env.motion.position if obstacle_positions is None else obstacle_positions, self.env.motion.size,
+            query,
+            radius,
+            (self.env.terrain_distance.signed_distance(query) if static_distance is None else static_distance),
+            self.env.motion.position if obstacle_positions is None else obstacle_positions,
+            self.env.motion.size,
         )
 
     def load_stage_checkpoint(self, path):
@@ -204,8 +230,7 @@ class ZhangTrainer:
         self.lr_cap = payload["lr_cap"]
         # A harder stage has a different report distribution. Start a fresh
         # Plateau/recovery report history; retain model/optimizer/normalization.
-        if (self.env.cfg.training_stage == "finetune_s1"
-                or self.cfg.lr != payload["train_cfg"]["lr"]):
+        if self.env.cfg.training_stage == "finetune_s1" or self.cfg.lr != payload["train_cfg"]["lr"]:
             self.lr_scale, self.lr_cap = 1.0, self.cfg.lr
             for group in self.optimizer.param_groups:
                 group["lr"] = self.cfg.lr
@@ -216,33 +241,45 @@ class ZhangTrainer:
 
     def _checkpoint(self, path):
         payload = {
-            "format_version": 3, "method": "zhang", "variant": self.cfg.variant,
-            "algorithm": self.cfg.algorithm, "stage_log_dir": str(self.log_dir),
+            "format_version": 3,
+            "method": "zhang",
+            "variant": self.cfg.variant,
+            "algorithm": self.cfg.algorithm,
+            "stage_log_dir": str(self.log_dir),
             "fresh": self.parent_checkpoint is None,
             "model_state_dict": self.model.state_dict(),
             "optimizer_state_dict": self.optimizer.state_dict(),
             "normalizer_state_dict": self.normalizer.state_dict(),
             "scheduler_state_dict": self.scheduler.state_dict() if self.scheduler is not None else None,
             "recovery_state_dict": self.recovery.state_dict(),
-            "lr_scale": self.lr_scale, "lr_cap": self.lr_cap,
+            "lr_scale": self.lr_scale,
+            "lr_cap": self.lr_cap,
             "actor_critic_state_dict": self.actor_critic.state_dict() if self.actor_critic is not None else None,
             "horizon_controller_state_dict": (
                 self.horizon_controller.state_dict() if self.horizon_controller is not None else None
             ),
-            "train_cfg": asdict(self.cfg), "completed_updates": self.completed_updates,
+            "train_cfg": asdict(self.cfg),
+            "completed_updates": self.completed_updates,
             "environment_steps": self.environment_steps,
-            "num_envs": self.env.num_envs, "elapsed_s": self.elapsed_s,
+            "num_envs": self.env.num_envs,
+            "elapsed_s": self.elapsed_s,
             "nonfinite_grad_events": self.nonfinite_grad_events,
-            "stage_updates": self.stage_updates, "schedule_updates": self.schedule_updates,
+            "stage_updates": self.stage_updates,
+            "schedule_updates": self.schedule_updates,
             "parent_checkpoint": self.parent_checkpoint,
-            "environment": {"seed": self.env.cfg.seed, "terrain_seed": self.env.cfg.terrain_seed,
-                            "static_obstacles": self.env.cfg.num_static_obstacles,
-                            "dynamic_obstacles": self.env.cfg.num_dynamic_obstacles,
-                            "physics_dt": self.env.physics_dt, "policy_dt": self.env.step_dt,
-                            "depth_camera_batch_size": getattr(self.env.cfg, "depth_camera_batch_size", None),
-                            "height_target_range": self.env.cfg.height_target_range,
-                            "training_stage": self.env.cfg.training_stage, "variant": self.cfg.variant,
-                            "sim_to_real": asdict(self.env.cfg.sim_to_real)},
+            "environment": {
+                "seed": self.env.cfg.seed,
+                "terrain_seed": self.env.cfg.terrain_seed,
+                "static_obstacles": self.env.cfg.num_static_obstacles,
+                "dynamic_obstacles": self.env.cfg.num_dynamic_obstacles,
+                "physics_dt": self.env.physics_dt,
+                "policy_dt": self.env.step_dt,
+                "depth_camera_batch_size": getattr(self.env.cfg, "depth_camera_batch_size", None),
+                "height_target_range": self.env.cfg.height_target_range,
+                "training_stage": self.env.cfg.training_stage,
+                "variant": self.cfg.variant,
+                "sim_to_real": asdict(self.env.cfg.sim_to_real),
+            },
             "torch_rng_state": torch.get_rng_state(),
             "curriculum": self.env.curriculum.state_dict() if self.env.curriculum is not None else None,
         }
@@ -259,11 +296,14 @@ class ZhangTrainer:
         if not path.is_relative_to(self.log_dir):
             raise ValueError("Recovery checkpoint must belong to this stage's log directory")
         payload = torch.load(path, map_location=self.env.device, weights_only=True)
-        if (payload.get("format_version") != 3 or payload.get("method") != "zhang"
-                or payload.get("stage_log_dir") != str(self.log_dir)
-                or payload["environment"]["training_stage"] != self.env.cfg.training_stage
-                or payload["environment"]["dynamic_obstacles"] != self.env.cfg.num_dynamic_obstacles
-                or payload["train_cfg"] != asdict(self.cfg)):
+        if (
+            payload.get("format_version") != 3
+            or payload.get("method") != "zhang"
+            or payload.get("stage_log_dir") != str(self.log_dir)
+            or payload["environment"]["training_stage"] != self.env.cfg.training_stage
+            or payload["environment"]["dynamic_obstacles"] != self.env.cfg.num_dynamic_obstacles
+            or payload["train_cfg"] != asdict(self.cfg)
+        ):
             raise ValueError("Stable recovery requires the exact same run, stage and configuration")
         current_lrs = [group["lr"] for group in self.optimizer.param_groups]
         self.model.load_state_dict(payload["model_state_dict"], strict=True)
@@ -271,15 +311,20 @@ class ZhangTrainer:
         self.normalizer.load_state_dict(payload["normalizer_state_dict"], strict=True)
         if self.actor_critic is not None:
             progress = self.actor_critic.state_dict()
-            self.actor_critic.load_state_dict({
-                **payload["actor_critic_state_dict"], "completed_fits": progress["completed_fits"],
-                "shuffle_rng_state": progress["shuffle_rng_state"],
-            })
+            self.actor_critic.load_state_dict(
+                {
+                    **payload["actor_critic_state_dict"],
+                    "completed_fits": progress["completed_fits"],
+                    "shuffle_rng_state": progress["shuffle_rng_state"],
+                }
+            )
         if self.horizon_controller is not None:
-            self.horizon_controller.load_state_dict({
-                **payload["horizon_controller_state_dict"],
-                "completed_updates": self.horizon_controller.completed_updates,
-            })
+            self.horizon_controller.load_state_dict(
+                {
+                    **payload["horizon_controller_state_dict"],
+                    "completed_updates": self.horizon_controller.completed_updates,
+                }
+            )
         for group, value in zip(self.optimizer.param_groups, current_lrs, strict=True):
             group["lr"] = value
         # Keep the current scheduler, recovery decisions, LR scale/cap, RNG and
@@ -316,19 +361,25 @@ class ZhangTrainer:
             self._restore_stable(decision.checkpoint)
             self.recovery.acknowledge("restore")
             restored = True
-        event = {**asdict(decision), "lr_before": previous_lr,
-                 "lr_after": self.optimizer.param_groups[0]["lr"], "scheduler_reduced": scheduler_reduced,
-                 "state": self.recovery.state, "restore_count": self.recovery.restore_count,
-                 "stable_checkpoints": self.recovery.stable_checkpoints,
-                 "environment_steps": self.environment_steps}
+        event = {
+            **asdict(decision),
+            "lr_before": previous_lr,
+            "lr_after": self.optimizer.param_groups[0]["lr"],
+            "scheduler_reduced": scheduler_reduced,
+            "state": self.recovery.state,
+            "restore_count": self.recovery.restore_count,
+            "stable_checkpoints": self.recovery.stable_checkpoints,
+            "environment_steps": self.environment_steps,
+        }
         with (self.log_dir / "optimization_events.jsonl").open("a") as stream:
             stream.write(json.dumps(event, allow_nan=False) + "\n")
         writer.add_scalar("Optim/next_learning_rate", event["lr_after"], self.completed_updates)
         writer.add_scalar("Recovery/restore_count", self.recovery.restore_count, self.completed_updates)
         if self.recovery.reference_success is not None:
             writer.add_scalar("Recovery/reference_success", self.recovery.reference_success, self.completed_updates)
-            writer.add_scalar("Recovery/degradation_threshold", self.recovery.degradation_threshold,
-                              self.completed_updates)
+            writer.add_scalar(
+                "Recovery/degradation_threshold", self.recovery.degradation_threshold, self.completed_updates
+            )
             writer.add_scalar("Recovery/stable_level", max(self.recovery.stable_checkpoints), self.completed_updates)
         if decision.action != "none" or scheduler_reduced:
             print("OPTIM_CONTROL " + json.dumps(event), flush=True)
@@ -336,38 +387,49 @@ class ZhangTrainer:
 
     def _result(self, status, checkpoint=None, error=None):
         result = {
-            "method": "zhang", "variant": self.cfg.variant, "algorithm": self.cfg.algorithm, "status": status,
+            "method": "zhang",
+            "variant": self.cfg.variant,
+            "algorithm": self.cfg.algorithm,
+            "status": status,
             "velocity_loss_mode": self.cfg.velocity_loss_mode,
             "resolved_velocity_loss_mode": self.cfg.resolved_velocity_loss_mode,
             "height_loss_mode": self.cfg.height_loss_mode,
             "height_target_range": list(self.cfg.height_target_range),
             "static_obstacle_distance": "signed_heightfield_occupancy_exit_proxy",
             "static_projection": "float64_selected_face_refinement_float32_storage",
-            "optimizer": self.cfg.optimizer, "weight_decay": self.cfg.weight_decay,
+            "optimizer": self.cfg.optimizer,
+            "weight_decay": self.cfg.weight_decay,
             "gradient_projection": self.cfg.gradient_projection,
             "fresh": self.parent_checkpoint is None,
-            "stage": self.env.cfg.training_stage, "stage_updates": self.stage_updates,
+            "stage": self.env.cfg.training_stage,
+            "stage_updates": self.stage_updates,
             "parent_checkpoint": self.parent_checkpoint,
-            "num_envs": self.env.num_envs, "completed_updates": self.completed_updates,
+            "num_envs": self.env.num_envs,
+            "completed_updates": self.completed_updates,
             "max_updates": self.cfg.max_iterations,
             "rollout_steps": self.last_rollout_steps,
             "configured_rollout_steps": self.cfg.timesteps,
-            "bootstrap_semantics": ("absorbing_zero_timeout_pre_reset_live_endpoint"
-                                    if self.actor_critic else None),
+            "bootstrap_semantics": ("absorbing_zero_timeout_pre_reset_live_endpoint" if self.actor_critic else None),
             "adaptive_horizon": self.cfg.algorithm == "ahac",
             "checkpoint": str(checkpoint) if checkpoint is not None else None,
-            "elapsed_s": self.elapsed_s, "nonfinite_grad_events": self.nonfinite_grad_events,
+            "elapsed_s": self.elapsed_s,
+            "nonfinite_grad_events": self.nonfinite_grad_events,
             "nonfinite_events": int(self.env.nonfinite_events),
             "environment_steps": self.environment_steps,
             "torch_peak_allocated_mb": (
                 torch.cuda.max_memory_allocated(self.env.device) / 2**20
-                if torch.device(self.env.device).type == "cuda" else 0.0
+                if torch.device(self.env.device).type == "cuda"
+                else 0.0
             ),
             "curriculum": self.env.curriculum.state_dict() if self.env.curriculum is not None else None,
             "acceptance_passed": bool(
-                self.env.curriculum is not None and self.env.curriculum.acceptance_passed
-                and self.env.num_envs >= 1024 and self.env.curriculum.min_episodes >= 1024 and self.env.cfg.num_static_obstacles == 400
-                and self.env.cfg.num_dynamic_obstacles == 100 and self.env.cfg.sim_to_real.enabled
+                self.env.curriculum is not None
+                and self.env.curriculum.acceptance_passed
+                and self.env.num_envs >= 1024
+                and self.env.curriculum.min_episodes >= 1024
+                and self.env.cfg.num_static_obstacles == 400
+                and self.env.cfg.num_dynamic_obstacles == 100
+                and self.env.cfg.sim_to_real.enabled
             ),
             "stage_passed": bool(self.env.curriculum is not None and self.env.curriculum.stage_passed),
             "recovery_restore_count": self.recovery.restore_count,
@@ -378,54 +440,69 @@ class ZhangTrainer:
         return result
 
     def run(self):
-        (observation, zero, state, hidden, previous_command, action_history,
-         observation_history, critic_history) = self._initialize_rollout()
+        (observation, zero, state, hidden, previous_command, action_history, observation_history, critic_history) = (
+            self._initialize_rollout()
+        )
         if self.cfg.algorithm != "bptt":
-            self._initialize_critic(self._critic_observation(
-                state, observation, hidden, previous_command, critic_history, action_history, observation_history
-            ))
-            write_json(self.log_dir / "actor_critic_protocol.json", {
-                "bootstrap": "absorbing_zero_timeout_pre_reset_live_endpoint",
-                "velocity_loss_mode": self.cfg.resolved_velocity_loss_mode,
-                "critic_settings": asdict(self.actor_critic.settings),
-                "horizon_controller": self.horizon_controller.state_dict() if self.horizon_controller else None,
-                "risk_metric": ("metre_primitive_ground_height_clearance_static_verified_exit_proxy"
-                                if self.horizon_controller else None),
-                "risk_aggregate": "worst_trajectory_temporal_peak" if self.horizon_controller else None,
-                "stability_diagnostics": ["actor_gradient_clip_ratio", "surrogate_velocity_error_mps"],
-                "physx_contact_jacobian_verified": False,
-            })
+            self._initialize_critic(
+                self._critic_observation(
+                    state, observation, hidden, previous_command, critic_history, action_history, observation_history
+                )
+            )
+            write_json(
+                self.log_dir / "actor_critic_protocol.json",
+                {
+                    "bootstrap": "absorbing_zero_timeout_pre_reset_live_endpoint",
+                    "velocity_loss_mode": self.cfg.resolved_velocity_loss_mode,
+                    "critic_settings": asdict(self.actor_critic.settings),
+                    "horizon_controller": self.horizon_controller.state_dict() if self.horizon_controller else None,
+                    "risk_metric": (
+                        "metre_primitive_ground_height_clearance_static_verified_exit_proxy"
+                        if self.horizon_controller
+                        else None
+                    ),
+                    "risk_aggregate": "worst_trajectory_temporal_peak" if self.horizon_controller else None,
+                    "stability_diagnostics": ["actor_gradient_clip_ratio", "surrogate_velocity_error_mps"],
+                    "physx_contact_jacobian_verified": False,
+                },
+            )
         lookahead = torch.linspace(0, self.cfg.policy_dt, 10, device=self.env.device)[None, :, None]
         writer = SummaryWriter(str(self.log_dir / "tensorboard"))
         if self.cfg.variant == "continuous":
-            write_json(self.log_dir / "continuous_geometry.json", {
-                "ground_plane_z_m": 0.01,
-                "ground_clearance": "query_height_minus_ground_plane_minus_radius",
-                "static_geometry": "signed_heightfield_occupancy_exit_proxy",
-                "static_projection": "float64_selected_face_refinement_float32_storage",
-                "applies_to": ["obstacle_avoidance", "collision"],
-                "query_timing": "pre_policy_step_position_plus_velocity_lookahead",
-                "static_penetration": "negative_distance_to_verified_original_mesh_exit",
-                "static_distance_is_exact_sdf": False,
-                "static_occupancy": "conservative_highest_vertical_mesh_projection",
-                "collision_or_bounds_reset": False,
-            })
+            write_json(
+                self.log_dir / "continuous_geometry.json",
+                {
+                    "ground_plane_z_m": 0.01,
+                    "ground_clearance": "query_height_minus_ground_plane_minus_radius",
+                    "static_geometry": "signed_heightfield_occupancy_exit_proxy",
+                    "static_projection": "float64_selected_face_refinement_float32_storage",
+                    "applies_to": ["obstacle_avoidance", "collision"],
+                    "query_timing": "pre_policy_step_position_plus_velocity_lookahead",
+                    "static_penetration": "negative_distance_to_verified_original_mesh_exit",
+                    "static_distance_is_exact_sdf": False,
+                    "static_occupancy": "conservative_highest_vertical_mesh_projection",
+                    "collision_or_bounds_reset": False,
+                },
+            )
         if self.cfg.variant == "dcol":
-            write_json(self.log_dir / "dcol_geometry.json", {
-                "scope": "hybrid_dynamic_dcol",
-                "dynamic_geometry": "sphere_vs_axis_aligned_box_or_finite_z_cylinder",
-                "dynamic_selection": "minimum_common_scale_over_all_dynamic_obstacles",
-                "dynamic_metric": "radius_times_alpha_minus_one_metre_scaled_proxy_not_signed_distance",
-                "static_geometry": "signed_heightfield_occupancy_exit_proxy",
-                "static_projection": "float64_selected_face_refinement_float32_storage",
-                "static_penetration": "negative_distance_to_verified_original_mesh_exit",
-                "static_distance_is_exact_sdf": False,
-                "static_occupancy": "conservative_highest_vertical_mesh_projection",
-                "ground_gap": "query_height_minus_0.01_minus_radius",
-                "terminal_sample": "first_collision_substep_position_and_obstacles_or_policy_terminal_position",
-                "collision_gradient": "aligned_surrogate_at_the_same_physics_substep_before_reset",
-                "physx_contact_jacobian": False,
-            })
+            write_json(
+                self.log_dir / "dcol_geometry.json",
+                {
+                    "scope": "hybrid_dynamic_dcol",
+                    "dynamic_geometry": "sphere_vs_axis_aligned_box_or_finite_z_cylinder",
+                    "dynamic_selection": "minimum_common_scale_over_all_dynamic_obstacles",
+                    "dynamic_metric": "radius_times_alpha_minus_one_metre_scaled_proxy_not_signed_distance",
+                    "static_geometry": "signed_heightfield_occupancy_exit_proxy",
+                    "static_projection": "float64_selected_face_refinement_float32_storage",
+                    "static_penetration": "negative_distance_to_verified_original_mesh_exit",
+                    "static_distance_is_exact_sdf": False,
+                    "static_occupancy": "conservative_highest_vertical_mesh_projection",
+                    "ground_gap": "query_height_minus_0.01_minus_radius",
+                    "terminal_sample": "first_collision_substep_position_and_obstacles_or_policy_terminal_position",
+                    "collision_gradient": "aligned_surrogate_at_the_same_physics_substep_before_reset",
+                    "physx_contact_jacobian": False,
+                },
+            )
         log = (self.log_dir / "updates.jsonl").open("w")
         started = time.perf_counter()
         previous_elapsed_s = self.elapsed_s
@@ -445,8 +522,9 @@ class ZhangTrainer:
                 critic_history.detach()
                 previous_command = previous_command.detach()
                 normalization_snapshot = self.normalizer.begin_rollout()
-                rollout_steps = (self.horizon_controller.horizon if self.horizon_controller is not None
-                                 else self.cfg.timesteps)
+                rollout_steps = (
+                    self.horizon_controller.horizon if self.horizon_controller is not None else self.cfg.timesteps
+                )
                 self.last_rollout_steps = rollout_steps
                 history = defaultdict(list)
                 collisions = []
@@ -457,13 +535,24 @@ class ZhangTrainer:
                     # EventManager resets mutate its tensors; the rollout graph owns immutable snapshots.
                     parameters = {name: value.detach().clone() for name, value in self.env.zhang_parameters.items()}
                     if self.actor_critic is not None:
-                        history["critic_observation"].append(self._critic_observation(
-                            state, observation, hidden, previous_command, critic_history,
-                            action_history, observation_history,
-                        ).detach())
+                        history["critic_observation"].append(
+                            self._critic_observation(
+                                state,
+                                observation,
+                                hidden,
+                                previous_command,
+                                critic_history,
+                                action_history,
+                                observation_history,
+                            ).detach()
+                        )
                     _, heading, target_velocity, rotation = policy_state(
-                        state.position, state.velocity, observation["quaternion"], observation["target"],
-                        parameters["max_speed"], parameters["margin"],
+                        state.position,
+                        state.velocity,
+                        observation["quaternion"],
+                        observation["target"],
+                        parameters["max_speed"],
+                        parameters["margin"],
                     )
                     delayed_state = observation_history.push(
                         torch.cat((state.position, state.velocity), dim=-1), observation["input_delay_steps"]
@@ -471,8 +560,10 @@ class ZhangTrainer:
                     features, _, _, _ = policy_state(
                         align_state(delayed_state[:, :3], observation["policy_position"]),
                         align_state(delayed_state[:, 3:], observation["policy_velocity"]),
-                        observation["policy_quaternion"], observation["policy_target"],
-                        parameters["max_speed"], parameters["margin"],
+                        observation["policy_quaternion"],
+                        observation["policy_target"],
+                        parameters["max_speed"],
+                        parameters["margin"],
                     )
                     # Camera output is a reused buffer and must not overwrite saved CNN inputs.
                     depth = observation["policy_depth_features"].detach().clone()
@@ -487,7 +578,10 @@ class ZhangTrainer:
 
                         static_distance = self.env.terrain_distance.signed_distance(query)
                         obstacle_distance = nearest_obstacle_signed_distance(
-                            query, static_distance, self.env.motion.position, self.env.motion.size,
+                            query,
+                            static_distance,
+                            self.env.motion.position,
+                            self.env.motion.size,
                         )
                     else:
                         obstacle_distance = self.env.nearest_obstacle_signed_distance(query)
@@ -497,9 +591,12 @@ class ZhangTrainer:
                         clearance = (obstacle_distance.detach() - parameters["margin"][:, None]).amin(dim=1)
                         probe_ids = clearance.topk(min(16, self.env.num_envs), largest=False).indices
                         fixed_action_probe = {
-                            name: value[probe_ids].detach().clone() for name, value in {
-                                "depth": normalized_depth, "features": normalized_features,
-                                "hidden": hidden, "heading": heading,
+                            name: value[probe_ids].detach().clone()
+                            for name, value in {
+                                "depth": normalized_depth,
+                                "features": normalized_features,
+                                "hidden": hidden,
+                                "heading": heading,
                                 "thrust_error": parameters["thr_est_error"],
                             }.items()
                         }
@@ -513,8 +610,9 @@ class ZhangTrainer:
                     # Source main_cuda records p + v * sub_div before env.run, including terminating steps.
                     history["obstacle_signed_distance"].append(obstacle_distance)
                     if self.cfg.variant == "dcol":
-                        dcol_lookahead = self._dcol_gap(query[:, 1:-1], parameters["margin"],
-                                                         static_distance=static_distance[:, 1:-1])
+                        dcol_lookahead = self._dcol_gap(
+                            query[:, 1:-1], parameters["margin"], static_distance=static_distance[:, 1:-1]
+                        )
                     history["margin"].append(parameters["margin"])
                     history["target_velocity"].append(target_velocity)
                     history["height_target"].append(observation["height_target"].detach().clone())
@@ -560,8 +658,14 @@ class ZhangTrainer:
                     history["executed_command"].append(transition["executed_action"])
                     history["model_velocity_delta"].append(prediction.velocity.detach() - transition["velocity"])
                     terminal_state, state = align_transition(
-                        prediction, transition["position"], transition["velocity"], state.velocity, done,
-                        next_observation["position"], next_observation["velocity"], self.cfg.policy_dt,
+                        prediction,
+                        transition["position"],
+                        transition["velocity"],
+                        state.velocity,
+                        done,
+                        next_observation["position"],
+                        next_observation["velocity"],
+                        self.cfg.policy_dt,
                         transition["actuator"],
                     )
                     # Source velocity history is post-step; preserve it before same-step autoreset.
@@ -574,36 +678,56 @@ class ZhangTrainer:
                         substep = transition["collision_substep"]
                         index = (substep - 1).clamp_min(0)
                         rows = torch.arange(self.env.num_envs, device=self.env.device)
-                        collision_position = align_state(predicted_positions[rows, index],
-                                                         transition["collision_position"])
-                        collision_position = torch.where(substep[:, None] > 0,
-                                                         collision_position, terminal_state.position)
+                        collision_position = align_state(
+                            predicted_positions[rows, index], transition["collision_position"]
+                        )
+                        collision_position = torch.where(
+                            substep[:, None] > 0, collision_position, terminal_state.position
+                        )
                         pose_index = torch.where(substep > 0, index, predicted_positions.shape[1] - 1)
                         collision_obstacles = transition["dynamic_positions_by_substep"][pose_index]
                         terminal_gap = self._dcol_gap(collision_position, parameters["margin"], collision_obstacles)
                         history["dcol_gap"].append(torch.cat((dcol_lookahead, terminal_gap[:, None]), dim=1))
                         if self.horizon_controller is not None:
                             endpoint_clearance = metric_navigation_gap(
-                                collision_position, self.env.terrain_distance.signed_distance(collision_position),
-                                collision_obstacles, self.env.motion.size,
+                                collision_position,
+                                self.env.terrain_distance.signed_distance(collision_position),
+                                collision_obstacles,
+                                self.env.motion.size,
                             )
-                            history["risk_clearance"].append(torch.cat((
-                                height_bounded_gap(query, obstacle_distance - 0.3), endpoint_clearance[:, None]
-                            ), dim=1))
+                            history["risk_clearance"].append(
+                                torch.cat(
+                                    (height_bounded_gap(query, obstacle_distance - 0.3), endpoint_clearance[:, None]),
+                                    dim=1,
+                                )
+                            )
                     if self.actor_critic is not None:
                         # DiffAero: absorbing terminals have no future cost; timeouts
                         # and the ordinary horizon use the pre-reset endpoint graph.
                         critic_history.push(terminal_state.velocity, target_velocity, torch.zeros_like(done))
                         endpoint = critic_observation(
-                            terminal_state, transition, hidden, command, transition["critic_parameters"],
-                            critic_history, action_history, observation_history,
-                            transition["step"], self.env.max_episode_length, transition["action_delay_steps"],
+                            terminal_state,
+                            transition,
+                            hidden,
+                            command,
+                            transition["critic_parameters"],
+                            critic_history,
+                            action_history,
+                            observation_history,
+                            transition["step"],
+                            self.env.max_episode_length,
+                            transition["action_delay_steps"],
                         )
                         live_value = self.actor_critic.actor_value(endpoint)
                         if diagnostic_update:
-                            value_probes.append(critic_vertical_probe(
-                                self.actor_critic, endpoint, terminal_state.position[:, 2], terminated,
-                            ))
+                            value_probes.append(
+                                critic_vertical_probe(
+                                    self.actor_critic,
+                                    endpoint,
+                                    terminal_state.position[:, 2],
+                                    terminated,
+                                )
+                            )
                         actor_next_value = torch.where(terminated, torch.zeros_like(live_value), live_value)
                         history["actor_next_value"].append(actor_next_value)
                         history["critic_next_value"].append(actor_next_value.detach())
@@ -623,18 +747,25 @@ class ZhangTrainer:
                 algorithm_metrics = {}
                 if self.actor_critic is not None:
                     actor_terms = short_horizon_cost_objective(
-                        transition_cost, torch.stack(history["actor_next_value"]), torch.stack(history["done"]),
+                        transition_cost,
+                        torch.stack(history["actor_next_value"]),
+                        torch.stack(history["done"]),
                         discount=self.cfg.discount,
                     )
                     actor_loss = actor_terms["objective"]
-                    algorithm_metrics.update({f"ActorCritic/{name}": float(value.detach())
-                                              for name, value in actor_terms.items()})
+                    algorithm_metrics.update(
+                        {f"ActorCritic/{name}": float(value.detach()) for name, value in actor_terms.items()}
+                    )
                     if self.actor_critic is not None:
                         absorbing = torch.stack(history["absorbing_terminal"])
                         values = torch.stack(history["critic_next_value"])
                         algorithm_metrics["ActorCritic/absorbing_terminal_count"] = float(absorbing.sum())
-                        algorithm_metrics["ActorCritic/absorbing_bootstrap_abs_sum"] = float(values.masked_select(absorbing).abs().sum())
-                        algorithm_metrics["ActorCritic/pre_reset_timeout_count"] = float(torch.stack(history["time_truncated"]).sum())
+                        algorithm_metrics["ActorCritic/absorbing_bootstrap_abs_sum"] = float(
+                            values.masked_select(absorbing).abs().sum()
+                        )
+                        algorithm_metrics["ActorCritic/pre_reset_timeout_count"] = float(
+                            torch.stack(history["time_truncated"]).sum()
+                        )
                 risk = None
                 if self.horizon_controller is not None:
                     risk = self.horizon_controller.risk(torch.stack(history["risk_clearance"]))
@@ -647,7 +778,9 @@ class ZhangTrainer:
                 if not bool(torch.isfinite(actor_loss)):
                     raise FloatingPointError("Non-finite Zhang actor objective")
                 if float(execution_error) > 1e-6:
-                    raise RuntimeError(f"PhysX and differentiable model executed different delayed actions: {execution_error}")
+                    raise RuntimeError(
+                        f"PhysX and differentiable model executed different delayed actions: {execution_error}"
+                    )
                 learning_rate = self._learning_rate()
                 self.optimizer.zero_grad(set_to_none=True)
                 gradient_diagnostic = None
@@ -664,30 +797,47 @@ class ZhangTrainer:
                         height_gradient = gradient_diagnostic.component_gradient("height_boundary")
                 elif self.cfg.gradient_projection == "height_priority":
                     components = torch.autograd.grad(
-                        losses["height_boundary"], trainable, retain_graph=True, allow_unused=True,
+                        losses["height_boundary"],
+                        trainable,
+                        retain_graph=True,
+                        allow_unused=True,
                     )
-                    height_gradient = torch.cat([
-                        (torch.zeros_like(parameter) if gradient is None else gradient.detach()).reshape(-1)
-                        for parameter, gradient in zip(trainable, components, strict=True)
-                    ])
+                    height_gradient = torch.cat(
+                        [
+                            (torch.zeros_like(parameter) if gradient is None else gradient.detach()).reshape(-1)
+                            for parameter, gradient in zip(trainable, components, strict=True)
+                        ]
+                    )
                 actor_loss.backward()
                 if gradient_diagnostic is not None:
                     gradient_diagnostic.check_total_gradient()
                 action_probe = None
-                if (diagnostic_update and self.actor_critic is None) or self.cfg.gradient_projection == "height_priority":
-                    total_gradient = torch.cat([
-                        (torch.zeros_like(parameter) if parameter.grad is None else parameter.grad.detach()).reshape(-1)
-                        for parameter in trainable
-                    ])
+                if (
+                    diagnostic_update and self.actor_critic is None
+                ) or self.cfg.gradient_projection == "height_priority":
+                    total_gradient = torch.cat(
+                        [
+                            (
+                                torch.zeros_like(parameter) if parameter.grad is None else parameter.grad.detach()
+                            ).reshape(-1)
+                            for parameter in trainable
+                        ]
+                    )
                     if diagnostic_update:
                         action_probe = ActionUpdateProbe(
-                            self.model, self.optimizer, total_flat=total_gradient, height_flat=height_gradient,
-                            height_weight=self.cfg.coef_height_boundary, max_grad_norm=self.cfg.max_grad_norm,
+                            self.model,
+                            self.optimizer,
+                            total_flat=total_gradient,
+                            height_flat=height_gradient,
+                            height_weight=self.cfg.coef_height_boundary,
+                            max_grad_norm=self.cfg.max_grad_norm,
                             probe=fixed_action_probe,
                         )
                     if self.cfg.gradient_projection == "height_priority":
                         projected, projection_metrics = height_priority_gradient(
-                            total_gradient, height_gradient, self.cfg.coef_height_boundary,
+                            total_gradient,
+                            height_gradient,
+                            self.cfg.coef_height_boundary,
                         )
                         offset = 0
                         for parameter in trainable:
@@ -695,13 +845,17 @@ class ZhangTrainer:
                             if parameter.grad is not None:
                                 parameter.grad.copy_(projected[offset:end].view_as(parameter))
                             offset = end
-                        algorithm_metrics.update({
-                            f"Projection/{name}": float(value) for name, value in projection_metrics.items()
-                            if isinstance(value, (bool, int, float))
-                        })
+                        algorithm_metrics.update(
+                            {
+                                f"Projection/{name}": float(value)
+                                for name, value in projection_metrics.items()
+                                if isinstance(value, (bool, int, float))
+                            }
+                        )
                 try:
-                    grad_norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.cfg.max_grad_norm,
-                                                             error_if_nonfinite=True)
+                    grad_norm = torch.nn.utils.clip_grad_norm_(
+                        self.model.parameters(), self.cfg.max_grad_norm, error_if_nonfinite=True
+                    )
                 except RuntimeError:
                     self.nonfinite_grad_events += 1
                     raise
@@ -714,7 +868,8 @@ class ZhangTrainer:
                     gradient_record["applied_gradient_projection"] = self.cfg.gradient_projection
                     if action_probe is not None:
                         gradient_record["optimizer_action_probe"] = action_probe.finish(
-                            self.model, applied_projection=self.cfg.gradient_projection,
+                            self.model,
+                            applied_projection=self.cfg.gradient_projection,
                         )
                         gradient_record["optimizer_action_probe"]["probe_selection"] = fixed_action_probe_metadata
                         gradient_record["diagnostic_s"] += action_probe.diagnostic_s
@@ -725,20 +880,26 @@ class ZhangTrainer:
                 if self.actor_critic is not None:
                     self.critic_monitor.before_step()
                     critic_metrics = self.actor_critic.fit(
-                        torch.stack(history["critic_observation"]), transition_cost.detach(),
-                        torch.stack(history["critic_next_value"]), torch.stack(history["done"]),
+                        torch.stack(history["critic_observation"]),
+                        transition_cost.detach(),
+                        torch.stack(history["critic_next_value"]),
+                        torch.stack(history["done"]),
                     )
                     algorithm_metrics.update({f"ActorCritic/{name}": value for name, value in critic_metrics.items()})
-                    algorithm_metrics.update({f"Critic/{name}": value
-                                              for name, value in self.critic_monitor.after_step().items()})
+                    algorithm_metrics.update(
+                        {f"Critic/{name}": value for name, value in self.critic_monitor.after_step().items()}
+                    )
                 rollout_metrics = rollout_diagnostics(history)
                 if self.horizon_controller is not None:
                     terminal_fraction = float(torch.stack(history["absorbing_terminal"]).any(dim=0).float().mean())
-                    algorithm_metrics.update(self.horizon_controller.update(
-                        risk.detach(), terminal_fraction=terminal_fraction,
-                        gradient_ratio=float(grad_norm) / self.cfg.max_grad_norm,
-                        model_velocity_error=rollout_metrics["surrogate_velocity_error_mps"],
-                    ))
+                    algorithm_metrics.update(
+                        self.horizon_controller.update(
+                            risk.detach(),
+                            terminal_fraction=terminal_fraction,
+                            gradient_ratio=float(grad_norm) / self.cfg.max_grad_norm,
+                            model_velocity_error=rollout_metrics["surrogate_velocity_error_mps"],
+                        )
+                    )
                 self.stage_updates = update + 1
                 self.completed_updates = initial_updates + self.stage_updates
                 self.environment_steps += rollout_steps * self.env.num_envs
@@ -748,12 +909,18 @@ class ZhangTrainer:
                 metrics.update(optimizer_metrics)
                 metrics.update(algorithm_metrics)
                 metrics.update(rollout_metrics)
-                metrics.update(update=self.completed_updates, learning_rate=learning_rate, grad_norm=float(grad_norm),
-                               elapsed_s=self.elapsed_s, process_elapsed_s=time.monotonic() - self.process_started_at,
-                               update_s=time.perf_counter() - update_started,
-                               completed_episodes=int(terminated_count),
-                               rollout_steps=rollout_steps, environment_steps=self.environment_steps,
-                               executed_action_max_error=float(execution_error))
+                metrics.update(
+                    update=self.completed_updates,
+                    learning_rate=learning_rate,
+                    grad_norm=float(grad_norm),
+                    elapsed_s=self.elapsed_s,
+                    process_elapsed_s=time.monotonic() - self.process_started_at,
+                    update_s=time.perf_counter() - update_started,
+                    completed_episodes=int(terminated_count),
+                    rollout_steps=rollout_steps,
+                    environment_steps=self.environment_steps,
+                    executed_action_max_error=float(execution_error),
+                )
                 if torch.device(self.env.device).type == "cuda":
                     for name, read_value in (
                         ("allocated", torch.cuda.memory_allocated),
@@ -765,15 +932,19 @@ class ZhangTrainer:
                 if gradient_record is not None:
                     heights = torch.stack(history["position"]).detach()[..., 2]
                     gradient_record.update(
-                        update=self.completed_updates, stage=self.env.cfg.training_stage,
-                        variant=self.cfg.variant, environment_steps=self.environment_steps,
-                        num_envs=self.env.num_envs, train_cfg=asdict(self.cfg), rollout=metrics.copy(),
-                        upper_boundary_active_fraction=float((
-                            heights > self.cfg.height_bounds[1] - self.cfg.boundary_margin
-                        ).float().mean()),
-                        lower_boundary_active_fraction=float((
-                            heights < self.cfg.height_bounds[0] + self.cfg.boundary_margin
-                        ).float().mean()),
+                        update=self.completed_updates,
+                        stage=self.env.cfg.training_stage,
+                        variant=self.cfg.variant,
+                        environment_steps=self.environment_steps,
+                        num_envs=self.env.num_envs,
+                        train_cfg=asdict(self.cfg),
+                        rollout=metrics.copy(),
+                        upper_boundary_active_fraction=float(
+                            (heights > self.cfg.height_bounds[1] - self.cfg.boundary_margin).float().mean()
+                        ),
+                        lower_boundary_active_fraction=float(
+                            (heights < self.cfg.height_bounds[0] + self.cfg.boundary_margin).float().mean()
+                        ),
                     )
                     with (self.log_dir / "gradient_diagnostics.jsonl").open("a") as diagnostic_log:
                         diagnostic_log.write(json.dumps(gradient_record, allow_nan=False) + "\n")
@@ -787,16 +958,35 @@ class ZhangTrainer:
                     self.env.curriculum, self.completed_updates, self.log_dir, writer, self._checkpoint
                 )
                 if self._report_controls(report, writer):
-                    (observation, zero, state, hidden, previous_command, action_history,
-                     observation_history, critic_history) = self._initialize_rollout()
+                    (
+                        observation,
+                        zero,
+                        state,
+                        hidden,
+                        previous_command,
+                        action_history,
+                        observation_history,
+                        critic_history,
+                    ) = self._initialize_rollout()
                 if self.completed_updates == 1 or self.completed_updates % 100 == 0:
                     self._checkpoint(self.log_dir / "checkpoint_latest.pt")
                 if self.env.curriculum is not None and self.env.curriculum.ready_to_advance:
                     self.env.advance_curriculum()
                     self.recovery.reset_stage(f"dynamic_{self.env.cfg.num_dynamic_obstacles}")
-                    (observation, zero, state, hidden, previous_command, action_history,
-                     observation_history, critic_history) = self._initialize_rollout()
-                    print(f"CURRICULUM -> {self.env.cfg.num_dynamic_obstacles} at update {self.completed_updates}", flush=True)
+                    (
+                        observation,
+                        zero,
+                        state,
+                        hidden,
+                        previous_command,
+                        action_history,
+                        observation_history,
+                        critic_history,
+                    ) = self._initialize_rollout()
+                    print(
+                        f"CURRICULUM -> {self.env.cfg.num_dynamic_obstacles} at update {self.completed_updates}",
+                        flush=True,
+                    )
                 result = self._result("running")
                 if self.stop_requested is not None:
                     checkpoint = self.log_dir / "checkpoint_stopped.pt"

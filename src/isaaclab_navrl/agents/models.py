@@ -29,10 +29,15 @@ class NavRLEncoder(nn.Module):
     def __init__(self):
         super().__init__()
         self.lidar = nn.Sequential(
-            nn.Conv2d(1, 4, (5, 3), padding=(2, 1)), nn.ELU(),
-            nn.Conv2d(4, 16, (5, 3), stride=(2, 1), padding=(2, 1)), nn.ELU(),
-            nn.Conv2d(16, 16, (5, 3), stride=(2, 2), padding=(2, 1)), nn.ELU(),
-            nn.Flatten(1), nn.Linear(16 * 9 * 2, 128), nn.LayerNorm(128),
+            nn.Conv2d(1, 4, (5, 3), padding=(2, 1)),
+            nn.ELU(),
+            nn.Conv2d(4, 16, (5, 3), stride=(2, 1), padding=(2, 1)),
+            nn.ELU(),
+            nn.Conv2d(16, 16, (5, 3), stride=(2, 2), padding=(2, 1)),
+            nn.ELU(),
+            nn.Flatten(1),
+            nn.Linear(16 * 9 * 2, 128),
+            nn.LayerNorm(128),
         )
         self.dynamic = _mlp(50, (128, 64))
         self.fusion = _mlp(128 + 8 + 64, (256, 256))

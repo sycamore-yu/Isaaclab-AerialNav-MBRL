@@ -28,8 +28,11 @@ def parse_gradient_diagnostic_updates(raw: str) -> tuple[int, ...]:
 
 
 TrainArgValue = str | int | float | bool | tuple[int, ...]
-TRAIN_ARG_CHOICES = {name: get_args(field.type) for name, field in ZhangTrainCfg.__dataclass_fields__.items()
-                     if get_args(field.type) and isinstance(get_args(field.type)[0], str)}
+TRAIN_ARG_CHOICES = {
+    name: get_args(field.type)
+    for name, field in ZhangTrainCfg.__dataclass_fields__.items()
+    if get_args(field.type) and isinstance(get_args(field.type)[0], str)
+}
 TRAIN_ARG_CHOICES["velocity_loss_mode"] = get_args(get_args(ZhangTrainCfg.__annotations__["velocity_loss_mode"])[0])
 TRAIN_ARG_CHOICES["timing"] = ("baseline", "unified_20hz", "unified_50hz")
 TRAIN_ARG_TYPES = {
@@ -119,7 +122,13 @@ def parse_train_args(tokens: list[str]) -> dict[str, TrainArgValue]:
         elif key in ("grad_decay", "critic_target_tau"):
             if not 0 < value <= 1:
                 raise ValueError("grad_decay must be in (0, 1]")
-        elif key.startswith("coef_") or key in ("boundary_margin", "ahac_risk_clearance", "weight_decay", "plateau_patience", "failure_terminal_cost"):
+        elif key.startswith("coef_") or key in (
+            "boundary_margin",
+            "ahac_risk_clearance",
+            "weight_decay",
+            "plateau_patience",
+            "failure_terminal_cost",
+        ):
             if value < 0:
                 raise ValueError(f"{option} must be nonnegative")
         elif value <= 0:
@@ -137,7 +146,12 @@ def parse_train_args(tokens: list[str]) -> dict[str, TrainArgValue]:
             raise ValueError("Height-priority projection requires --algorithm bptt")
     if values.get("timesteps", 150) < 2:
         raise ValueError("timesteps must be at least 2")
-    if not 2 <= values.get("ahac_min_horizon", 16) <= values.get("ahac_initial_horizon", 32) <= values.get("ahac_max_horizon", 300):
+    if (
+        not 2
+        <= values.get("ahac_min_horizon", 16)
+        <= values.get("ahac_initial_horizon", 32)
+        <= values.get("ahac_max_horizon", 300)
+    ):
         raise ValueError("AHAC requires 2 <= min <= initial <= max horizon")
     if not 0.2 < values.get("height_target_min", 0.5) < values.get("height_target_max", 2.5) < 4.0:
         raise ValueError("height target range must be increasing and inside (0.2, 4.0) metres")
@@ -147,9 +161,13 @@ def parse_train_args(tokens: list[str]) -> dict[str, TrainArgValue]:
 def add_train_args(parser):
     """Use the same options and dataclass defaults for direct and queued training."""
     defaults = asdict(ZhangTrainCfg())
-    defaults.update(timing="unified_20hz", camera_batch_size=64, lr=None, velocity_loss_mode=None,
-                    height_target_min=defaults["height_target_range"][0],
-                    height_target_max=defaults["height_target_range"][1])
+    defaults.update(
+        timing="unified_20hz",
+        camera_batch_size=64,
+        lr=None,
+        velocity_loss_mode=None,
+        height_target_min=defaults["height_target_range"][0],
+        height_target_max=defaults["height_target_range"][1],
+    )
     for name, converter in TRAIN_ARG_TYPES.items():
-        parser.add_argument("--" + name, type=converter, default=defaults[name],
-                            choices=TRAIN_ARG_CHOICES.get(name))
+        parser.add_argument("--" + name, type=converter, default=defaults[name], choices=TRAIN_ARG_CHOICES.get(name))

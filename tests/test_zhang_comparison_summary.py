@@ -29,9 +29,16 @@ class ComparisonSummaryTests(unittest.TestCase):
         (self.directory / name).write_text("".join(json.dumps(value) + "\n" for value in values), encoding="utf-8")
 
     def config(self, variant="step", horizon=150, width=160):
-        return {"variant": variant, "train": {"variant": variant, "timesteps": horizon, "velocity_window_s": 2},
-                "environment": {"num_envs": 1024, "seed": 0, "terrain_seed": 0,
-                                "depth_camera": {"width": width, "height": 120, "policy_shape": [12, 16]}}}
+        return {
+            "variant": variant,
+            "train": {"variant": variant, "timesteps": horizon, "velocity_window_s": 2},
+            "environment": {
+                "num_envs": 1024,
+                "seed": 0,
+                "terrain_seed": 0,
+                "depth_camera": {"width": width, "height": 120, "policy_shape": [12, 16]},
+            },
+        }
 
     def test_missing_measurements_stay_missing(self):
         result = summary_tool.summarize_stage(self.root, "pretrain_s1")
@@ -44,11 +51,23 @@ class ComparisonSummaryTests(unittest.TestCase):
 
     def test_recent_statistics_weight_completed_episodes_and_keep_missing_denominators(self):
         records = [{"episodes": 1000, "success_rate": 1.0}] * 2 + [
-            {"episodes": 10, "counts": {"success": 1}, "success_rate": 0.1,
-             "success_time_mean_s": 3.0, "episode_return_mean": 2.0},
-            {"episodes": 100, "counts": {"success": 90}, "success_rate": 0.9,
-             "success_time_mean_s": 8.0, "episode_return_mean": 4.0},
-            {}, {}, {"success_rate": 0.8},
+            {
+                "episodes": 10,
+                "counts": {"success": 1},
+                "success_rate": 0.1,
+                "success_time_mean_s": 3.0,
+                "episode_return_mean": 2.0,
+            },
+            {
+                "episodes": 100,
+                "counts": {"success": 90},
+                "success_rate": 0.9,
+                "success_time_mean_s": 8.0,
+                "episode_return_mean": 4.0,
+            },
+            {},
+            {},
+            {"success_rate": 0.8},
         ]
         recent = summary_tool.recent_statistics(records)
         success = recent["metrics"]["success_rate"]
@@ -61,12 +80,18 @@ class ComparisonSummaryTests(unittest.TestCase):
 
     def test_first_threshold_matches_exact_update_and_stage_step_counters(self):
         self.write("config.json", self.config(horizon=96))
-        self.write("training_result.json", {"completed_updates": 110, "stage_updates": 10,
-                                           "environment_steps": 123456 + 10 * 96 * 1024})
-        self.lines("training_statistics.jsonl", [
-            {"update": 104, "success_rate": 0.7}, {"update": 105, "success_rate": 0.8, "episodes": 1200},
-            {"update": 106, "success_rate": 0.9},
-        ])
+        self.write(
+            "training_result.json",
+            {"completed_updates": 110, "stage_updates": 10, "environment_steps": 123456 + 10 * 96 * 1024},
+        )
+        self.lines(
+            "training_statistics.jsonl",
+            [
+                {"update": 104, "success_rate": 0.7},
+                {"update": 105, "success_rate": 0.8, "episodes": 1200},
+                {"update": 106, "success_rate": 0.9},
+            ],
+        )
         self.lines("updates.jsonl", [{"update": 104, "elapsed_s": 300}, {"update": 105, "elapsed_s": 321}])
         record = summary_tool.summarize_stage(self.root, "pretrain_s1")
         passed = record["first_80_percent"]
@@ -81,10 +106,13 @@ class ComparisonSummaryTests(unittest.TestCase):
         self.assertEqual(missing["elapsed_match"], "missing")
 
     def test_nonfinite_values_action_errors_and_incomplete_lines_are_visible(self):
-        self.lines("updates.jsonl", [
-            {"update": 1, "update_s": 2, "grad_norm": float("nan"), "executed_action_max_error": 0},
-            {"update": 2, "update_s": 4, "executed_action_max_error": 2e-6},
-        ])
+        self.lines(
+            "updates.jsonl",
+            [
+                {"update": 1, "update_s": 2, "grad_norm": float("nan"), "executed_action_max_error": 0},
+                {"update": 2, "update_s": 4, "executed_action_max_error": 2e-6},
+            ],
+        )
         self.lines("training_statistics.jsonl", [{"update": 1, "success_rate": 0.2}])
         with (self.directory / "training_statistics.jsonl").open("a", encoding="utf-8") as stream:
             stream.write('{"update": 2, "success_rate":')
@@ -128,13 +156,15 @@ def test_three_report_retention_requires_each_report_to_have_1024_episodes(tmp_p
     directory.mkdir(parents=True)
     reports = [
         {"update": 1, "episodes": 32, "success_rate": 1.0},
-        {"update": 2, "episodes": 1024, "success_rate": .9},
-        {"update": 3, "episodes": 1024, "success_rate": .9},
-        {"update": 4, "episodes": 1024, "success_rate": .79},
-        *[{"update": i, "episodes": 1024, "success_rate": .8} for i in (5, 6, 7)],
+        {"update": 2, "episodes": 1024, "success_rate": 0.9},
+        {"update": 3, "episodes": 1024, "success_rate": 0.9},
+        {"update": 4, "episodes": 1024, "success_rate": 0.79},
+        *[{"update": i, "episodes": 1024, "success_rate": 0.8} for i in (5, 6, 7)],
     ]
     (directory / "training_statistics.jsonl").write_text("".join(json.dumps(r) + "\n" for r in reports))
-    (directory / "updates.jsonl").write_text(json.dumps({"update": 7, "elapsed_s": 250, "process_elapsed_s": 270}) + "\n")
+    (directory / "updates.jsonl").write_text(
+        json.dumps({"update": 7, "elapsed_s": 250, "process_elapsed_s": 270}) + "\n"
+    )
     result = summary_tool.summarize_stage(tmp_path, "pretrain_s1")
     assert result["first_80_percent"]["update"] == 2
     assert result["stable_80_percent"]["first_update"] == 5

@@ -76,11 +76,16 @@ def test_continuous_failure_is_counted_only_at_natural_timeout(event):
     terms_sequence = (event_terms(1, **{event: [0]}), event_terms(1), event_terms(1, reached=[0]), event_terms(1))
     for step, terms in enumerate(terms_sequence, 1):
         latch_first_event(code, elapsed, terms, torch.tensor([step * 0.1]))
-        curriculum.observe({
-            "first_event_code": code.clone(), "first_event_time_s": elapsed.clone(),
-            "terminated": termination_mask(terms, collision_terminates=False, bounds_terminates=False),
-            "timeout": torch.tensor([step == 4]), "episode_return": torch.zeros(1), "step": torch.tensor([step]),
-        })
+        curriculum.observe(
+            {
+                "first_event_code": code.clone(),
+                "first_event_time_s": elapsed.clone(),
+                "terminated": termination_mask(terms, collision_terminates=False, bounds_terminates=False),
+                "timeout": torch.tensor([step == 4]),
+                "episode_return": torch.zeros(1),
+                "step": torch.tensor([step]),
+            }
+        )
         if step < 4:
             assert curriculum.pop_report(update=1) is None
     report = curriculum.pop_report(update=1)

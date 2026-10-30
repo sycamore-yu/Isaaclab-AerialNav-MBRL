@@ -26,16 +26,36 @@ class _Writer:
 
 
 def _trainer(path, schedule="cosine", stage="pretrain_s0", algorithm="bptt", **cfg_changes):
-    settings = dict(physics_dt=0.01, policy_dt=0.1, velocity_loss_mode="variant_default", variant="dcol", algorithm=algorithm, observation_normalization=True, lr_schedule=schedule,
-                    plateau_patience=2, plateau_cooldown=0)
+    settings = dict(
+        physics_dt=0.01,
+        policy_dt=0.1,
+        velocity_loss_mode="variant_default",
+        variant="dcol",
+        algorithm=algorithm,
+        observation_normalization=True,
+        lr_schedule=schedule,
+        plateau_patience=2,
+        plateau_cooldown=0,
+    )
     settings.update(cfg_changes)
     cfg = ZhangTrainCfg(**settings)
     path.mkdir(parents=True, exist_ok=True)
     env = SimpleNamespace(
-        physics_dt=0.01, step_dt=0.1, device="cpu", num_envs=2, nonfinite_events=0,
-        cfg=SimpleNamespace(variant="dcol", training_stage=stage, seed=0, terrain_seed=0,
-                            num_static_obstacles=300, num_dynamic_obstacles=0, sim_to_real=_Randomization(),
-                            height_target_range=cfg.height_target_range),
+        physics_dt=0.01,
+        step_dt=0.1,
+        device="cpu",
+        num_envs=2,
+        nonfinite_events=0,
+        cfg=SimpleNamespace(
+            variant="dcol",
+            training_stage=stage,
+            seed=0,
+            terrain_seed=0,
+            num_static_obstacles=300,
+            num_dynamic_obstacles=0,
+            sim_to_real=_Randomization(),
+            height_target_range=cfg.height_target_range,
+        ),
         curriculum=TrainingCurriculum(2, "cpu", stage),
     )
     return ZhangTrainer(env, cfg, path)
@@ -59,14 +79,18 @@ def _assert_state_equal(actual, expected):
 def _report(trainer, update, rate):
     trainer.completed_updates = update
     trainer.environment_steps = update * 300
-    return {"stage": trainer.env.cfg.training_stage, "update": update,
-            "episodes": 1024, "success_rate": rate}
+    return {"stage": trainer.env.cfg.training_stage, "update": update, "episodes": 1024, "success_rate": rate}
 
 
-@pytest.mark.parametrize(("name", "optimizer_type", "decay"), (
-    ("adamw", torch.optim.AdamW, 0.01), ("adamw", torch.optim.AdamW, 0.0),
-    ("adam", torch.optim.Adam, 0.0), ("adam", torch.optim.Adam, 0.01),
-))
+@pytest.mark.parametrize(
+    ("name", "optimizer_type", "decay"),
+    (
+        ("adamw", torch.optim.AdamW, 0.01),
+        ("adamw", torch.optim.AdamW, 0.0),
+        ("adam", torch.optim.Adam, 0.0),
+        ("adam", torch.optim.Adam, 0.01),
+    ),
+)
 def test_runner_constructs_the_requested_optimizer_without_changing_its_weight_decay(
     tmp_path, name, optimizer_type, decay
 ):
@@ -252,20 +276,23 @@ def test_accepted_stage_checkpoint_keeps_normalization_and_resets_report_history
     torch.testing.assert_close(next_stage.normalizer.state_moments.mean, torch.full((10,), 2.0, dtype=torch.float64))
 
 
-@pytest.mark.parametrize(("algorithm", "changed_field", "changed_value"), [
-    ("bptt", "normalization_variance_floor", 0.002),
-    ("shac", "discount", 0.95),
-    ("shac", "td_lambda", 0.8),
-    ("ahac", "ahac_risk_budget", 0.2),
-    ("ahac", "ahac_max_horizon", 150),
-    ("bptt", "velocity_loss_mode", "full_window"),
-    ("bptt", "height_loss_mode", "boundary_huber"),
-    ("bptt", "height_target_range", (0.6, 2.4)),
-    ("bptt", "optimizer", "adam"),
-    ("bptt", "weight_decay", 0.0),
-    ("bptt", "plateau_patience", 0),
-    ("bptt", "gradient_projection", "height_priority"),
-])
+@pytest.mark.parametrize(
+    ("algorithm", "changed_field", "changed_value"),
+    [
+        ("bptt", "normalization_variance_floor", 0.002),
+        ("shac", "discount", 0.95),
+        ("shac", "td_lambda", 0.8),
+        ("ahac", "ahac_risk_budget", 0.2),
+        ("ahac", "ahac_max_horizon", 150),
+        ("bptt", "velocity_loss_mode", "full_window"),
+        ("bptt", "height_loss_mode", "boundary_huber"),
+        ("bptt", "height_target_range", (0.6, 2.4)),
+        ("bptt", "optimizer", "adam"),
+        ("bptt", "weight_decay", 0.0),
+        ("bptt", "plateau_patience", 0),
+        ("bptt", "gradient_projection", "height_priority"),
+    ],
+)
 def test_stage_load_rejects_changed_learning_configuration_before_mutating_state(
     tmp_path, algorithm, changed_field, changed_value
 ):
@@ -275,8 +302,7 @@ def test_stage_load_rejects_changed_learning_configuration_before_mutating_state
     original.normalizer.observe(torch.ones(2, 1, 12, 16), torch.full((2, 10), 2.0))
     checkpoint = tmp_path / "checkpoint_stage.pt"
     original._checkpoint(checkpoint)
-    next_stage = _trainer(tmp_path / "next", stage="pretrain_s1", algorithm=algorithm,
-                          **{changed_field: changed_value})
+    next_stage = _trainer(tmp_path / "next", stage="pretrain_s1", algorithm=algorithm, **{changed_field: changed_value})
     model_before = copy.deepcopy(next_stage.model.state_dict())
     normalization_before = copy.deepcopy(next_stage.normalizer.state_dict())
     with pytest.raises(ValueError, match=f"cannot change {changed_field}"):
@@ -294,8 +320,13 @@ def test_stage_load_allows_only_the_intended_stage_control_overrides(tmp_path, s
     checkpoint = tmp_path / "checkpoint_stage.pt"
     original._checkpoint(checkpoint)
     next_stage = _trainer(
-        tmp_path / "next", schedule=schedule, stage="pretrain_s1", lr=0.0005, max_iterations=2,
-        stop_after_acceptance=True, gradient_diagnostic_updates=(17, 19),
+        tmp_path / "next",
+        schedule=schedule,
+        stage="pretrain_s1",
+        lr=0.0005,
+        max_iterations=2,
+        stop_after_acceptance=True,
+        gradient_diagnostic_updates=(17, 19),
     )
     next_stage.load_stage_checkpoint(checkpoint)
     assert next_stage.cfg.lr == 0.0005 and next_stage.cfg.max_iterations == 2
@@ -336,8 +367,9 @@ def test_same_stage_restore_keeps_critic_progress_rng_and_horizon_progress(tmp_p
     current_critic = copy.deepcopy(critic.state_dict())
     assert current_critic["completed_fits"] > saved_critic["completed_fits"]
     assert not torch.equal(current_critic["shuffle_rng_state"], saved_critic["shuffle_rng_state"])
-    assert any(not torch.equal(value, saved_critic["critics"][name])
-               for name, value in current_critic["critics"].items())
+    assert any(
+        not torch.equal(value, saved_critic["critics"][name]) for name, value in current_critic["critics"].items()
+    )
     current_horizon_updates = controller.completed_updates if controller is not None else None
     if controller is not None:
         assert controller.horizon != saved_horizon["horizon"]

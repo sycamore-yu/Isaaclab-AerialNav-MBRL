@@ -96,14 +96,14 @@ def report(root: Path, runs: list[str]) -> dict:
                     continue
                 record = json.loads(raw)
                 entry = {
-                    "run": run, "stage": path.parent.name,
+                    "run": run,
+                    "stage": path.parent.name,
                     "update": record["update"],
                     "environment_steps": record.get("environment_steps"),
                     "upper_boundary_active_fraction": record.get("upper_boundary_active_fraction"),
                     "lower_boundary_active_fraction": record.get("lower_boundary_active_fraction"),
                     "mean_altitude_m": record.get("rollout", {}).get("mean_altitude_m"),
-                    "groups": {group: project_from_gram(record, group)
-                               for group in ("all", "trunk", "z_head")},
+                    "groups": {group: project_from_gram(record, group) for group in ("all", "trunk", "z_head")},
                 }
                 records.append(entry)
     records.sort(key=lambda x: (x["run"], x["stage"], x["update"]))
@@ -125,15 +125,19 @@ def report(root: Path, runs: list[str]) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path("logs/curriculum"))
-    parser.add_argument("--runs", nargs="+", default=[
-        "zhang_followup_continuous_signed_seed0_20261029",
-        "zhang_step_dcol_bptt_seed0_20261029",
-        "zhang_continuous_height8_retry1_seed0_20261029",
-        "zhang_step_h5_lr0p0005_s0_20261029",
-    ])
-    parser.add_argument("--output", type=Path, default=Path(
-        "docs/results/zhang_gradient_projection_counterfactual_20261029.json"
-    ))
+    parser.add_argument(
+        "--runs",
+        nargs="+",
+        default=[
+            "zhang_followup_continuous_signed_seed0_20261029",
+            "zhang_step_dcol_bptt_seed0_20261029",
+            "zhang_continuous_height8_retry1_seed0_20261029",
+            "zhang_step_h5_lr0p0005_s0_20261029",
+        ],
+    )
+    parser.add_argument(
+        "--output", type=Path, default=Path("docs/results/zhang_gradient_projection_counterfactual_20261029.json")
+    )
     args = parser.parse_args()
     result = report(args.root, args.runs)
     if not result["records"]:
@@ -143,15 +147,22 @@ def main() -> None:
     print("Analyzed", len(result["records"]), "saved diagnostic updates; output:", args.output)
     for row in result["records"]:
         v = row["groups"]["all"]
-        print(row["run"], "update", row["update"],
-              "height/collision cosine", round(v["collision_height_cosine"], 4)
-              if v["collision_height_cosine"] is not None else None,
-              "SGD height cost Δ orig/guard/priority",
-              *(round(v[k]["height_loss_change_per_unit_sgd_lr"], 4)
-                for k in ("original", "non_worsen_height", "preserve_height_descent")),
-              "priority extra coefficient",
-              round(v["preserve_height_descent"]["additional_height_gradient_coefficient"], 4),
-              "actual AdamW Δ height", round(v["actual_adamw_height_loss_first_order_change"], 6))
+        print(
+            row["run"],
+            "update",
+            row["update"],
+            "height/collision cosine",
+            round(v["collision_height_cosine"], 4) if v["collision_height_cosine"] is not None else None,
+            "SGD height cost Δ orig/guard/priority",
+            *(
+                round(v[k]["height_loss_change_per_unit_sgd_lr"], 4)
+                for k in ("original", "non_worsen_height", "preserve_height_descent")
+            ),
+            "priority extra coefficient",
+            round(v["preserve_height_descent"]["additional_height_gradient_coefficient"], 4),
+            "actual AdamW Δ height",
+            round(v["actual_adamw_height_loss_first_order_change"], 6),
+        )
 
 
 if __name__ == "__main__":

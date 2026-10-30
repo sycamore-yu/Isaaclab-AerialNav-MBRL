@@ -121,14 +121,12 @@ def test_plateau_default_patience_is_two_fresh_bad_reports_before_third_reduces(
 
 
 def _report(update, success, stage="pretrain_s1"):
-    return {"update": update, "stage": stage, "episodes": 1024, "success_rate": success,
-            "stage_passed": success >= 0.8}
+    return {"update": update, "stage": stage, "episodes": 1024, "success_rate": success, "stage_passed": success >= 0.8}
 
 
 def _save_requested(controller, decision, suffix=""):
     checkpoints = {
-        level: f"/run/{decision.stage}/stable_{level:.2f}_u{decision.update}{suffix}.pt"
-        for level in decision.levels
+        level: f"/run/{decision.stage}/stable_{level:.2f}_u{decision.update}{suffix}.pt" for level in decision.levels
     }
     controller.acknowledge("save_stable", checkpoints=checkpoints)
     return checkpoints
@@ -252,7 +250,11 @@ def test_recovery_ack_mapping_is_atomic_requires_all_new_levels_and_preserves_ol
     controller = RecoveryController("pretrain_s1", RecoveryConfig(enabled=True))
     for update in range(1, 4):
         decision = controller.observe(_report(update, 0.10))
-    for invalid in ({0.05: "/five.pt"}, {0.05: "/five.pt", 0.10: ""}, {0.05: "/five.pt", 0.10: "/ten.pt", 0.15: "/extra.pt"}):
+    for invalid in (
+        {0.05: "/five.pt"},
+        {0.05: "/five.pt", 0.10: ""},
+        {0.05: "/five.pt", 0.10: "/ten.pt", 0.15: "/extra.pt"},
+    ):
         with pytest.raises(ValueError, match="mapping|path"):
             controller.acknowledge("save_stable", checkpoints=invalid)
         assert controller.stable_checkpoints == {} and controller.pending == decision
@@ -321,10 +323,17 @@ def test_recovery_pending_multi_level_save_roundtrips_json_and_rejects_old_state
         restored.load_state_dict(payload)
 
 
-@pytest.mark.parametrize("kwargs", (
-    {"stable_min_success": 0}, {"stable_level_step": 0}, {"stable_max_success": 0.04},
-    {"degrade_min_drop": 0.06}, {"degrade_abs_drop": 0}, {"degrade_relative_drop": 0},
-))
+@pytest.mark.parametrize(
+    "kwargs",
+    (
+        {"stable_min_success": 0},
+        {"stable_level_step": 0},
+        {"stable_max_success": 0.04},
+        {"degrade_min_drop": 0.06},
+        {"degrade_abs_drop": 0},
+        {"degrade_relative_drop": 0},
+    ),
+)
 def test_recovery_rejects_invalid_level_or_degradation_ranges(kwargs):
     with pytest.raises(ValueError):
         RecoveryController("pretrain_s1", RecoveryConfig(**kwargs))

@@ -44,8 +44,11 @@ class GradientDiagnostic:
         self.diagnostic_s = 0.0
         started = self._start_timing()
         self.term_names = list(components) if components is not None else [name for name, _ in LOSS_COEFFICIENTS]
-        self.coefficients = ([1.0] * len(components) if components is not None else
-                             [float(getattr(cfg, attribute)) for _, attribute in LOSS_COEFFICIENTS])
+        self.coefficients = (
+            [1.0] * len(components)
+            if components is not None
+            else [float(getattr(cfg, attribute)) for _, attribute in LOSS_COEFFICIENTS]
+        )
         losses = components if components is not None else losses
         self.loss_values = [float(losses[name].detach()) for name in self.term_names]
         self.parameter_layout = []
@@ -53,10 +56,15 @@ class GradientDiagnostic:
         offset = 0
         for name, parameter in named_parameters:
             end = offset + parameter.numel()
-            self.parameter_layout.append({
-                "name": name, "shape": list(parameter.shape), "numel": parameter.numel(),
-                "dtype": str(parameter.dtype), "flat_offset": offset,
-            })
+            self.parameter_layout.append(
+                {
+                    "name": name,
+                    "shape": list(parameter.shape),
+                    "numel": parameter.numel(),
+                    "dtype": str(parameter.dtype),
+                    "flat_offset": offset,
+                }
+            )
             if name.startswith(("stem.", "v_proj.", "gru.")):
                 trunk.append((offset, end))
             if name == "fc.weight":
@@ -85,10 +93,12 @@ class GradientDiagnostic:
         return self._gradients[self.term_names.index(name)].detach().clone()
 
     def _flatten(self, values):
-        return torch.cat([
-            (torch.zeros_like(parameter) if value is None else value.detach()).reshape(-1)
-            for parameter, value in zip(self._parameters, values, strict=True)
-        ])
+        return torch.cat(
+            [
+                (torch.zeros_like(parameter) if value is None else value.detach()).reshape(-1)
+                for parameter, value in zip(self._parameters, values, strict=True)
+            ]
+        )
 
     def _start_timing(self):
         if self._device.type == "cuda":
@@ -111,8 +121,10 @@ class GradientDiagnostic:
         actual_norm, expected_norm = float(actual.norm()), float(expected.norm())
         error = float(difference.norm())
         self._sum_check = {
-            "actual_total_norm": actual_norm, "component_sum_norm": expected_norm,
-            "l2_error": error, "max_abs_error": float(difference.abs().max()),
+            "actual_total_norm": actual_norm,
+            "component_sum_norm": expected_norm,
+            "l2_error": error,
+            "max_abs_error": float(difference.abs().max()),
             "relative_l2_error": error / max(actual_norm, expected_norm, 1e-12),
         }
         self._finish_timing(started)
@@ -141,21 +153,26 @@ class GradientDiagnostic:
             linearized_delta = (gradients @ displacement).cpu().tolist()
             denominator = sum(weighted_norms)
             groups[name] = {
-                "parameter_count": before.numel(), "raw_gram": raw_gram,
-                "raw_grad_norm": norms, "weighted_grad_norm": weighted_norms,
-                "cosine": [[_cosine(value, norms[i], norms[j]) for j, value in enumerate(row)]
-                           for i, row in enumerate(raw_gram)],
+                "parameter_count": before.numel(),
+                "raw_gram": raw_gram,
+                "raw_grad_norm": norms,
+                "weighted_grad_norm": weighted_norms,
+                "cosine": [
+                    [_cosine(value, norms[i], norms[j]) for j, value in enumerate(row)]
+                    for i, row in enumerate(raw_gram)
+                ],
                 "component_sum_norm": total_norm,
                 "cancellation_ratio": total_norm / denominator if denominator else None,
                 "raw_loss_dot_total": raw_dots.cpu().tolist(),
                 "signed_total_share": ((coefficients * raw_dots) / total_norm**2).cpu().tolist()
-                                      if total_norm else [None] * len(norms),
-                "parameter_norm": parameter_norm, "update_norm": update_norm,
+                if total_norm
+                else [None] * len(norms),
+                "parameter_norm": parameter_norm,
+                "update_norm": update_norm,
                 "relative_update_norm": update_norm / parameter_norm if parameter_norm else None,
                 "linearized_delta_loss": linearized_delta,
                 "cosine_with_actual_descent": [
-                    _cosine(-value, norm, update_norm)
-                    for value, norm in zip(linearized_delta, norms, strict=True)
+                    _cosine(-value, norm, update_norm) for value, norm in zip(linearized_delta, norms, strict=True)
                 ],
             }
             if "height_boundary" in self.term_names:
@@ -168,33 +185,46 @@ class GradientDiagnostic:
                 counterfactuals = {}
                 for label, term, weight in (
                     ("height_coefficient_5", "height_boundary", 5.0),
-                    ("avoidance_coefficient_half", "obstacle_avoidance",
-                     self.coefficients[self.term_names.index("obstacle_avoidance")] * 0.5),
+                    (
+                        "avoidance_coefficient_half",
+                        "obstacle_avoidance",
+                        self.coefficients[self.term_names.index("obstacle_avoidance")] * 0.5,
+                    ),
                 ):
                     changed = coefficients.clone()
                     changed[self.term_names.index(term)] = weight
                     changed_total = changed @ gradients
                     counterfactuals[label] = {
-                        "term": term, "coefficient": weight,
+                        "term": term,
+                        "coefficient": weight,
                         "component_sum_norm": float(changed_total.norm()),
                         "raw_loss_dot_total": (gradients @ changed_total).cpu().tolist(),
                     }
                 groups[name]["raw_gradient_counterfactuals"] = counterfactuals
         norm = float(grad_norm)
         record = {
-            "schema_version": 1, "term_order": self.term_names,
-            "coefficients": self.coefficients, "raw_loss": self.loss_values,
-            "weighted_loss": [weight * value for weight, value in zip(
-                self.coefficients, self.loss_values, strict=True
-            )],
-            "parameter_layout": self.parameter_layout, "groups": groups,
+            "schema_version": 1,
+            "term_order": self.term_names,
+            "coefficients": self.coefficients,
+            "raw_loss": self.loss_values,
+            "weighted_loss": [
+                weight * value for weight, value in zip(self.coefficients, self.loss_values, strict=True)
+            ],
+            "parameter_layout": self.parameter_layout,
+            "groups": groups,
             "total_gradient_check": self._sum_check,
-            "pre_clip_grad_norm": norm, "max_grad_norm": float(max_grad_norm),
+            "pre_clip_grad_norm": norm,
+            "max_grad_norm": float(max_grad_norm),
             "clip_scale": min(1.0, float(max_grad_norm) / (norm + 1e-6)),
-            "optimizer": [{
-                "lr": float(group["lr"]), "betas": list(group["betas"]),
-                "eps": float(group["eps"]), "weight_decay": float(group["weight_decay"]),
-            } for group in optimizer.param_groups],
+            "optimizer": [
+                {
+                    "lr": float(group["lr"]),
+                    "betas": list(group["betas"]),
+                    "eps": float(group["eps"]),
+                    "weight_decay": float(group["weight_decay"]),
+                }
+                for group in optimizer.param_groups
+            ],
             "linearized_delta_loss_sign": "negative_predicts_improvement_on_this_rollout",
             "counterfactual_scope": "raw_gradient_direction_only_not_an_adamw_step_or_new_rollout",
         }
@@ -208,8 +238,12 @@ def critic_vertical_probe(critic, features, heights, terminated):
     leaf = features.detach().requires_grad_(True)
     values = critic.actor_value(leaf)
     gradient = torch.autograd.grad(values.sum(), leaf)[0]
-    result = {"height_m": heights.detach().tolist(), "terminated": terminated.tolist(),
-              "value": values.detach().tolist(), "scope": "partials_with_camera_and_memory_fixed"}
+    result = {
+        "height_m": heights.detach().tolist(),
+        "terminated": terminated.tolist(),
+        "value": values.detach().tolist(),
+        "scope": "partials_with_camera_and_memory_fixed",
+    }
     for name, column, scale in (("z", 2, -1 / 50), ("vz", 5, 1 / 10)):
         epsilon = 0.02
         with torch.no_grad():
@@ -255,11 +289,17 @@ def collision_records(env, transition):
             category = "dynamic_cylinder" if env.motion.size[dynamic_index, 2] > 1 else "dynamic_box"
             obstacle_velocity = transition["dynamic_velocities_by_substep"][substep, dynamic_index]
         relative = velocity - obstacle_velocity
-        records.append({"env_id": row, "type": category, "height_m": float(position[2].detach()),
-                        "clearance_m": float(distance.detach()) - 0.3,
-                        "relative_speed_mps": float(relative.norm()),
-                        "closing_speed_mps": float(-relative.dot(normal)),
-                        "substep": substep + 1})
+        records.append(
+            {
+                "env_id": row,
+                "type": category,
+                "height_m": float(position[2].detach()),
+                "clearance_m": float(distance.detach()) - 0.3,
+                "relative_speed_mps": float(relative.norm()),
+                "closing_speed_mps": float(-relative.dot(normal)),
+                "substep": substep + 1,
+            }
+        )
     return records
 
 
@@ -297,12 +337,15 @@ def compare_dynamic_metrics(query, positions, sizes, radius=0.3):
         numerical = torch.stack(numerical, dim=-1)
         norms = gradient.norm(dim=-1)
         result["metrics"][name] = {
-            "gap_mean_m": float(value.detach().mean()), "gradient_norm_mean": float(norms.mean()),
+            "gap_mean_m": float(value.detach().mean()),
+            "gradient_norm_mean": float(norms.mean()),
             "single_forward_backward_s": measured_s,
             "fd_error_max": float((gradient - numerical).abs().max()),
-            "fd_error_p95": float((gradient - numerical).abs().flatten().quantile(.95)),
+            "fd_error_p95": float((gradient - numerical).abs().flatten().quantile(0.95)),
         }
     cosine = torch.nn.functional.cosine_similarity(*gradients, dim=-1)
     result["gradient_cosine_mean"] = float(cosine.mean())
-    result["note"] = "finite differences may cross closest-obstacle or surface ties; proxy units do not imply equal gradient scales"
+    result["note"] = (
+        "finite differences may cross closest-obstacle or surface ties; proxy units do not imply equal gradient scales"
+    )
     return result

@@ -28,13 +28,20 @@ class NavRLEnv(DirectRLEnv):
         self.drone = self.scene["drone"]
         self.lidar = self.scene["lidar"]
         self.controller = LeeRotorController(self.num_envs, self.device, dt=self.physics_dt)
-        self.curriculum = TrainingCurriculum(self.num_envs, self.device, stage=cfg.training_stage) if cfg.training_curriculum else None
+        self.curriculum = (
+            TrainingCurriculum(self.num_envs, self.device, stage=cfg.training_stage)
+            if cfg.training_curriculum
+            else None
+        )
         if self.curriculum is not None and cfg.training_report_episodes is not None:
             if cfg.training_report_episodes < 1:
                 raise ValueError("training_report_episodes must be positive")
             self.curriculum.min_episodes = cfg.training_report_episodes
         self.perturbation = PolicyPerturbation(
-            cfg.sim_to_real, self.num_envs, self.device, cfg.seed,
+            cfg.sim_to_real,
+            self.num_envs,
+            self.device,
+            cfg.seed,
             nominal_action_delay=1 if cfg.method == "zhang" else 0,
         )
         self.mass_scale = torch.ones(self.num_envs, 1, device=self.device)
@@ -42,8 +49,11 @@ class NavRLEnv(DirectRLEnv):
         if self.curriculum is not None:
             cfg.num_dynamic_obstacles = self.curriculum.active_obstacles
         self.motion = DynamicObstacleMotion(
-            cfg.num_dynamic_obstacles, cfg.terrain_seed, self.device,
-            self.physics_dt if cfg.method == "zhang" else self.step_dt, cfg.dynamic_speed_range,
+            cfg.num_dynamic_obstacles,
+            cfg.terrain_seed,
+            self.device,
+            self.physics_dt if cfg.method == "zhang" else self.step_dt,
+            cfg.dynamic_speed_range,
         )
         self.dynamic_collection = self.scene["dynamic_obstacles"] if cfg.num_dynamic_obstacles else None
         if self.dynamic_collection is not None:
@@ -155,8 +165,11 @@ class NavRLEnv(DirectRLEnv):
             active_obstacle_indices(count, self.cfg.dynamic_capacity()), device=self.device, dtype=torch.long
         )
         self.motion = DynamicObstacleMotion(
-            count, self.cfg.terrain_seed, self.device,
-            self.physics_dt if self.cfg.method == "zhang" else self.step_dt, self.cfg.dynamic_speed_range,
+            count,
+            self.cfg.terrain_seed,
+            self.device,
+            self.physics_dt if self.cfg.method == "zhang" else self.step_dt,
+            self.cfg.dynamic_speed_range,
         )
         self.cfg.num_dynamic_obstacles = count
         if self.dynamic_collection is not None:
@@ -198,7 +211,6 @@ class NavRLEnv(DirectRLEnv):
         self.dynamic_collection.write_body_pose_to_sim_index(body_poses=self._dynamic_pose)
         self.dynamic_collection.write_data_to_sim()
 
-
     def nearest_obstacle_signed_distance(self, query):
         return nearest_obstacle_signed_distance(
             query, self.terrain_distance.signed_distance(query), self.motion.position, self.motion.size
@@ -217,8 +229,14 @@ class NavRLEnv(DirectRLEnv):
         origin = self.lidar.data.pos_w.torch
         distances = (hits - origin[:, None]).norm(dim=-1).clamp_max(4).reshape(self.num_envs, 1, 36, 4)
         self._terms = navigation_terms(
-            state[:, :3], state[:, 7:10], self.target_pos, self.target_dir, distances,
-            self.motion, self.previous_velocity, self.height_range,
+            state[:, :3],
+            state[:, 7:10],
+            self.target_pos,
+            self.target_dir,
+            distances,
+            self.motion,
+            self.previous_velocity,
+            self.height_range,
         )
         self._terms.update(self._compute_first_events())
         return self._terms
@@ -235,23 +253,31 @@ class NavRLEnv(DirectRLEnv):
         state = self.root_state()
         # These values belong to the completed transition, before same-step autoreset.
         self.extras["transition"] = {
-            "position": state[:, :3].clone(), "quaternion": state[:, 3:7].clone(),
-            "velocity": state[:, 7:10].clone(), "angular_velocity": state[:, 10:13].clone(),
-            "target": self.target_pos.clone(), "episode_id": self.episode_id.clone(),
+            "position": state[:, :3].clone(),
+            "quaternion": state[:, 3:7].clone(),
+            "velocity": state[:, 7:10].clone(),
+            "angular_velocity": state[:, 10:13].clone(),
+            "target": self.target_pos.clone(),
+            "episode_id": self.episode_id.clone(),
             "height_target": self.target_pos[:, 2].clone(),
             "height_range": self.height_range.clone(),
             "step": self.episode_length_buf.clone(),
             "time_s": self.episode_length_buf.float() * self.step_dt,
-            "reached": terms["reached"].clone(), "collision": terms["collision"].clone(),
-            "bounds": terms["bounds"].clone(), "invalid": terms["invalid"].clone(),
-            "timeout": timed_out.clone(), "terminated": terminated.clone(),
+            "reached": terms["reached"].clone(),
+            "collision": terms["collision"].clone(),
+            "bounds": terms["bounds"].clone(),
+            "invalid": terms["invalid"].clone(),
+            "timeout": timed_out.clone(),
+            "terminated": terminated.clone(),
             "executed_action": self.executed_actions.clone(),
             "action_delay_steps": self.executed_action_lags.clone(),
         }
         if self.cfg.method == "zhang" and self.cfg.capture_terminal_observation:
             # Capture before DirectRLEnv autoresets sensors, targets and randomization.
             transition = self.extras["transition"]
-            transition["depth_features"] = self.scene["depth_camera"].data.output["policy_depth"].torch.permute(0, 3, 1, 2).clone()
+            transition["depth_features"] = (
+                self.scene["depth_camera"].data.output["policy_depth"].torch.permute(0, 3, 1, 2).clone()
+            )
             transition["input_delay_steps"] = self.perturbation.observation_buffer.time_lags.clone()
             transition["critic_parameters"] = {k: v.detach().clone() for k, v in self.zhang_parameters.items()}
         return terminated, timed_out
@@ -282,10 +308,17 @@ class NavRLEnv(DirectRLEnv):
                 state = self.root_state()
                 position, velocity, _ = self.perturbation.state(state[:, :3], state[:, 7:10], state[:, 3:7])
                 distance = self.perturbation.normal(4.0 - terms["lidar"], self.cfg.sim_to_real.lidar_std).clamp(0, 4)
-                terms = navigation_terms(position, velocity, self.target_pos, self.target_dir, distance,
-                                         self.motion, self.previous_velocity, self.height_range)
-            return torch.cat((terms["state"], terms["lidar"].flatten(1),
-                              terms["dynamic_obstacle"].flatten(1)), dim=-1)
+                terms = navigation_terms(
+                    position,
+                    velocity,
+                    self.target_pos,
+                    self.target_dir,
+                    distance,
+                    self.motion,
+                    self.previous_velocity,
+                    self.height_range,
+                )
+            return torch.cat((terms["state"], terms["lidar"].flatten(1), terms["dynamic_obstacle"].flatten(1)), dim=-1)
 
         if self.cfg.method == "zhang":
             return {"policy": sample()}
@@ -302,13 +335,18 @@ class NavRLEnv(DirectRLEnv):
 
         policy = self.perturbation.observe(self.common_step_counter, sample)
         return {
-            "depth_features": depth, "position": state[:, :3],
-            "quaternion": state[:, 3:7], "velocity": state[:, 7:10],
-            "target": self.target_pos.clone(), "episode_id": self.episode_id.clone(),
+            "depth_features": depth,
+            "position": state[:, :3],
+            "quaternion": state[:, 3:7],
+            "velocity": state[:, 7:10],
+            "target": self.target_pos.clone(),
+            "episode_id": self.episode_id.clone(),
             "height_target": self.target_pos[:, 2].clone(),
             "height_range": self.height_range.clone(),
-            "policy_position": policy[:, :3], "policy_velocity": policy[:, 3:6],
-            "policy_quaternion": policy[:, 6:10], "policy_target": policy[:, 10:13],
+            "policy_position": policy[:, :3],
+            "policy_velocity": policy[:, 3:6],
+            "policy_quaternion": policy[:, 6:10],
+            "policy_target": policy[:, 10:13],
             "policy_depth_features": policy[:, 13:].reshape(self.num_envs, 1, 12, 16),
             "input_delay_steps": self.perturbation.observation_buffer.time_lags.clone(),
         }
@@ -338,10 +376,12 @@ class ZhangNavRLEnv(NavRLEnv):
         self._collision_substep = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
         self._dynamic_positions_by_substep = (
             self.motion.position.new_zeros((self.cfg.decimation, *self.motion.position.shape))
-            if self.cfg.variant == "dcol" else None
+            if self.cfg.variant == "dcol"
+            else None
         )
-        self._dynamic_velocities_by_substep = (torch.zeros_like(self._dynamic_positions_by_substep)
-            if self.cfg.variant == "dcol" else None)
+        self._dynamic_velocities_by_substep = (
+            torch.zeros_like(self._dynamic_positions_by_substep) if self.cfg.variant == "dcol" else None
+        )
         self._substep_bounds = torch.zeros_like(self._substep_collision)
         self._substep_invalid = torch.zeros_like(self._substep_collision)
         self.filtered_command = torch.zeros(self.num_envs, 3, device=self.device)
@@ -359,7 +399,8 @@ class ZhangNavRLEnv(NavRLEnv):
 
     def _termination_mask(self, terms):
         return termination_mask(
-            terms, collision_terminates=self.cfg.variant != "continuous",
+            terms,
+            collision_terminates=self.cfg.variant != "continuous",
             bounds_terminates=self.cfg.variant != "continuous",
         )
 
@@ -413,15 +454,13 @@ class ZhangNavRLEnv(NavRLEnv):
         # Keep this policy step's first collision even if the episode's first
         # outcome was already a success. Capture before the aggregate is set.
         first_collision = terms["collision"] & ~self._substep_collision
-        self._collision_position.copy_(torch.where(
-            first_collision[:, None], self.root_state()[:, :3], self._collision_position
-        ))
-        self._collision_velocity.copy_(torch.where(
-            first_collision[:, None], self.root_state()[:, 7:10], self._collision_velocity
-        ))
-        self._collision_substep.copy_(torch.where(
-            first_collision, self._physical_substep, self._collision_substep
-        ))
+        self._collision_position.copy_(
+            torch.where(first_collision[:, None], self.root_state()[:, :3], self._collision_position)
+        )
+        self._collision_velocity.copy_(
+            torch.where(first_collision[:, None], self.root_state()[:, 7:10], self._collision_velocity)
+        )
+        self._collision_substep.copy_(torch.where(first_collision, self._physical_substep, self._collision_substep))
         if self.cfg.variant == "dcol":
             self._dynamic_positions_by_substep[self._physical_substep - 1].copy_(self.motion.position)
             self._dynamic_velocities_by_substep[self._physical_substep - 1].copy_(self.motion.velocity)
@@ -461,17 +500,16 @@ class ZhangNavRLEnv(NavRLEnv):
             self._record_substep(self._compute_first_events())
         self._physical_substep += 1
         state = self.root_state()
-        alpha = torch.exp(-self.zhang_parameters["pitch_ctl_delay"]
-                          * self.zhang_parameters["control_gain_scale"] * self.physics_dt)
+        alpha = torch.exp(
+            -self.zhang_parameters["pitch_ctl_delay"] * self.zhang_parameters["control_gain_scale"] * self.physics_dt
+        )
         self.filtered_command.mul_(alpha).add_(self.command * (1 - alpha))
         forward = quat_apply(state[:, 3:7], state.new_tensor((1.0, 0.0, 0.0)).expand(self.num_envs, -1))
         desired_forward = torch.nn.functional.normalize(5.0 * forward + self.target_pos - state[:, :3], dim=-1)
         yaw_alpha = torch.exp(-self.zhang_parameters["yaw_ctl_delay"] * self.physics_dt)
         yaw_vector = yaw_alpha * forward + (1.0 - yaw_alpha) * desired_forward
         yaw = torch.atan2(yaw_vector[:, 1], yaw_vector[:, 0]).unsqueeze(-1)
-        self.controller.compute(
-            state, state[:, 7:10], acceleration_world=self.filtered_command, yaw_world=yaw
-        )
+        self.controller.compute(state, state[:, 7:10], acceleration_world=self.filtered_command, yaw_world=yaw)
         self.controller.apply(self.drone)
         self.drone.set_disturbance_acceleration(
             disturbance_acceleration(state[:, 7:10], state[:, 3:7], self.zhang_parameters)

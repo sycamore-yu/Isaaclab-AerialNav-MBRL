@@ -25,7 +25,7 @@ def test_direct_pipeline_starts_random_then_inherits_only_its_own_checkpoints(tm
         parent = Path(command[command.index("--checkpoint") + 1]) if "--checkpoint" in command else None
         if not calls:
             assert stage == start and parent is None and "--fresh_stage" in command
-            assert float(command[command.index("--lr") + 1]) == .001
+            assert float(command[command.index("--lr") + 1]) == 0.001
         else:
             assert parent == calls[-1][1] / "checkpoint_stage.pt"
             assert "--fresh_stage" not in command
@@ -40,13 +40,21 @@ def test_direct_pipeline_starts_random_then_inherits_only_its_own_checkpoints(tm
 
     monkeypatch.setattr(protocol.subprocess, "run", simulate)
     output = tmp_path / "fresh"
-    args = argparse.Namespace(method="zhang", screening=True, output=str(output), num_envs=256,
-                              train_seed=0, device="cuda:0", finetune_lr=5e-5, start_stage=start)
-    assert protocol.run_pipeline(args, {"lr": .001, "height_loss_mode": "navrl_range"}) == 0
+    args = argparse.Namespace(
+        method="zhang",
+        screening=True,
+        output=str(output),
+        num_envs=256,
+        train_seed=0,
+        device="cuda:0",
+        finetune_lr=5e-5,
+        start_stage=start,
+    )
+    assert protocol.run_pipeline(args, {"lr": 0.001, "height_loss_mode": "navrl_range"}) == 0
     summary = json.loads((output / "training_result.json").read_text())
     expected = list(protocol.selected_stages(start, screening=True))
     assert [stage for stage, _ in calls] == summary["stage_order"] == expected
-    assert summary["skipped_stages"] == list(protocol.STAGES[:protocol.STAGES.index(start)])
+    assert summary["skipped_stages"] == list(protocol.STAGES[: protocol.STAGES.index(start)])
     assert summary["stage_thresholds_passed"] is True
     assert summary["acceptance_passed"] is summary["complete_curriculum_passed"] is False
 
@@ -63,8 +71,9 @@ def test_fresh_report_requires_declared_direct_start_and_screening():
     assert protocol.validate_stage_result(result, **options, screening=True)
     assert not protocol.validate_stage_result(result, **options, screening=True, fresh_start_stage="pretrain_s1")
     assert protocol.validate_stage_result(result, **options, fresh_start_stage="pretrain_s1")
-    assert protocol.validate_stage_result(result, **{**options, "stage": "pretrain_s2"},
-                                          screening=True, fresh_start_stage="pretrain_s1")
+    assert protocol.validate_stage_result(
+        result, **{**options, "stage": "pretrain_s2"}, screening=True, fresh_start_stage="pretrain_s1"
+    )
 
 
 def test_new_plan_changes_only_start_stage_and_keeps_navrl_default(tmp_path):
@@ -77,7 +86,7 @@ def test_new_plan_changes_only_start_stage_and_keeps_navrl_default(tmp_path):
         assert command[command.index("--start_stage") + 1] == run["start_stage"]
         args = protocol.parse_train_args(QUEUE["train_tokens"](run))
         assert args["height_loss_mode"] == "navrl_range" and args["coef_height_boundary"] == 1
-        assert args["timing"] == "unified_20hz" and args["lr"] == .001
+        assert args["timing"] == "unified_20hz" and args["lr"] == 0.001
         assert args["algorithm"] == "bptt" and args["timesteps"] == 150
         assert args["velocity_loss_mode"] == "full_window" and args["velocity_window_s"] == 2
         assert "--checkpoint" not in command

@@ -1,4 +1,5 @@
 """Independent float64 check of recorded real-mesh anchor precision."""
+
 import argparse
 import json
 from pathlib import Path
@@ -57,29 +58,39 @@ def main():
         direction = (closest - point) / distance
         old_direction = np.asarray(example["escape_direction"], dtype=np.float64)
         cosine = np.dot(direction, old_direction) / np.linalg.norm(old_direction)
-        results.append({
-            "query_index": example["origin_query_index"],
-            "anchor_actual_mesh_residual_m": float(np.linalg.norm(anchor - nearest64(anchor, triangles))),
-            "requery_actual_mesh_residual_m": float(np.linalg.norm(requery - nearest64(requery, triangles))),
-            "true_closest_point_m": closest.tolist(),
-            "true_distance_m": float(distance),
-            "distance_relative_inflation": abs(example["signed_proxy_distance_m"]) / float(distance) - 1,
-            "anchor_tangent_error_m": (anchor - closest).tolist(),
-            "true_escape_direction": direction.tolist(),
-            "direction_angle_error_deg": float(np.degrees(np.arccos(np.clip(cosine, -1, 1)))),
-            "probe": example,
-        })
+        results.append(
+            {
+                "query_index": example["origin_query_index"],
+                "anchor_actual_mesh_residual_m": float(np.linalg.norm(anchor - nearest64(anchor, triangles))),
+                "requery_actual_mesh_residual_m": float(np.linalg.norm(requery - nearest64(requery, triangles))),
+                "true_closest_point_m": closest.tolist(),
+                "true_distance_m": float(distance),
+                "distance_relative_inflation": abs(example["signed_proxy_distance_m"]) / float(distance) - 1,
+                "anchor_tangent_error_m": (anchor - closest).tolist(),
+                "true_escape_direction": direction.tolist(),
+                "direction_angle_error_deg": float(np.degrees(np.arccos(np.clip(cosine, -1, 1)))),
+                "probe": example,
+            }
+        )
     result = {
         "method": "NumPy float64 plane projection, dominant-axis barycentrics and edge projections",
-        "source": str(args.input.resolve()), "training_acceptance": False,
+        "source": str(args.input.resolve()),
+        "training_acceptance": False,
         "scope": "The exported nearby actual triangles; this script does not prove global BVH face selection.",
         "results": results,
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, indent=2, allow_nan=False) + "\n")
-    print(json.dumps({"output": str(args.output), "samples": len(results),
-                      "max_anchor_residual_m": max(row["anchor_actual_mesh_residual_m"] for row in results),
-                      "max_direction_error_deg": max(row["direction_angle_error_deg"] for row in results)}))
+    print(
+        json.dumps(
+            {
+                "output": str(args.output),
+                "samples": len(results),
+                "max_anchor_residual_m": max(row["anchor_actual_mesh_residual_m"] for row in results),
+                "max_direction_error_deg": max(row["direction_angle_error_deg"] for row in results),
+            }
+        )
+    )
 
 
 if __name__ == "__main__":

@@ -32,10 +32,14 @@ from isaaclab.app import add_launcher_args, launch_simulation
 parser = argparse.ArgumentParser(description=__doc__, conflict_handler="resolve")
 parser.add_argument("--steps", type=int, default=480)
 parser.add_argument(
-    "--spin-rotors", choices=["none", "both", "individual"], default="none",
+    "--spin-rotors",
+    choices=["none", "both", "individual"],
+    default="none",
     help="Match rotor joint speeds in neither robot, both robots, or only the original-force robot.",
 )
-parser.add_argument("--output", type=Path, default=Path(__file__).resolve().parents[1] / "docs/results/physx_closed_loop.json")
+parser.add_argument(
+    "--output", type=Path, default=Path(__file__).resolve().parents[1] / "docs/results/physx_closed_loop.json"
+)
 parser.add_argument("--physics", choices=["isaacsim_physx"], default="isaacsim_physx")
 add_launcher_args(parser)
 parser.set_defaults(visualizer=["none"])
@@ -227,9 +231,7 @@ def main():
         assert set(combined.thruster_names) == {f"rotor_{i}" for i in range(4)}
         rotor_body_ids = [individual.body_names.index(f"rotor_{i}") for i in range(4)]
         # Multirotor orders forces by joint name, which need not match rotor indices.
-        ordered_thrust_indices = [
-            int(name.removeprefix("rotor_")) for name in combined.thruster_names
-        ]
+        ordered_thrust_indices = [int(name.removeprefix("rotor_")) for name in combined.thruster_names]
 
         Lee = load_original_controller()
         Rotor = load_legacy_rotor_group(NAVRL)
@@ -285,21 +287,25 @@ def main():
                 w = torch.cat((as_torch(combined.data.root_ang_vel_w), as_torch(individual.data.root_ang_vel_w)), dim=0)
                 q = torch.cat((as_torch(combined.data.root_quat_w), as_torch(individual.data.root_quat_w)), dim=0)
                 yaw = yaw_from_quat_xyzw(q)
-                trajectory.append({
-                    "step": step,
-                    "phase": scenario,
-                    "combined_p": (p[0] - base_positions[0]).cpu().tolist(),
-                    "individual_p": (p[1] - base_positions[1]).cpu().tolist(),
-                    "combined_v": v[0].cpu().tolist(),
-                    "individual_v": v[1].cpu().tolist(),
-                    "combined_omega": w[0].cpu().tolist(),
-                    "individual_omega": w[1].cpu().tolist(),
-                    "combined_yaw_rad": float(yaw[0]),
-                    "individual_yaw_rad": float(yaw[1]),
-                    "position_difference_m": (p[0] - p[1] - base_positions[0] + base_positions[1]).norm().item(),
-                    "velocity_difference_mps": (v[0] - v[1]).norm().item(),
-                    "yaw_difference_rad": float(torch.atan2(torch.sin(yaw[0] - yaw[1]), torch.cos(yaw[0] - yaw[1])).abs()),
-                })
+                trajectory.append(
+                    {
+                        "step": step,
+                        "phase": scenario,
+                        "combined_p": (p[0] - base_positions[0]).cpu().tolist(),
+                        "individual_p": (p[1] - base_positions[1]).cpu().tolist(),
+                        "combined_v": v[0].cpu().tolist(),
+                        "individual_v": v[1].cpu().tolist(),
+                        "combined_omega": w[0].cpu().tolist(),
+                        "individual_omega": w[1].cpu().tolist(),
+                        "combined_yaw_rad": float(yaw[0]),
+                        "individual_yaw_rad": float(yaw[1]),
+                        "position_difference_m": (p[0] - p[1] - base_positions[0] + base_positions[1]).norm().item(),
+                        "velocity_difference_mps": (v[0] - v[1]).norm().item(),
+                        "yaw_difference_rad": float(
+                            torch.atan2(torch.sin(yaw[0] - yaw[1]), torch.cos(yaw[0] - yaw[1])).abs()
+                        ),
+                    }
+                )
                 if step % 60 == 0:
                     print("COMPARE_STEP", step, scenario, trajectory[-1]["position_difference_m"], flush=True)
 
@@ -312,10 +318,16 @@ def main():
             if not matching:
                 continue
             by_phase[label] = {
-                "rms_position_difference_m": float(np.sqrt(np.mean([x["position_difference_m"] ** 2 for x in matching]))),
+                "rms_position_difference_m": float(
+                    np.sqrt(np.mean([x["position_difference_m"] ** 2 for x in matching]))
+                ),
                 "max_position_difference_m": float(max(x["position_difference_m"] for x in matching)),
-                "rms_velocity_difference_mps": float(np.sqrt(np.mean([x["velocity_difference_mps"] ** 2 for x in matching]))),
-                "rms_yaw_difference_deg": float(np.sqrt(np.mean([x["yaw_difference_rad"] ** 2 for x in matching])) * 180 / math.pi),
+                "rms_velocity_difference_mps": float(
+                    np.sqrt(np.mean([x["velocity_difference_mps"] ** 2 for x in matching]))
+                ),
+                "rms_yaw_difference_deg": float(
+                    np.sqrt(np.mean([x["yaw_difference_rad"] ** 2 for x in matching])) * 180 / math.pi
+                ),
                 "combined_final_z_relative_m": matching[-1]["combined_p"][2],
                 "individual_final_z_relative_m": matching[-1]["individual_p"][2],
             }
@@ -328,17 +340,19 @@ def main():
             "steps": cli.steps,
             "spin_rotors": cli.spin_rotors,
             "variants": ["combined_body_wrench", "individual_rotor_body_forces"],
-            "rms_position_difference_m": float(np.sqrt(np.mean(p_error ** 2))),
+            "rms_position_difference_m": float(np.sqrt(np.mean(p_error**2))),
             "max_position_difference_m": float(p_error.max()),
-            "rms_velocity_difference_mps": float(np.sqrt(np.mean(v_error ** 2))),
-            "rms_yaw_difference_deg": float(np.sqrt(np.mean(yaw_error ** 2)) * 180 / math.pi),
+            "rms_velocity_difference_mps": float(np.sqrt(np.mean(v_error**2))),
+            "rms_yaw_difference_deg": float(np.sqrt(np.mean(yaw_error**2)) * 180 / math.pi),
             "max_yaw_difference_deg": float(yaw_error.max() * 180 / math.pi),
             "per_phase": by_phase,
             "trajectory": trajectory,
         }
         cli.output.parent.mkdir(parents=True, exist_ok=True)
         cli.output.write_text(json.dumps(result, indent=2), encoding="utf-8")
-        print("COMPARE_RESULT", json.dumps({key: val for key, val in result.items() if key != "trajectory"}), flush=True)
+        print(
+            "COMPARE_RESULT", json.dumps({key: val for key, val in result.items() if key != "trajectory"}), flush=True
+        )
 
 
 if __name__ == "__main__":

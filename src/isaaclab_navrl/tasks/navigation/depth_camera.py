@@ -47,9 +47,10 @@ def _update_mesh_bounds(
         point = wp.transform_point(pose, point)
         lower = wp.vec3f(wp.min(lower[0], point[0]), wp.min(lower[1], point[1]), wp.min(lower[2], point[2]))
         upper = wp.vec3f(wp.max(upper[0], point[0]), wp.max(upper[1], point[1]), wp.max(upper[2], point[2]))
-    magnitude = wp.max(wp.max(wp.abs(lower[0]), wp.abs(upper[0])),
-                       wp.max(wp.max(wp.abs(lower[1]), wp.abs(upper[1])),
-                              wp.max(wp.abs(lower[2]), wp.abs(upper[2]))))
+    magnitude = wp.max(
+        wp.max(wp.abs(lower[0]), wp.abs(upper[0])),
+        wp.max(wp.max(wp.abs(lower[1]), wp.abs(upper[1])), wp.max(wp.abs(lower[2]), wp.abs(upper[2]))),
+    )
     # Broad-phase only: outward padding covers float32 transform/slab rounding.
     # It never changes a triangle or the final mesh-query hit distance.
     padding = wp.vec3f(0.001 + 4.0e-6 * magnitude)
@@ -113,7 +114,9 @@ class BatchedDepthCamera(MultiMeshRayCasterCamera):
         """Build a shared-world broad phase without modifying native meshes."""
         self._clear_shared_mesh_tracking()
         super()._initialize_warp_meshes()
-        stream = wp.stream_from_torch(torch.cuda.current_stream(self._device)) if self._device.startswith("cuda") else None
+        stream = (
+            wp.stream_from_torch(torch.cuda.current_stream(self._device)) if self._device.startswith("cuda") else None
+        )
         with wp.ScopedStream(stream) if stream is not None else nullcontext():
             # Preserve the official per-target initialization before validating
             # and replacing only the subsequent transform-refresh path.
@@ -149,12 +152,16 @@ class BatchedDepthCamera(MultiMeshRayCasterCamera):
             self._world_bvh = wp.Bvh(self._world_lower, self._world_upper)
             self.world_mesh_info = {
                 "acceleration_structure": "native_local_meshes_with_top_level_aabb_bvh",
-                "source_meshes": len(mesh_ids[0]), "vertices": vertex_count, "triangles": triangle_count,
+                "source_meshes": len(mesh_ids[0]),
+                "vertices": vertex_count,
+                "triangles": triangle_count,
                 "dynamic_meshes": sum(
                     self._num_meshes_per_env[target.prim_expr]
-                    for target in self._raycast_targets_cfg if target.track_mesh_transforms
+                    for target in self._raycast_targets_cfg
+                    if target.track_mesh_transforms
                 ),
-                "broad_phase_padding_min_m": 0.001, "broad_phase_padding_relative": 4.0e-6,
+                "broad_phase_padding_min_m": 0.001,
+                "broad_phase_padding_relative": 4.0e-6,
                 "mesh_transform_tracking": self.mesh_transform_info,
             }
 
@@ -188,9 +195,12 @@ class BatchedDepthCamera(MultiMeshRayCasterCamera):
 
         count = len(body_paths)
         self.mesh_transform_info = {
-            "mode": "aggregate_physx_view", "body_count": count,
-            "mesh_order_body_paths": body_paths, "aggregate_body_paths": [],
-            "identity_row_order": True, "mapping": [],
+            "mode": "aggregate_physx_view",
+            "body_count": count,
+            "mesh_order_body_paths": body_paths,
+            "aggregate_body_paths": [],
+            "identity_row_order": True,
+            "mapping": [],
         }
         if count == 0:
             self._shared_mesh_tracking_ready = True
@@ -213,13 +223,16 @@ class BatchedDepthCamera(MultiMeshRayCasterCamera):
         self._shared_mesh_view = view
         self._shared_mesh_rows = None if identity else torch.tensor(rows, device=self._device, dtype=torch.long)
         self._shared_mesh_count, self._shared_mesh_offset = count, offset
-        self.mesh_transform_info.update({
-            "aggregate_body_paths": actual_paths, "identity_row_order": identity,
-            "mapping": [
-                {"body_path": path, "mesh_column": column, "aggregate_row": row}
-                for path, column, row in zip(body_paths, mesh_columns, rows, strict=True)
-            ],
-        })
+        self.mesh_transform_info.update(
+            {
+                "aggregate_body_paths": actual_paths,
+                "identity_row_order": identity,
+                "mapping": [
+                    {"body_path": path, "mesh_column": column, "aggregate_row": row}
+                    for path, column, row in zip(body_paths, mesh_columns, rows, strict=True)
+                ],
+            }
+        )
         self._shared_mesh_tracking_ready = True
 
     def _update_mesh_transforms(self):
@@ -227,8 +240,9 @@ class BatchedDepthCamera(MultiMeshRayCasterCamera):
             raise RuntimeError("Shared camera transform tracking is not initialized.")
         if self._shared_mesh_view is None:
             return
-        stream = (wp.stream_from_torch(torch.cuda.current_stream(self._device))
-                  if self._device.startswith("cuda") else None)
+        stream = (
+            wp.stream_from_torch(torch.cuda.current_stream(self._device)) if self._device.startswith("cuda") else None
+        )
         with wp.ScopedStream(stream) if stream is not None else nullcontext():
             transforms = self._shared_mesh_view.get_transforms()
             # Retain backing allocations through the asynchronous official copy.
@@ -236,18 +250,27 @@ class BatchedDepthCamera(MultiMeshRayCasterCamera):
                 transforms if isinstance(transforms, wp.array) else transforms.contiguous()
             )
             source = self._shared_mesh_transform_source
-            transforms_wp = (source.view(wp.transformf) if isinstance(source, wp.array)
-                             else wp.from_torch(source).view(wp.transformf))
+            transforms_wp = (
+                source.view(wp.transformf)
+                if isinstance(source, wp.array)
+                else wp.from_torch(source).view(wp.transformf)
+            )
             if self._shared_mesh_rows is not None:
-                self._shared_mesh_transform_reordered = wp.to_torch(transforms_wp).reshape(-1, 7).index_select(
-                    0, self._shared_mesh_rows
+                self._shared_mesh_transform_reordered = (
+                    wp.to_torch(transforms_wp).reshape(-1, 7).index_select(0, self._shared_mesh_rows)
                 )
                 transforms_wp = wp.from_torch(self._shared_mesh_transform_reordered).view(wp.transformf)
             wp.launch(
                 camera_kernels.copy_mesh_transforms_to_table_kernel,
                 dim=(self._num_envs, self._shared_mesh_count),
-                inputs=[transforms_wp, self._shared_mesh_count, self._shared_mesh_offset, True,
-                        self._mesh_positions_w, self._mesh_orientations_w],
+                inputs=[
+                    transforms_wp,
+                    self._shared_mesh_count,
+                    self._shared_mesh_offset,
+                    True,
+                    self._mesh_positions_w,
+                    self._mesh_orientations_w,
+                ],
                 device=self._device,
             )
 
@@ -257,9 +280,11 @@ class BatchedDepthCamera(MultiMeshRayCasterCamera):
 
     def _update_world_bounds(self):
         wp.launch(
-            _update_mesh_bounds, dim=self._world_lower.size,
+            _update_mesh_bounds,
+            dim=self._world_lower.size,
             inputs=[self._local_lower, self._local_upper, self._mesh_positions_w, self._mesh_orientations_w],
-            outputs=[self._world_lower, self._world_upper], device=self._device,
+            outputs=[self._world_lower, self._world_upper],
+            device=self._device,
         )
 
     def _initialize_rays_impl(self):
@@ -354,7 +379,8 @@ class BatchedDepthCamera(MultiMeshRayCasterCamera):
         perturbation = math_utils.quat_from_euler_xyz(zero, -pitch, zero)
         base = math_utils.convert_camera_frame_orientation_convention(
             torch.tensor([self.cfg.offset.rot], device=self._device),
-            origin=self.cfg.offset.convention, target="world",
+            origin=self.cfg.offset.convention,
+            target="world",
         ).expand(len(env_ids), -1)
         wp.to_torch(self._offset_quat_wp)[env_ids] = math_utils.quat_mul(base, perturbation)
 
@@ -368,15 +394,25 @@ class BatchedDepthCamera(MultiMeshRayCasterCamera):
         wp.launch(
             camera_kernels.update_ray_caster_kernel,
             dim=(self._num_envs, 1),
-            inputs=[self._get_view_transforms_wp(), env_mask, self._offset_pos_wp, self._offset_quat_wp,
-                    self.drift.warp, self.ray_cast_drift.warp, self._pose_ray, self._pose_ray,
-                    int(camera_kernels.ALIGNMENT_BASE)],
+            inputs=[
+                self._get_view_transforms_wp(),
+                env_mask,
+                self._offset_pos_wp,
+                self._offset_quat_wp,
+                self.drift.warp,
+                self.ray_cast_drift.warp,
+                self._pose_ray,
+                self._pose_ray,
+                int(camera_kernels.ALIGNMENT_BASE),
+            ],
             outputs=[self._data.pos_w.warp, self._data.quat_w_world.warp, self._pose_start, self._pose_direction],
             device=self._device,
         )
 
     def _update_buffers_impl(self, env_mask):
-        stream = wp.stream_from_torch(torch.cuda.current_stream(self._device)) if self._device.startswith("cuda") else None
+        stream = (
+            wp.stream_from_torch(torch.cuda.current_stream(self._device)) if self._device.startswith("cuda") else None
+        )
         with wp.ScopedStream(stream) if stream is not None else nullcontext():
             self._update_frame(env_mask, frame_op=1)
             self._update_mesh_transforms()
@@ -391,39 +427,64 @@ class BatchedDepthCamera(MultiMeshRayCasterCamera):
                 wp.launch(
                     camera_kernels.update_ray_caster_kernel,
                     dim=(count, self.num_rays),
-                    inputs=[_slice(transforms, begin, end), mask,
-                            _slice(self._offset_pos_wp, begin, end), _slice(self._offset_quat_wp, begin, end),
-                            _slice(self.drift.warp, begin, end), _slice(self.ray_cast_drift.warp, begin, end),
-                            wp.from_torch(local_starts.contiguous(), dtype=wp.vec3f),
-                            wp.from_torch(local_directions.contiguous(), dtype=wp.vec3f),
-                            int(camera_kernels.ALIGNMENT_BASE)],
-                    outputs=[_slice(self._data.pos_w.warp, begin, end),
-                             _slice(self._data.quat_w_world.warp, begin, end),
-                             self._batch_starts_w, self._batch_directions_w],
+                    inputs=[
+                        _slice(transforms, begin, end),
+                        mask,
+                        _slice(self._offset_pos_wp, begin, end),
+                        _slice(self._offset_quat_wp, begin, end),
+                        _slice(self.drift.warp, begin, end),
+                        _slice(self.ray_cast_drift.warp, begin, end),
+                        wp.from_torch(local_starts.contiguous(), dtype=wp.vec3f),
+                        wp.from_torch(local_directions.contiguous(), dtype=wp.vec3f),
+                        int(camera_kernels.ALIGNMENT_BASE),
+                    ],
+                    outputs=[
+                        _slice(self._data.pos_w.warp, begin, end),
+                        _slice(self._data.quat_w_world.warp, begin, end),
+                        self._batch_starts_w,
+                        self._batch_directions_w,
+                    ],
                     device=self._device,
                 )
                 wp.launch(
                     _raycast_shared_meshes,
                     dim=(count, self.num_rays),
-                    inputs=[self._world_bvh.id, mask, self._mesh_ids_wp,
-                            self._mesh_positions_w, self._mesh_orientations_w,
-                            self._batch_starts_w, self._batch_directions_w,
-                            float(camera_kernels.CAMERA_RAYCAST_MAX_DIST)],
+                    inputs=[
+                        self._world_bvh.id,
+                        mask,
+                        self._mesh_ids_wp,
+                        self._mesh_positions_w,
+                        self._mesh_orientations_w,
+                        self._batch_starts_w,
+                        self._batch_directions_w,
+                        float(camera_kernels.CAMERA_RAYCAST_MAX_DIST),
+                    ],
                     outputs=[self.ray_hits_w.warp, self._batch_distance],
                     device=self._device,
                 )
                 wp.launch(
                     camera_kernels.compute_distance_to_image_plane_to_image_masked_kernel,
                     dim=(count, self.num_rays),
-                    inputs=[mask, _slice(self._data.quat_w_world.warp, begin, end), self._batch_distance,
-                            self._batch_directions_w, self.image_shape[1], True,
-                            float(self.cfg.max_distance), float(self.cfg.max_distance)],
-                    outputs=[self._batch_depth], device=self._device,
+                    inputs=[
+                        mask,
+                        _slice(self._data.quat_w_world.warp, begin, end),
+                        self._batch_distance,
+                        self._batch_directions_w,
+                        self.image_shape[1],
+                        True,
+                        float(self.cfg.max_distance),
+                        float(self.cfg.max_distance),
+                    ],
+                    outputs=[self._batch_depth],
+                    device=self._device,
                 )
                 depth = wp.to_torch(self._batch_depth)[:count].permute(0, 3, 1, 2)
                 noise = None
                 if self.cfg.pixel_noise_std:
-                    noise = torch.randn(depth.shape, generator=self._noise_rng, device=self._device) * self.cfg.pixel_noise_std
+                    noise = (
+                        torch.randn(depth.shape, generator=self._noise_rng, device=self._device)
+                        * self.cfg.pixel_noise_std
+                    )
                 features = depth_features(depth, noise).permute(0, 2, 3, 1)
                 current = self._data.output["policy_depth"].torch[begin:end]
                 current.copy_(torch.where(wp.to_torch(mask)[:, None, None, None], features, current))

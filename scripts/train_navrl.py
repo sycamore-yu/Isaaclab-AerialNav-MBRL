@@ -23,12 +23,15 @@ def main():
     parser.add_argument("--log_dir", type=Path, required=True)
     parser.add_argument("--num_envs", type=int, default=1024)
     parser.add_argument("--report_episodes", type=int, default=None)
-    parser.add_argument("--max_iterations", type=int, default=None,
-                        help="Optional update limit for a smoke run; default unlimited")
-    parser.add_argument("--stop_after_acceptance", action="store_true",
-                        help="Finish when this training stage reaches its success threshold")
-    parser.add_argument("--stage", default="pretrain_s0",
-                        choices=STAGES)
+    parser.add_argument(
+        "--max_iterations", type=int, default=None, help="Optional update limit for a smoke run; default unlimited"
+    )
+    parser.add_argument(
+        "--stop_after_acceptance",
+        action="store_true",
+        help="Finish when this training stage reaches its success threshold",
+    )
+    parser.add_argument("--stage", default="pretrain_s0", choices=STAGES)
     parser.add_argument("--checkpoint", type=Path, help="Checkpoint from the preceding training stage")
     parser.add_argument("--lr", type=float, help="Override this stage's learning rate")
     parser.add_argument("--seed", type=int, default=0)
@@ -56,11 +59,18 @@ def main():
     runner = None
     env = None
     result = {
-        "method": "navrl", "status": "running", "fresh": parent_checkpoint is None,
-        "stage": args.stage, "parent_checkpoint": parent_checkpoint,
-        "num_envs": args.num_envs, "completed_updates": 0, "stage_updates": 0,
-        "environment_steps": 0, "max_updates": args.max_iterations,
-        "stage_passed": False, "acceptance_passed": False,
+        "method": "navrl",
+        "status": "running",
+        "fresh": parent_checkpoint is None,
+        "stage": args.stage,
+        "parent_checkpoint": parent_checkpoint,
+        "num_envs": args.num_envs,
+        "completed_updates": 0,
+        "stage_updates": 0,
+        "environment_steps": 0,
+        "max_updates": args.max_iterations,
+        "stage_passed": False,
+        "acceptance_passed": False,
         "stop_requested": None,
     }
 
@@ -78,7 +88,8 @@ def main():
             result["acceptance_passed"] = bool(
                 args.stage == "finetune_s2"
                 and env.curriculum.stage_passed
-                and env.num_envs >= 1024 and env.curriculum.min_episodes >= 1024
+                and env.num_envs >= 1024
+                and env.curriculum.min_episodes >= 1024
                 and env.cfg.num_static_obstacles == 400
                 and env.cfg.num_dynamic_obstacles == 100
                 and env.cfg.sim_to_real.enabled
@@ -146,18 +157,25 @@ def main():
         initial_environment_steps = 0
         sim_to_real_config = asdict(cfg.sim_to_real)
         run_config = {
-            "method": "navrl", "fresh": parent_checkpoint is None,
-            "stage": args.stage, "parent_checkpoint": parent_checkpoint,
-            "num_envs": args.num_envs, "max_updates": args.max_iterations,
+            "method": "navrl",
+            "fresh": parent_checkpoint is None,
+            "stage": args.stage,
+            "parent_checkpoint": parent_checkpoint,
+            "num_envs": args.num_envs,
+            "max_updates": args.max_iterations,
             "report_episodes": args.report_episodes or args.num_envs,
-            "seed": args.seed, "terrain_seed": args.terrain_seed,
+            "seed": args.seed,
+            "terrain_seed": args.terrain_seed,
             "stop_after_acceptance": args.stop_after_acceptance,
             "static_obstacles": cfg.num_static_obstacles,
             "dynamic_obstacles": cfg.num_dynamic_obstacles,
             "curriculum": {"stage_config": stage_config},
-            "sim_to_real": sim_to_real_config, "independent_evaluation": False,
-            "physics_dt": cfg.sim.dt, "decimation": cfg.decimation,
-            "episode_length_s": cfg.episode_length_s, "training": agent_cfg.to_dict(),
+            "sim_to_real": sim_to_real_config,
+            "independent_evaluation": False,
+            "physics_dt": cfg.sim.dt,
+            "decimation": cfg.decimation,
+            "episode_length_s": cfg.episode_length_s,
+            "training": agent_cfg.to_dict(),
             "task": "Isaac-NavRL-Hummingbird-Direct-v0",
             "optimizer_differences_from_original": [
                 "Official PPO uses a single Adam optimizer and squared value loss without ValueNorm.",
@@ -177,9 +195,11 @@ def main():
                     loaded_infos = runner.load(parent_checkpoint, strict=True, map_location=args.device)
                     initial_updates = int(loaded_infos["completed_updates"])
                     previous_elapsed_s = float(loaded_infos["elapsed_s"])
-                    initial_environment_steps = int(loaded_infos.get(
-                        "environment_steps", initial_updates * agent_cfg.num_steps_per_env * args.num_envs
-                    ))
+                    initial_environment_steps = int(
+                        loaded_infos.get(
+                            "environment_steps", initial_updates * agent_cfg.num_steps_per_env * args.num_envs
+                        )
+                    )
                     result.update(completed_updates=initial_updates, environment_steps=initial_environment_steps)
                 # Loading an optimizer restores its old rate; each stage uses its configured rate.
                 runner.alg.learning_rate = learning_rate
@@ -194,16 +214,22 @@ def main():
                     path = Path(path)
                     temporary = path.with_name(f"{path.stem}.tmp{path.suffix}")
                     try:
-                        runner.save(str(temporary), infos={
-                            "method": "navrl", "stage": args.stage,
-                            "fresh": parent_checkpoint is None, "parent_checkpoint": parent_checkpoint,
-                            "completed_updates": result["completed_updates"],
-                            "stage_updates": result["stage_updates"],
-                            "environment_steps": result["environment_steps"],
-                            "elapsed_s": elapsed_s(), "curriculum": env.curriculum.state_dict(),
-                            "sim_to_real": sim_to_real_config,
-                            "stop_requested": result["stop_requested"],
-                        })
+                        runner.save(
+                            str(temporary),
+                            infos={
+                                "method": "navrl",
+                                "stage": args.stage,
+                                "fresh": parent_checkpoint is None,
+                                "parent_checkpoint": parent_checkpoint,
+                                "completed_updates": result["completed_updates"],
+                                "stage_updates": result["stage_updates"],
+                                "environment_steps": result["environment_steps"],
+                                "elapsed_s": elapsed_s(),
+                                "curriculum": env.curriculum.state_dict(),
+                                "sim_to_real": sim_to_real_config,
+                                "stop_requested": result["stop_requested"],
+                            },
+                        )
                         temporary.replace(path)
                     finally:
                         temporary.unlink(missing_ok=True)
@@ -218,15 +244,22 @@ def main():
                     result["completed_updates"] = global_update
                     result["stage_updates"] = stage_update + 1
                     result["environment_steps"] = (
-                        initial_environment_steps
-                        + (stage_update + 1) * agent_cfg.num_steps_per_env * args.num_envs
+                        initial_environment_steps + (stage_update + 1) * agent_cfg.num_steps_per_env * args.num_envs
                     )
                     with (log_dir / "updates.jsonl").open("a") as stream:
-                        stream.write(json.dumps({
-                            "update": global_update, "environment_steps": result["environment_steps"],
-                            "rollout_steps": agent_cfg.num_steps_per_env, "elapsed_s": elapsed_s(),
-                            "update_s": time.perf_counter() - update_started,
-                        }, allow_nan=False) + "\n")
+                        stream.write(
+                            json.dumps(
+                                {
+                                    "update": global_update,
+                                    "environment_steps": result["environment_steps"],
+                                    "rollout_steps": agent_cfg.num_steps_per_env,
+                                    "elapsed_s": elapsed_s(),
+                                    "update_s": time.perf_counter() - update_started,
+                                },
+                                allow_nan=False,
+                            )
+                            + "\n"
+                        )
                     record_curriculum(env.curriculum, global_update, log_dir, runner.logger.writer, save_checkpoint)
                     if global_update % agent_cfg.save_interval == 0:
                         save_checkpoint(log_dir / "checkpoint_latest.pt")
@@ -250,7 +283,8 @@ def main():
                     checkpoint = log_dir / "checkpoint_stopped.pt"
                     save_checkpoint(checkpoint)
                 result.update(
-                    status="stopped" if stopped else "completed", checkpoint=str(checkpoint),
+                    status="stopped" if stopped else "completed",
+                    checkpoint=str(checkpoint),
                     nonfinite_events=int(env.nonfinite_events),
                 )
             except BaseException as error:

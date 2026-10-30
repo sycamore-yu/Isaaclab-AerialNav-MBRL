@@ -22,11 +22,13 @@ def main():
     parser.add_argument("--report_episodes", type=int, default=None)
     parser.add_argument("--max_iterations", type=int, default=None, help="Optional smoke-run limit; default unlimited")
     parser.add_argument("--stop_after_acceptance", action="store_true", help="Finish when this stage reaches 80%")
-    parser.add_argument("--stage", choices=STAGES,
-                        default="pretrain_s0")
+    parser.add_argument("--stage", choices=STAGES, default="pretrain_s0")
     parser.add_argument("--checkpoint", type=Path, help="Previous stage checkpoint from this experiment")
-    parser.add_argument("--fresh_stage", action="store_true",
-                        help="Explicit direct-stage comparison: random initialization without an earlier stage")
+    parser.add_argument(
+        "--fresh_stage",
+        action="store_true",
+        help="Explicit direct-stage comparison: random initialization without an earlier stage",
+    )
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--terrain_seed", type=int, default=0)
     add_train_args(parser)
@@ -51,8 +53,10 @@ def main():
         parser.error("Later stages require the previous checkpoint or explicit --fresh_stage comparison")
     if args.log_dir.exists() and any(args.log_dir.iterdir()):
         parser.error("Each training stage requires a new or empty --log_dir")
-    args.lr = args.lr if args.lr is not None else (
-        5e-5 if args.stage.startswith("finetune") and not args.fresh_stage else 0.001
+    args.lr = (
+        args.lr
+        if args.lr is not None
+        else (5e-5 if args.stage.startswith("finetune") and not args.fresh_stage else 0.001)
     )
 
     import gymnasium as gym
@@ -80,43 +84,68 @@ def main():
     cfg.sim.device = args.device
     cfg.depth_camera_batch_size = args.camera_batch_size
     cfg.configure_scene()
-    train_values = {field.name: getattr(args, field.name) for field in fields(ZhangTrainCfg)
-                    if hasattr(args, field.name)}
-    train_cfg = ZhangTrainCfg(**train_values, physics_dt=cfg.sim.dt, policy_dt=cfg.sim.dt * cfg.decimation,
-                              height_target_range=cfg.height_target_range)
+    train_values = {
+        field.name: getattr(args, field.name) for field in fields(ZhangTrainCfg) if hasattr(args, field.name)
+    }
+    train_cfg = ZhangTrainCfg(
+        **train_values,
+        physics_dt=cfg.sim.dt,
+        policy_dt=cfg.sim.dt * cfg.decimation,
+        height_target_range=cfg.height_target_range,
+    )
     train_cfg.validate()
     torch.manual_seed(args.seed)
     args.log_dir.mkdir(parents=True, exist_ok=True)
-    write_json(args.log_dir / "config.json", {
-        "method": "zhang", "variant": args.variant, "algorithm": args.algorithm, "train": asdict(train_cfg),
-        "resolved_velocity_loss_mode": train_cfg.resolved_velocity_loss_mode,
-        "algorithm_label": "AHAC-derived metric-clearance and stability feedback" if args.algorithm == "ahac" else args.algorithm,
-        "height_loss_mode": train_cfg.height_loss_mode,
-        "static_obstacle_distance": "signed_heightfield_occupancy_exit_proxy",
-        "static_projection": "float64_selected_face_refinement_float32_storage",
-        "environment": {"num_envs": args.num_envs, "seed": args.seed, "terrain_seed": args.terrain_seed,
-                        "stage": args.stage, **stage, "curriculum": STAGE_CONFIG,
-                        "variant": args.variant, "drone_collision_response": args.variant != "continuous",
-                        "height_target_range": list(cfg.height_target_range),
-                        "height_target_source": "current_episode_navigation_goal_z",
-                        "capture_terminal_observation": cfg.capture_terminal_observation,
-                        "dynamic_obstacle_collision_response": False,
-                        "collision_terminates": args.variant != "continuous",
-                        "bounds_terminates": args.variant != "continuous",
-                        "physics_dt": cfg.sim.dt, "policy_dt": cfg.sim.dt * cfg.decimation,
-                        "timing": args.timing, "report_episodes": args.report_episodes or args.num_envs,
-                        "lidar_period_s": cfg.scene.lidar.update_period,
-                        "depth_period_s": cfg.scene.depth_camera.update_period,
-                        "depth_camera": {"width": cfg.scene.depth_camera.pattern_cfg.width,
-                                         "height": cfg.scene.depth_camera.pattern_cfg.height,
-                                         "batch_size": cfg.depth_camera_batch_size,
-                                         "policy_shape": [12, 16],
-                                         "pixel_noise_std": cfg.scene.depth_camera.pixel_noise_std},
-                        "sim_to_real": asdict(cfg.sim_to_real)},
-        "parent_checkpoint": str(args.checkpoint.resolve()) if args.checkpoint else None,
-        "fresh": args.checkpoint is None, "direct_stage_start": args.fresh_stage,
-        "independent_evaluation": False,
-    })
+    write_json(
+        args.log_dir / "config.json",
+        {
+            "method": "zhang",
+            "variant": args.variant,
+            "algorithm": args.algorithm,
+            "train": asdict(train_cfg),
+            "resolved_velocity_loss_mode": train_cfg.resolved_velocity_loss_mode,
+            "algorithm_label": "AHAC-derived metric-clearance and stability feedback"
+            if args.algorithm == "ahac"
+            else args.algorithm,
+            "height_loss_mode": train_cfg.height_loss_mode,
+            "static_obstacle_distance": "signed_heightfield_occupancy_exit_proxy",
+            "static_projection": "float64_selected_face_refinement_float32_storage",
+            "environment": {
+                "num_envs": args.num_envs,
+                "seed": args.seed,
+                "terrain_seed": args.terrain_seed,
+                "stage": args.stage,
+                **stage,
+                "curriculum": STAGE_CONFIG,
+                "variant": args.variant,
+                "drone_collision_response": args.variant != "continuous",
+                "height_target_range": list(cfg.height_target_range),
+                "height_target_source": "current_episode_navigation_goal_z",
+                "capture_terminal_observation": cfg.capture_terminal_observation,
+                "dynamic_obstacle_collision_response": False,
+                "collision_terminates": args.variant != "continuous",
+                "bounds_terminates": args.variant != "continuous",
+                "physics_dt": cfg.sim.dt,
+                "policy_dt": cfg.sim.dt * cfg.decimation,
+                "timing": args.timing,
+                "report_episodes": args.report_episodes or args.num_envs,
+                "lidar_period_s": cfg.scene.lidar.update_period,
+                "depth_period_s": cfg.scene.depth_camera.update_period,
+                "depth_camera": {
+                    "width": cfg.scene.depth_camera.pattern_cfg.width,
+                    "height": cfg.scene.depth_camera.pattern_cfg.height,
+                    "batch_size": cfg.depth_camera_batch_size,
+                    "policy_shape": [12, 16],
+                    "pixel_noise_std": cfg.scene.depth_camera.pixel_noise_std,
+                },
+                "sim_to_real": asdict(cfg.sim_to_real),
+            },
+            "parent_checkpoint": str(args.checkpoint.resolve()) if args.checkpoint else None,
+            "fresh": args.checkpoint is None,
+            "direct_stage_start": args.fresh_stage,
+            "independent_evaluation": False,
+        },
+    )
     with launch_simulation(cfg, args):
         env = gym.make("Isaac-NavRL-Zhang-Hummingbird-Direct-v0", cfg=cfg).unwrapped
         try:

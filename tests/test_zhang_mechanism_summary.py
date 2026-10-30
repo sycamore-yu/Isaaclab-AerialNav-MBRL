@@ -31,45 +31,98 @@ class MechanismSummaryFixtureTests(unittest.TestCase):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("".join(json.dumps(value) + "\n" for value in values), encoding="utf-8")
 
-    def run_fixture(self, name, horizons=(32, 16, 20), *, algorithm="ahac", seed=0, num_envs=10,
-                    base_steps=0, update_offset=0, stage="pretrain_s0", relative=None):
+    def run_fixture(
+        self,
+        name,
+        horizons=(32, 16, 20),
+        *,
+        algorithm="ahac",
+        seed=0,
+        num_envs=10,
+        base_steps=0,
+        update_offset=0,
+        stage="pretrain_s0",
+        relative=None,
+    ):
         relative = relative or name
-        entry = {"name": name, "path": relative, "variant": "dcol", "algorithm": algorithm,
-                 "normalization": False, "lr_schedule": "plateau", "seed": seed}
+        entry = {
+            "name": name,
+            "path": relative,
+            "variant": "dcol",
+            "algorithm": algorithm,
+            "normalization": False,
+            "lr_schedule": "plateau",
+            "seed": seed,
+        }
         self.entries.append(entry)
         root = self.root / relative
         directory = root / "zhang" / stage
         self.write(root / "training_result.json", {"status": "running", "fixture_only": True})
-        self.write(directory / "config.json", {
-            "method": "zhang", "train": {"variant": "dcol", "algorithm": algorithm, "timesteps": 150,
-                                           "observation_normalization": False, "lr_schedule": "plateau", "seed": seed},
-            "environment": {"num_envs": num_envs, "seed": seed, "stage": stage},
-        })
+        self.write(
+            directory / "config.json",
+            {
+                "method": "zhang",
+                "train": {
+                    "variant": "dcol",
+                    "algorithm": algorithm,
+                    "timesteps": 150,
+                    "observation_normalization": False,
+                    "lr_schedule": "plateau",
+                    "seed": seed,
+                },
+                "environment": {"num_envs": num_envs, "seed": seed, "stage": stage},
+            },
+        )
         total, elapsed, records = base_steps, 100.0, []
         for index, horizon in enumerate(horizons, 1):
             total += horizon * num_envs
             duration = index + 1.0
             elapsed += duration
-            records.append({"update": update_offset + index, "rollout_steps": horizon,
-                            "environment_steps": total, "elapsed_s": elapsed, "update_s": duration,
-                            "surrogate_velocity_error_mps": 0.01 * index,
-                            "surrogate_vertical_velocity_bias_mps": -0.02 * index,
-                            "executed_action_max_error": 0.0, "Optim/update_ratio": index / 100,
-                            "Optim/head/az/update_ratio": index / 10, "Optim/head/vz/update_ratio": index / 20})
+            records.append(
+                {
+                    "update": update_offset + index,
+                    "rollout_steps": horizon,
+                    "environment_steps": total,
+                    "elapsed_s": elapsed,
+                    "update_s": duration,
+                    "surrogate_velocity_error_mps": 0.01 * index,
+                    "surrogate_vertical_velocity_bias_mps": -0.02 * index,
+                    "executed_action_max_error": 0.0,
+                    "Optim/update_ratio": index / 100,
+                    "Optim/head/az/update_ratio": index / 10,
+                    "Optim/head/vz/update_ratio": index / 20,
+                }
+            )
         self.lines(directory / "updates.jsonl", records)
         self.lines(directory / "training_statistics.jsonl", [])
-        self.write(directory / "training_result.json", {
-            "status": "running", "fresh": base_steps == 0, "stage": stage,
-            "completed_updates": update_offset + len(horizons), "stage_updates": len(horizons),
-            "environment_steps": total, "elapsed_s": elapsed, "num_envs": num_envs,
-            "nonfinite_grad_events": 0, "nonfinite_events": 0,
-        })
+        self.write(
+            directory / "training_result.json",
+            {
+                "status": "running",
+                "fresh": base_steps == 0,
+                "stage": stage,
+                "completed_updates": update_offset + len(horizons),
+                "stage_updates": len(horizons),
+                "environment_steps": total,
+                "elapsed_s": elapsed,
+                "num_envs": num_envs,
+                "nonfinite_grad_events": 0,
+                "nonfinite_events": 0,
+            },
+        )
         return directory, records
 
     def report(self, update, success, episodes=10, stage="pretrain_s0"):
-        return {"update": update, "stage": stage, "episodes": episodes, "success_rate": success,
-                "collision_rate": (1 - success) / 2, "bounds_rate": (1 - success) / 4,
-                "invalid_rate": 0.0, "timeout_rate": (1 - success) / 4}
+        return {
+            "update": update,
+            "stage": stage,
+            "episodes": episodes,
+            "success_rate": success,
+            "collision_rate": (1 - success) / 2,
+            "bounds_rate": (1 - success) / 4,
+            "invalid_rate": 0.0,
+            "timeout_rate": (1 - success) / 4,
+        }
 
     def summary(self):
         self.write(self.manifest, {"fixture_only": True, "runs": self.entries})
@@ -81,9 +134,14 @@ class MechanismSummaryFixtureTests(unittest.TestCase):
 
     def test_variable_horizon_uses_real_samples_and_exact_first_eighty_percent(self):
         directory, _ = self.run_fixture("adaptive", num_envs=1024, base_steps=100000, update_offset=100)
-        self.lines(directory / "training_statistics.jsonl", [
-            self.report(101, 0.6, 1024), self.report(102, 0.8, 2048), self.report(103, 0.5, 1024),
-        ])
+        self.lines(
+            directory / "training_statistics.jsonl",
+            [
+                self.report(101, 0.6, 1024),
+                self.report(102, 0.8, 2048),
+                self.report(103, 0.5, 1024),
+            ],
+        )
         stage = self.stage(self.summary(), "adaptive")
         summary = stage["summary"]
         self.assertEqual(summary["stage_environment_steps"], (32 + 16 + 20) * 1024)
@@ -112,10 +170,15 @@ class MechanismSummaryFixtureTests(unittest.TestCase):
         entry = self.entries[-1]
         entry.update(method="navrl", variant="navrl", lr_schedule="fixed")
         (destination / "config.json").unlink()
-        self.write(destination / "run_config.json", {
-            "method": "navrl", "seed": 0, "num_envs": 10,
-            "training": {"algorithm": {"schedule": "fixed"}},
-        })
+        self.write(
+            destination / "run_config.json",
+            {
+                "method": "navrl",
+                "seed": 0,
+                "num_envs": 10,
+                "training": {"algorithm": {"schedule": "fixed"}},
+            },
+        )
         result = self.stage(self.summary(), "navrl_ppo")
         self.assertEqual(result["identity_mismatches"], {})
         self.assertEqual(result["identity_missing_fields"], [])
@@ -187,11 +250,14 @@ class MechanismSummaryFixtureTests(unittest.TestCase):
         self.assertIsNone(first["elapsed_s"])
         self.assertIsNone(first["stage_environment_steps"])
         self.assertEqual(stage["summary"]["stage_environment_steps"], 30)
-        self.assertTrue(any(issue["kind"] == "report_without_exact_update" for issue in stage["read_validation_issues"]))
+        self.assertTrue(
+            any(issue["kind"] == "report_without_exact_update" for issue in stage["read_validation_issues"])
+        )
 
     def test_last_five_are_episode_weighted_and_missing_metric_is_not_zero(self):
-        reports = [{**self.report(index, index / 10, episodes=index * 10), "source": {"line": index}}
-                   for index in range(1, 8)]
+        reports = [
+            {**self.report(index, index / 10, episodes=index * 10), "source": {"line": index}} for index in range(1, 8)
+        ]
         reports[-1].pop("collision_rate")
         recent = summary_tool.recent_reports(reports)
         expected = sum((index / 10) * index * 10 for index in range(3, 8)) / sum(index * 10 for index in range(3, 8))
@@ -246,8 +312,9 @@ class MechanismSummaryFixtureTests(unittest.TestCase):
                 self.assertEqual(result["comparisons"][0]["missing_or_mismatched_runs"], ["second"])
 
     def test_missing_start_of_later_stage_is_not_treated_as_a_complete_stage(self):
-        directory, records = self.run_fixture("truncated_prefix", horizons=(16, 32, 16),
-                                              base_steps=9000, update_offset=100, stage="pretrain_s1")
+        directory, records = self.run_fixture(
+            "truncated_prefix", horizons=(16, 32, 16), base_steps=9000, update_offset=100, stage="pretrain_s1"
+        )
         self.lines(directory / "updates.jsonl", records[1:])
         stage = self.stage(self.summary(), "truncated_prefix", "pretrain_s1")
         self.assertEqual(stage["summary"]["environment_steps"], 9640)
@@ -258,9 +325,16 @@ class MechanismSummaryFixtureTests(unittest.TestCase):
     def test_declared_restart_parameters_prevent_comparing_a_different_configuration(self):
         first, _ = self.run_fixture("first", num_envs=256)
         second, _ = self.run_fixture("second", num_envs=256)
-        declared = {"height_loss_mode": "target_exp", "optimizer": "adamw", "weight_decay": 0.01,
-                    "velocity_loss_mode": "truncated_window", "gradient_projection": "none",
-                    "plateau_patience": 2, "ahac_max_horizon": 300, "num_envs": 256}
+        declared = {
+            "height_loss_mode": "target_exp",
+            "optimizer": "adamw",
+            "weight_decay": 0.01,
+            "velocity_loss_mode": "truncated_window",
+            "gradient_projection": "none",
+            "plateau_patience": 2,
+            "ahac_max_horizon": 300,
+            "num_envs": 256,
+        }
         for entry, directory in zip(self.entries, (first, second), strict=True):
             entry.update(declared)
             config = json.loads((directory / "config.json").read_text())
@@ -269,9 +343,14 @@ class MechanismSummaryFixtureTests(unittest.TestCase):
         matched = self.summary()
         self.assertEqual(matched["comparisons"][0]["status"], "available")
         self.assertEqual(matched["runs"][0]["manifest_identity"]["height_loss_mode"], "target_exp")
-        for key, value in (("height_loss_mode", "target_huber"), ("optimizer", "adam"),
-                           ("velocity_loss_mode", "full_window"), ("plateau_patience", 5),
-                           ("ahac_max_horizon", 150), ("gradient_projection", "height_priority")):
+        for key, value in (
+            ("height_loss_mode", "target_huber"),
+            ("optimizer", "adam"),
+            ("velocity_loss_mode", "full_window"),
+            ("plateau_patience", 5),
+            ("ahac_max_horizon", 150),
+            ("gradient_projection", "height_priority"),
+        ):
             with self.subTest(parameter=key):
                 config = json.loads((second / "config.json").read_text())
                 config["train"].update({name: expected for name, expected in declared.items() if name != "num_envs"})

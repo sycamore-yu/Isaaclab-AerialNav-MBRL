@@ -22,8 +22,14 @@ def test_original_observation_and_reward_on_the_same_states():
     )
     tree = ast.parse(source)
     environment = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "NavigationEnv")
-    compute = next(node for node in environment.body if isinstance(node, ast.FunctionDef) and node.name == "_compute_state_and_obs")
-    helper = next(node for node in ast.parse(helpers).body if isinstance(node, ast.FunctionDef) and node.name == "vec_to_new_frame")
+    compute = next(
+        node for node in environment.body if isinstance(node, ast.FunctionDef) and node.name == "_compute_state_and_obs"
+    )
+    helper = next(
+        node
+        for node in ast.parse(helpers).body
+        if isinstance(node, ast.FunctionDef) and node.name == "vec_to_new_frame"
+    )
     namespace = {"torch": torch, "einops": einops, "TensorDict": TensorDict}
     exec(compile(ast.Module(body=[helper, compute], type_ignores=[]), "upstream_navrl", "exec"), namespace)
 
@@ -44,21 +50,35 @@ def test_original_observation_and_reward_on_the_same_states():
     hits = torch.zeros(count, 144, 3)
     hits[..., 0] = distances.flatten(1)
     old = SimpleNamespace(
-        num_envs=count, device="cpu", batch_size=[count], lidar_range=4.0, lidar_resolution=(36, 4),
+        num_envs=count,
+        device="cpu",
+        batch_size=[count],
+        lidar_range=4.0,
+        lidar_resolution=(36, 4),
         drone=SimpleNamespace(get_state=lambda **_: state, vel_w=state[..., 7:13], pos=state[..., :3]),
         lidar=SimpleNamespace(data=SimpleNamespace(ray_hits_w=hits, pos_w=torch.zeros(count, 3))),
-        target_pos=target[:, None], target_dir=direction[:, None], prev_drone_vel_w=previous[:, None],
-        height_range=height[:, None], dyn_obs_state=torch.cat((motion.position, torch.zeros(100, 10)), dim=-1),
-        dyn_obs_vel=motion.velocity, dyn_obs_size=motion.size, dyn_obs_width_res=0.25,
-        max_obs_3d_height=1.0, progress_buf=torch.ones(count, dtype=torch.long), max_episode_length=2200,
+        target_pos=target[:, None],
+        target_dir=direction[:, None],
+        prev_drone_vel_w=previous[:, None],
+        height_range=height[:, None],
+        dyn_obs_state=torch.cat((motion.position, torch.zeros(100, 10)), dim=-1),
+        dyn_obs_vel=motion.velocity,
+        dyn_obs_size=motion.size,
+        dyn_obs_width_res=0.25,
+        max_obs_3d_height=1.0,
+        progress_buf=torch.ones(count, dtype=torch.long),
+        max_episode_length=2200,
         cfg=SimpleNamespace(
-            device="cpu", sensor=SimpleNamespace(lidar_range=4.0), env_dyn=SimpleNamespace(num_obstacles=100),
+            device="cpu",
+            sensor=SimpleNamespace(lidar_range=4.0),
+            env_dyn=SimpleNamespace(num_obstacles=100),
             algo=SimpleNamespace(feature_extractor=SimpleNamespace(dyn_obs_num=5)),
         ),
         info=TensorDict({"drone_state": state.clone()}, [count]),
-        stats=TensorDict({name: torch.zeros(count, 1) for name in (
-            "return", "episode_len", "reach_goal", "collision", "truncated"
-        )}, [count]),
+        stats=TensorDict(
+            {name: torch.zeros(count, 1) for name in ("return", "episode_len", "reach_goal", "collision", "truncated")},
+            [count],
+        ),
         _should_render=lambda _: False,
     )
     reference = namespace["_compute_state_and_obs"](old)

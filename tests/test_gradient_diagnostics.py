@@ -34,11 +34,23 @@ def _losses(model, cfg):
     hidden, previous = torch.zeros(2, 192, device=device), torch.zeros(2, 3, device=device)
     heading = torch.eye(3, device=device).expand(2, -1, -1)
     lookahead = torch.linspace(0, 0.1, 10, device=device)[None, :, None]
-    history = {name: [] for name in (
-        "velocity", "target_velocity", "episode_id", "position", "obstacle_signed_distance", "height_target",
-        "height_range", "margin",
-        "command", "previous_command", "velocity_prediction", "observed_velocity",
-    )}
+    history = {
+        name: []
+        for name in (
+            "velocity",
+            "target_velocity",
+            "episode_id",
+            "position",
+            "obstacle_signed_distance",
+            "height_target",
+            "height_range",
+            "margin",
+            "command",
+            "previous_command",
+            "velocity_prediction",
+            "observed_velocity",
+        )
+    }
     for frame in depth:
         features = torch.cat((velocity, target, up, margin[:, None]), dim=-1)
         output, hidden = model.forward_checkpointed(frame, features, hidden)
@@ -53,9 +65,14 @@ def _losses(model, cfg):
         position = position + velocity * 0.1 + command * 0.005
         velocity = velocity + command * 0.1
         for name, value in (
-            ("velocity", velocity), ("target_velocity", target), ("position", position),
-            ("episode_id", torch.zeros(2, dtype=torch.long, device=device)), ("margin", margin),
-            ("command", command), ("previous_command", previous), ("velocity_prediction", prediction),
+            ("velocity", velocity),
+            ("target_velocity", target),
+            ("position", position),
+            ("episode_id", torch.zeros(2, dtype=torch.long, device=device)),
+            ("margin", margin),
+            ("command", command),
+            ("previous_command", previous),
+            ("velocity_prediction", prediction),
         ):
             history[name].append(value)
         previous = command
@@ -130,15 +147,25 @@ def _memory_finish(device, allocated_before):
         return None
     torch.cuda.synchronize(device)
     peak = torch.cuda.max_memory_allocated(device)
-    return {"allocated_before_bytes": allocated_before, "peak_allocated_bytes": peak,
-            "peak_reserved_bytes": torch.cuda.max_memory_reserved(device),
-            "additional_peak_allocated_bytes": peak - allocated_before}
+    return {
+        "allocated_before_bytes": allocated_before,
+        "peak_allocated_bytes": peak,
+        "peak_reserved_bytes": torch.cuda.max_memory_reserved(device),
+        "additional_peak_allocated_bytes": peak - allocated_before,
+    }
 
 
 def run_equivalence(device):
     """N=2/H=4 smoke on CPU or CUDA; no simulator, rollout copy, or alternate losses."""
     torch.manual_seed(63)
-    cfg = ZhangTrainCfg(physics_dt=0.01, policy_dt=0.1, variant="step", velocity_loss_mode="variant_default", timesteps=4, max_grad_norm=0.2)
+    cfg = ZhangTrainCfg(
+        physics_dt=0.01,
+        policy_dt=0.1,
+        variant="step",
+        velocity_loss_mode="variant_default",
+        timesteps=4,
+        max_grad_norm=0.2,
+    )
     baseline = ZhangPolicy().to(device)
     baseline_optimizer = torch.optim.AdamW(baseline.parameters(), lr=cfg.lr)
     _step(baseline, baseline_optimizer, cfg, diagnose=False)  # Populate AdamW moments.
@@ -175,9 +202,10 @@ def run_equivalence(device):
     assert record["groups"]["z_head"]["parameter_count"] == 2 * measured.fc.weight.shape[1]
     displacement = (after - before).double()
     actual_total = torch.cat([gradient.reshape(-1) for gradient in actual_gradients]).double()
-    projected = sum(weight * value for weight, value in zip(
-        record["coefficients"], record["groups"]["all"]["linearized_delta_loss"], strict=True
-    ))
+    projected = sum(
+        weight * value
+        for weight, value in zip(record["coefficients"], record["groups"]["all"]["linearized_delta_loss"], strict=True)
+    )
     projection_reference = float(actual_total @ displacement)
     checks["actual_update_projection_closed"] = abs(projected - projection_reference) <= (
         1e-10 + closure_tolerance * abs(projection_reference)
@@ -185,11 +213,17 @@ def run_equivalence(device):
     # Serialization rejects tensors, graphs, and nonfinite pseudo-cosines.
     assert json.loads(json.dumps(record, allow_nan=False))["term_order"] == list(record["term_order"])
     return {
-        "passed": all(value["passed"] if isinstance(value, dict) else value is not False
-                      for value in checks.values()),
-        "device": str(device), "torch_version": torch.__version__, "num_envs": 2, "rollout_steps": 4,
-        "rtol": rtol, "atol": atol, "closure_relative_tolerance": closure_tolerance,
-        "checks": checks, "baseline_memory": baseline_memory, "diagnostic_memory": diagnostic_memory,
+        "passed": all(value["passed"] if isinstance(value, dict) else value is not False for value in checks.values()),
+        "device": str(device),
+        "torch_version": torch.__version__,
+        "num_envs": 2,
+        "rollout_steps": 4,
+        "rtol": rtol,
+        "atol": atol,
+        "closure_relative_tolerance": closure_tolerance,
+        "checks": checks,
+        "baseline_memory": baseline_memory,
+        "diagnostic_memory": diagnostic_memory,
         "memory_scope": "Torch allocations; both model/optimizer copies are resident; not a throughput benchmark",
         "gradient_diagnostic": record,
     }
@@ -202,7 +236,10 @@ def test_diagnostic_preserves_checkpointed_gradients_update_and_nonempty_adamw_s
 
 def test_zero_gradient_cosines_are_null_even_with_adamw_weight_decay():
     torch.manual_seed(91)
-    model, cfg = ZhangPolicy(), ZhangTrainCfg(physics_dt=0.01, policy_dt=0.1, variant="step", velocity_loss_mode="variant_default")
+    model, cfg = (
+        ZhangPolicy(),
+        ZhangTrainCfg(physics_dt=0.01, policy_dt=0.1, variant="step", velocity_loss_mode="variant_default"),
+    )
     optimizer = torch.optim.AdamW(model.parameters(), lr=cfg.lr)
     zero = sum(parameter.sum() for parameter in model.parameters()) * 0.0
     losses = {name: zero for name, _ in LOSS_COEFFICIENTS}
@@ -227,11 +264,28 @@ def test_zero_gradient_cosines_are_null_even_with_adamw_weight_decay():
 
 
 def test_diagnostic_update_config_defaults_off_and_rejects_invalid_global_ids():
-    assert ZhangTrainCfg(physics_dt=0.01, policy_dt=0.1, variant="step", velocity_loss_mode="variant_default").gradient_diagnostic_updates == ()
-    ZhangTrainCfg(physics_dt=0.01, policy_dt=0.1, variant="step", velocity_loss_mode="variant_default", gradient_diagnostic_updates=(20, 22, 24, 26)).validate()
+    assert (
+        ZhangTrainCfg(
+            physics_dt=0.01, policy_dt=0.1, variant="step", velocity_loss_mode="variant_default"
+        ).gradient_diagnostic_updates
+        == ()
+    )
+    ZhangTrainCfg(
+        physics_dt=0.01,
+        policy_dt=0.1,
+        variant="step",
+        velocity_loss_mode="variant_default",
+        gradient_diagnostic_updates=(20, 22, 24, 26),
+    ).validate()
     for updates in ((0,), (-1,), (1, 1), (1.0,), (True,)):
         with pytest.raises(ValueError, match="gradient_diagnostic_updates"):
-            ZhangTrainCfg(physics_dt=0.01, policy_dt=0.1, variant="step", velocity_loss_mode="variant_default", gradient_diagnostic_updates=updates).validate()
+            ZhangTrainCfg(
+                physics_dt=0.01,
+                policy_dt=0.1,
+                variant="step",
+                velocity_loss_mode="variant_default",
+                gradient_diagnostic_updates=updates,
+            ).validate()
 
 
 def main():
@@ -293,9 +347,10 @@ def test_critic_vertical_partials_include_physical_units_and_match_finite_differ
             return 2 * features[:, 2] + 3 * features[:, 5]
 
     features = torch.randn(3, 6, dtype=torch.double)
-    result = critic_vertical_probe(AnalyticCritic(), features, torch.tensor([2., 3.7, 4.1]),
-                                   torch.tensor([False, False, True]))
-    assert result["dV_dz"] == pytest.approx([-.04] * 3)
-    assert result["dV_dvz"] == pytest.approx([.3] * 3)
+    result = critic_vertical_probe(
+        AnalyticCritic(), features, torch.tensor([2.0, 3.7, 4.1]), torch.tensor([False, False, True])
+    )
+    assert result["dV_dz"] == pytest.approx([-0.04] * 3)
+    assert result["dV_dvz"] == pytest.approx([0.3] * 3)
     assert result["fd_max_abs_error_dz"] < 1e-12
     assert result["fd_max_abs_error_dvz"] < 1e-12

@@ -40,7 +40,8 @@ def surface_exposure_check(terrain):
     both_inside = plus.inside & minus.inside
     both_outside = ~plus.inside & ~minus.inside
     record = {
-        "above_ground_faces_checked": len(indices), "all_above_ground_face_centroids_checked": True,
+        "above_ground_faces_checked": len(indices),
+        "all_above_ground_face_centroids_checked": True,
         "probe_offset_m": terrain._normal_probe,
         "both_sides_inside_count": int(both_inside.sum()),
         "both_sides_outside_count": int(both_outside.sum()),
@@ -62,8 +63,11 @@ def verify_selected_exits(terrain, points, record, source_face_ids=None):
     inside = details.inside
     invalid = inside & ~details.exit_valid
     record.update(
-        query_count=len(point), inside_count=int(inside.sum()), outside_count=int((~inside).sum()),
-        exit_search_count=int(details.used_exit_search.sum()), invalid_inside_exit_count=int(invalid.sum()),
+        query_count=len(point),
+        inside_count=int(inside.sum()),
+        outside_count=int((~inside).sum()),
+        exit_search_count=int(details.used_exit_search.sum()),
+        invalid_inside_exit_count=int(invalid.sum()),
         invalid_inside_positions_m=point.detach()[invalid][:20].tolist(),
         original_zero_or_near_zero_inside_count=int(
             (inside & ((point.detach() - details.mesh_closest_point).norm(dim=-1) < 2e-6)).sum()
@@ -95,18 +99,27 @@ def verify_selected_exits(terrain, points, record, source_face_ids=None):
         samples = []
         for slot in bad_direction.nonzero().flatten()[:5].tolist():
             origin = int(inside_indices[slot])
-            samples.append({
-                "origin_query_index": origin, "query_m": point.detach()[origin].tolist(),
-                "anchor_m": anchor[slot].tolist(), "gradient_direction": direction[slot].tolist(),
-                "kernel_direction": details.outward_normal[origin].tolist(),
-                "before_m": (anchor[slot] - terrain._normal_probe * direction[slot]).tolist(),
-                "after_m": (anchor[slot] + terrain._normal_probe * direction[slot]).tolist(),
-                "before_inside": bool(before.inside[slot]), "after_inside": bool(after.inside[slot]),
-                "before_projected_height": float(before.surface_height[slot]) if bool(before.has_surface[slot]) else None,
-                "after_projected_height": float(after.surface_height[slot]) if bool(after.has_surface[slot]) else None,
-                "used_exit_search": bool(details.used_exit_search[origin]),
-                "exit_valid": bool(details.exit_valid[origin]),
-            })
+            samples.append(
+                {
+                    "origin_query_index": origin,
+                    "query_m": point.detach()[origin].tolist(),
+                    "anchor_m": anchor[slot].tolist(),
+                    "gradient_direction": direction[slot].tolist(),
+                    "kernel_direction": details.outward_normal[origin].tolist(),
+                    "before_m": (anchor[slot] - terrain._normal_probe * direction[slot]).tolist(),
+                    "after_m": (anchor[slot] + terrain._normal_probe * direction[slot]).tolist(),
+                    "before_inside": bool(before.inside[slot]),
+                    "after_inside": bool(after.inside[slot]),
+                    "before_projected_height": float(before.surface_height[slot])
+                    if bool(before.has_surface[slot])
+                    else None,
+                    "after_projected_height": float(after.surface_height[slot])
+                    if bool(after.has_surface[slot])
+                    else None,
+                    "used_exit_search": bool(details.used_exit_search[origin]),
+                    "exit_valid": bool(details.exit_valid[origin]),
+                }
+            )
         record["invalid_direction_details"] = samples
     if bool((residual >= 2e-5).any()):
         # Preserve the original gate. Export only the five worst points and
@@ -128,27 +141,35 @@ def verify_selected_exits(terrain, points, record, source_face_ids=None):
             total_nearby = len(nearby)
             if total_nearby > 128:
                 nearby = nearby[np.argsort(bbox_squared[nearby])[:128]]
-            examples.append({
-                "origin_query_index": origin, "inside_batch_index": slot,
-                "source_face_index": int(source_face_ids[origin]) if source_face_ids is not None else None,
-                "query_position_m": point.detach()[origin].tolist(),
-                "signed_proxy_distance_m": float(details.distance[origin]),
-                "selected_anchor_m": anchor[slot].tolist(),
-                "anchor_requery_closest_m": anchor_requery[slot].tolist(),
-                "anchor_requery_residual_m": float(residual[slot]),
-                "original_query_mesh_closest_m": details.mesh_closest_point[origin].tolist(),
-                "used_exit_search": bool(details.used_exit_search[origin]),
-                "exit_valid": bool(details.exit_valid[origin]),
-                "selected_anchor_xy_equals_query": bool(torch.equal(anchor[slot, :2], point.detach()[origin, :2])),
-                "highest_projected_height_m": float(details.surface_height[origin]),
-                "escape_direction": direction[slot].tolist(),
-                "nearby_triangle_aabb_radius_m": 0.002,
-                "nearby_triangle_count": total_nearby,
-                "nearby_triangles_truncated": total_nearby > 128,
-                "nearby_triangles": [{"face_index": int(face), "vertices_m": triangles[face].tolist(),
-                                      "bbox_distance_m": float(np.sqrt(bbox_squared[face]))}
-                                     for face in nearby],
-            })
+            examples.append(
+                {
+                    "origin_query_index": origin,
+                    "inside_batch_index": slot,
+                    "source_face_index": int(source_face_ids[origin]) if source_face_ids is not None else None,
+                    "query_position_m": point.detach()[origin].tolist(),
+                    "signed_proxy_distance_m": float(details.distance[origin]),
+                    "selected_anchor_m": anchor[slot].tolist(),
+                    "anchor_requery_closest_m": anchor_requery[slot].tolist(),
+                    "anchor_requery_residual_m": float(residual[slot]),
+                    "original_query_mesh_closest_m": details.mesh_closest_point[origin].tolist(),
+                    "used_exit_search": bool(details.used_exit_search[origin]),
+                    "exit_valid": bool(details.exit_valid[origin]),
+                    "selected_anchor_xy_equals_query": bool(torch.equal(anchor[slot, :2], point.detach()[origin, :2])),
+                    "highest_projected_height_m": float(details.surface_height[origin]),
+                    "escape_direction": direction[slot].tolist(),
+                    "nearby_triangle_aabb_radius_m": 0.002,
+                    "nearby_triangle_count": total_nearby,
+                    "nearby_triangles_truncated": total_nearby > 128,
+                    "nearby_triangles": [
+                        {
+                            "face_index": int(face),
+                            "vertices_m": triangles[face].tolist(),
+                            "bbox_distance_m": float(np.sqrt(bbox_squared[face])),
+                        }
+                        for face in nearby
+                    ],
+                }
+            )
         record["largest_anchor_residual_examples"] = examples
     assert bool((residual < 2e-5).all()), "An exit anchor must lie on the original mesh, not a virtual curtain."
     assert not bool(bad_direction.any()), "Selected direction must cross from training occupancy into free space."
@@ -195,11 +216,15 @@ def loss_probe(terrain, point, expected_outward):
     assert float(new_distance[0]) > float(signed.distance[0]) + 0.001
     has_surface = bool(signed.has_surface[0])
     return {
-        "position_m": query.detach()[0].tolist(), "inside": bool(signed.inside[0]),
-        "distance_m": float(signed.distance[0]), "closest_point_m": signed.closest_point[0].tolist(),
+        "position_m": query.detach()[0].tolist(),
+        "inside": bool(signed.inside[0]),
+        "distance_m": float(signed.distance[0]),
+        "closest_point_m": signed.closest_point[0].tolist(),
         "projected_height_m": float(signed.surface_height[0]) if has_surface else None,
-        "has_projected_surface": has_surface, "clearance_m": float(gap[0]),
-        "outward": expected_outward.tolist(), "distance_after_outward_2mm_m": float(new_distance[0]),
+        "has_projected_surface": has_surface,
+        "clearance_m": float(gap[0]),
+        "outward": expected_outward.tolist(),
+        "distance_after_outward_2mm_m": float(new_distance[0]),
         "weighted_loss_gradients": gradients,
     }
 
@@ -213,12 +238,15 @@ def actual_mesh_checks(env, result, progress):
     exposure, centers, normals, exposed = surface_exposure_check(terrain)
     result["surface_exposure"] = exposure
     result["geometry_contract"] = {
-        "mode": terrain.geometry_mode, "occupancy": "conservative highest projected actual triangle",
+        "mode": terrain.geometry_mode,
+        "occupancy": "conservative highest projected actual triangle",
         "projection_precision": terrain.projection_precision,
         "inside": "negative original-mesh verified-exit distance proxy",
         "outside": "original full-mesh unsigned distance, including zero-thickness fins",
-        "exact_mesh_sdf": False, "physical_air_cavity_equivalence": False,
-        "virtual_curtains_added": False, "physx_and_depth_mesh_changed": False,
+        "exact_mesh_sdf": False,
+        "physical_air_cavity_equivalence": False,
+        "virtual_curtains_added": False,
+        "physx_and_depth_mesh_changed": False,
         "local_exit_search_radius_limit_m": terrain.exit_search_radius_limit_m,
         "near_surface_refinement_radius_m": terrain.near_surface_refinement_radius_m,
         "exit_probe_offset_m": terrain._normal_probe,
@@ -228,8 +256,9 @@ def actual_mesh_checks(env, result, progress):
     progress("selected_exit_validity")
     # Test all original above-ground face sides and the anomalous face centers
     # themselves, including actual internal crossing/zero-distance points.
-    points = torch.cat((centers + terrain._normal_probe * normals,
-                        centers - terrain._normal_probe * normals, centers[~exposed]))
+    points = torch.cat(
+        (centers + terrain._normal_probe * normals, centers - terrain._normal_probe * normals, centers[~exposed])
+    )
     # This uses the same exact filter/order as surface_exposure_check.
     import warp as wp
 
@@ -269,7 +298,8 @@ def actual_mesh_checks(env, result, progress):
         assert bool(torch.isfinite(measured.distance).all())
         assert not bool((measured.inside & ~measured.exit_valid).any())
         timings[name] = {
-            "query_count": len(queries), "cuda_query_ms": elapsed,
+            "query_count": len(queries),
+            "cuda_query_ms": elapsed,
             "median_cuda_query_ms": statistics.median(elapsed),
             "inside_count": int(measured.inside.sum()),
             "exit_search_count": int(measured.used_exit_search.sum()),
@@ -289,14 +319,19 @@ def actual_mesh_checks(env, result, progress):
         candidate, normal = centers[indices], normals[indices]
         before = terrain.signed_query(candidate - 0.02 * normal)
         after = terrain.signed_query(candidate + 0.02 * normal)
-        valid = (before.inside & ~after.inside & ((before.distance + 0.02).abs() < 2e-4)
-                 & ((after.distance - 0.02).abs() < 2e-4))
+        valid = (
+            before.inside
+            & ~after.inside
+            & ((before.distance + 0.02).abs() < 2e-4)
+            & ((after.distance - 0.02).abs() < 2e-4)
+        )
         assert bool(valid.any()), f"No unambiguous actual {label} surface found."
         index = int(valid.nonzero()[0, 0])
         center, outward = candidate[index], normal[index]
         chosen[label] = (center, outward)
         result[label] = {
-            "surface_center_m": center.tolist(), "outward": outward.tolist(),
+            "surface_center_m": center.tolist(),
+            "outward": outward.tolist(),
             "inside": loss_probe(terrain, center - 0.02 * outward, outward),
             "outside": loss_probe(terrain, center + 0.02 * outward, outward),
         }
@@ -309,8 +344,9 @@ def actual_mesh_checks(env, result, progress):
         result[label]["surface_gradient"] = gradient.tolist()
 
     progress("outside_extent_and_ground")
-    outside = torch.tensor([[float(terrain.bounds[1][0]) + 1, 0, 0.6],
-                            [float(terrain.bounds[1][0]) + 1, 0, -0.5]], device=env.device)
+    outside = torch.tensor(
+        [[float(terrain.bounds[1][0]) + 1, 0, 0.6], [float(terrain.bounds[1][0]) + 1, 0, -0.5]], device=env.device
+    )
     outside_query = terrain.signed_query(outside)
     assert not bool(outside_query.has_surface.any()) and not bool(outside_query.inside.any())
     from isaaclab_navrl.tasks.navigation.geometry import nearest_obstacle_signed_distance
@@ -321,8 +357,12 @@ def actual_mesh_checks(env, result, progress):
     gradient = torch.autograd.grad(ground.sum(), below)[0]
     torch.testing.assert_close(ground, below[:, 2] - 0.01, rtol=0, atol=0)
     torch.testing.assert_close(gradient, below.new_tensor([[0, 0, 1]]), rtol=0, atol=0)
-    result["outside_extent"] = {"positions_m": outside.tolist(), "projected_hits": 0,
-                                "ground_distance_m": float(ground[0]), "ground_gradient": gradient[0].tolist()}
+    result["outside_extent"] = {
+        "positions_m": outside.tolist(),
+        "projected_hits": 0,
+        "ground_distance_m": float(ground[0]),
+        "ground_gradient": gradient[0].tolist(),
+    }
 
     progress("physx_inside_side_pose")
     center, outward = chosen["side"]
@@ -341,10 +381,14 @@ def actual_mesh_checks(env, result, progress):
     physics_query = terrain.signed_query(terminal[None])
     assert bool(physics_query.inside[0]), "Test point unexpectedly left the obstacle during one transition."
     result["physx_probe"] = {
-        "manual_pose": True, "policy_success_claimed": False, "episode_id_unchanged": True,
-        "position_before_m": inside_position[0].tolist(), "position_after_m": terminal.tolist(),
+        "manual_pose": True,
+        "policy_success_claimed": False,
+        "episode_id_unchanged": True,
+        "position_before_m": inside_position[0].tolist(),
+        "position_after_m": terminal.tolist(),
         "collision_detector": bool(info["transition"]["collision"][lane]),
-        "loss_gradient": loss_probe(terrain, terminal, outward), "depth": check_perception(env),
+        "loss_gradient": loss_probe(terrain, terminal, outward),
+        "depth": check_perception(env),
     }
 
 
@@ -362,10 +406,17 @@ def main():
     import isaaclab_navrl.tasks  # noqa: F401
     from isaaclab_navrl.tasks.navigation.config.hummingbird.env_cfg import ZhangNavRLEnvCfg
 
-    result = {"test": "signed_static_scene", "status": "running", "num_envs": 64,
-              "static_obstacles": args.num_static_obstacles, "dynamic_obstacles": 0,
-              "terrain_seed": args.terrain_seed, "training_acceptance": False,
-              "manual_geometry_probes": True, "current_check": "configuration"}
+    result = {
+        "test": "signed_static_scene",
+        "status": "running",
+        "num_envs": 64,
+        "static_obstacles": args.num_static_obstacles,
+        "dynamic_obstacles": 0,
+        "terrain_seed": args.terrain_seed,
+        "training_acceptance": False,
+        "manual_geometry_probes": True,
+        "current_check": "configuration",
+    }
 
     def progress(name):
         result["current_check"] = name
@@ -392,7 +443,9 @@ def main():
                 result.update(status="passed", current_check="complete")
                 write_result(args.output, result, marker=True)
             except BaseException as error:
-                result.update(status="failed", error=f"{type(error).__name__}: {error}", traceback=traceback.format_exc())
+                result.update(
+                    status="failed", error=f"{type(error).__name__}: {error}", traceback=traceback.format_exc()
+                )
                 write_result(args.output, result, marker=True)
                 raise
             finally:

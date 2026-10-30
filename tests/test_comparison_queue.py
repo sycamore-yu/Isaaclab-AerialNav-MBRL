@@ -25,9 +25,12 @@ def test_all_planned_commands_preserve_fresh_unlimited_protocol(run, tmp_path):
     assert not any(token in command for token in ("--checkpoint", "--resume", "--max_iterations"))
     tokens = QUEUE["train_tokens"](run)
     values = PROTOCOL["parse_train_args"](tokens)
-    assert values == {key: (tuple(int(v) for v in value.split(",")) if value else ())
-                      if key == "gradient_diagnostic_updates" else value
-                      for key, value in run["train_args"].items()}
+    assert values == {
+        key: (tuple(int(v) for v in value.split(",")) if value else ())
+        if key == "gradient_diagnostic_updates"
+        else value
+        for key, value in run["train_args"].items()
+    }
     if run["method"] == "navrl":
         assert "--train_args" not in command
     else:
@@ -61,10 +64,17 @@ def test_external_training_source_is_used_in_child_command(tmp_path):
 def test_ready_tracks_latest_stage_and_rejects_partial_or_initial_result(tmp_path):
     job = {"output": str(tmp_path), "method": "zhang"}
     save = QUEUE["write_json"]
-    parent = {"status": "running", "methods": {"zhang": {"stages": [
-        {"status": "completed", "stage": "pretrain_s0"},
-        {"status": "running", "stage": "pretrain_s1"},
-    ]}}}
+    parent = {
+        "status": "running",
+        "methods": {
+            "zhang": {
+                "stages": [
+                    {"status": "completed", "stage": "pretrain_s0"},
+                    {"status": "running", "stage": "pretrain_s1"},
+                ]
+            }
+        },
+    }
     save(tmp_path / "training_result.json", parent)
     old = tmp_path / "zhang/pretrain_s0"
     old.mkdir(parents=True)
@@ -100,8 +110,17 @@ def test_comparison_identity_excludes_queued_and_ppo():
 def test_main_matrix_preserves_requested_controls_and_twenty_hz_priority(tmp_path):
     plan = json.loads((ROOT / "configs/experiments/zhang_main_comparison.json").read_text())
     runs = {run["name"]: run for run in plan["runs"]}
-    assert set(runs) == {"unified_20hz", "dcol", "step", "truncated", "plateau",
-                         "shac", "ahac", "navrl_ppo", "continuous"}
+    assert set(runs) == {
+        "unified_20hz",
+        "dcol",
+        "step",
+        "truncated",
+        "plateau",
+        "shac",
+        "ahac",
+        "navrl_ppo",
+        "continuous",
+    }
     assert plan["launch_order"][0] == "unified_20hz"
     assert plan["report_episodes"] == 1024 and plan["max_updates"] is None
     for name, run in runs.items():
@@ -118,67 +137,79 @@ def test_main_matrix_preserves_requested_controls_and_twenty_hz_priority(tmp_pat
     assert baseline["velocity_loss_mode"] == "full_window" and baseline["velocity_window_s"] == 2.0
     assert runs["plateau"]["train_args"] == {**baseline, "lr_schedule": "plateau"}
     assert runs["ahac"]["train_args"]["ahac_max_horizon"] == 300
-    assert plan['launch_order'].index('plateau') < plan['launch_order'].index('navrl_ppo')
+    assert plan["launch_order"].index("plateau") < plan["launch_order"].index("navrl_ppo")
 
 
-@pytest.mark.parametrize("dirty,branch,head", [(True, "main", "pinned"),
-                                              (False, "main", "changed")])
+@pytest.mark.parametrize("dirty,branch,head", [(True, "main", "pinned"), (False, "main", "changed")])
 def test_queue_rejects_dirty_or_changed_source(monkeypatch, dirty, branch, head):
     def git(args, **kwargs):
         return {"rev-parse": head, "status": " M changed.py" if dirty else "", "branch": branch}[args[1]]
+
     monkeypatch.setattr(QUEUE["subprocess"], "check_output", git)
     with pytest.raises(RuntimeError):
         QUEUE["check_source"](ROOT, "pinned")
 
 
 def test_takeover_preserves_training_arguments_and_source_identity(monkeypatch):
-    adopt = QUEUE['adopt_running_jobs']
-    previous = {'queue_pid': 100, 'source_commit': 'original-training', 'runs': {
-        'active': {'command': ['python', 'pipeline.py'], 'pid': 101, 'status': 'running'},
-        'pending': {'command': ['python', 'other.py'], 'pid': None, 'status': 'queued'},
-    }}
-    jobs = {name: {**entry, 'estimated_mib': 3584} for name, entry in previous['runs'].items()}
+    adopt = QUEUE["adopt_running_jobs"]
+    previous = {
+        "queue_pid": 100,
+        "source_commit": "original-training",
+        "runs": {
+            "active": {"command": ["python", "pipeline.py"], "pid": 101, "status": "running"},
+            "pending": {"command": ["python", "other.py"], "pid": None, "status": "queued"},
+        },
+    }
+    jobs = {name: {**entry, "estimated_mib": 3584} for name, entry in previous["runs"].items()}
+
     def ticks(pid, command=None):
         return None if pid == 100 else 9876
-    monkeypatch.setitem(adopt.__globals__, 'process_start_ticks', ticks)
-    assert adopt(previous, jobs) == {'active': 101}
-    assert jobs['active']['process_start_ticks'] == 9876
-    assert jobs['active']['source_commit'] == 'original-training'
-    assert jobs['pending']['status'] == 'queued'
+
+    monkeypatch.setitem(adopt.__globals__, "process_start_ticks", ticks)
+    assert adopt(previous, jobs) == {"active": 101}
+    assert jobs["active"]["process_start_ticks"] == 9876
+    assert jobs["active"]["source_commit"] == "original-training"
+    assert jobs["pending"]["status"] == "queued"
     changed = copy.deepcopy(jobs)
-    changed['pending']['command'].append('--changed')
-    with pytest.raises(ValueError, match='training arguments'):
+    changed["pending"]["command"].append("--changed")
+    with pytest.raises(ValueError, match="training arguments"):
         adopt(previous, changed)
-    monkeypatch.setitem(adopt.__globals__, 'process_start_ticks', lambda *args: 123)
-    with pytest.raises(ValueError, match='Previous dispatcher'):
+    monkeypatch.setitem(adopt.__globals__, "process_start_ticks", lambda *args: 123)
+    with pytest.raises(ValueError, match="Previous dispatcher"):
         adopt(previous, jobs)
 
 
 def test_process_identity_rejects_command_mismatch_and_missing_pid():
-    ticks = QUEUE['process_start_ticks']
+    ticks = QUEUE["process_start_ticks"]
     assert ticks(os.getpid()) > 0
-    with pytest.raises(ValueError, match='recorded command'):
-        ticks(os.getpid(), ['unrelated', 'process'])
+    with pytest.raises(ValueError, match="recorded command"):
+        ticks(os.getpid(), ["unrelated", "process"])
     assert ticks(999999999) is None
 
 
 def test_twenty_hz_successor_plan_preserves_baseline_and_five_new_controls(tmp_path):
-    plan = json.loads((ROOT / 'configs/experiments/zhang_20hz_controls.json').read_text())
-    cases = {row['name']: row for row in plan['runs']}
-    assert set(cases) == {'hz50', 'shac', 'ahac', 'plateau', 'navrl_height'}
-    assert plan['retained_baseline'].endswith('zhang_main_20261029/unified_20hz')
-    assert plan['num_envs'] == 256 and plan['report_episodes'] == 1024
+    plan = json.loads((ROOT / "configs/experiments/zhang_20hz_controls.json").read_text())
+    cases = {row["name"]: row for row in plan["runs"]}
+    assert set(cases) == {"hz50", "shac", "ahac", "plateau", "navrl_height"}
+    assert plan["retained_baseline"].endswith("zhang_main_20261029/unified_20hz")
+    assert plan["num_envs"] == 256 and plan["report_episodes"] == 1024
     for name, row in cases.items():
-        values = PROTOCOL['parse_train_args'](QUEUE['train_tokens'](row))
-        assert values['variant'] == 'dcol'
-        assert values['timing'] == ('unified_50hz' if name == 'hz50' else 'unified_20hz')
-        assert values['height_loss_mode'] == ('navrl_range' if name == 'navrl_height' else 'target_exp')
-        assert values['coef_height_boundary'] == 1
-        assert values['velocity_loss_mode'] == ('per_step' if name in ('shac', 'ahac') else 'full_window')
+        values = PROTOCOL["parse_train_args"](QUEUE["train_tokens"](row))
+        assert values["variant"] == "dcol"
+        assert values["timing"] == ("unified_50hz" if name == "hz50" else "unified_20hz")
+        assert values["height_loss_mode"] == ("navrl_range" if name == "navrl_height" else "target_exp")
+        assert values["coef_height_boundary"] == 1
+        assert values["velocity_loss_mode"] == ("per_step" if name in ("shac", "ahac") else "full_window")
 
 
 def test_queue_accepts_clean_pinned_feature_branch(monkeypatch):
-    monkeypatch.setattr(QUEUE["subprocess"], "check_output", lambda args, **kw: {
-        "rev-parse": "pinned", "status": "", "branch": "feature",
-    }[args[1]])
+    monkeypatch.setattr(
+        QUEUE["subprocess"],
+        "check_output",
+        lambda args, **kw: {
+            "rev-parse": "pinned",
+            "status": "",
+            "branch": "feature",
+        }[args[1]],
+    )
     QUEUE["check_source"](ROOT, "pinned")

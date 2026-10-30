@@ -31,8 +31,6 @@ def read_json(path):
         return {}
 
 
-
-
 def train_tokens(run):
     tokens = []
     for key, value in run.get("train_args", {}).items():
@@ -42,11 +40,21 @@ def train_tokens(run):
 
 def command_for(source, output, plan, run, device):
     command = [
-        sys.executable, str(source / "scripts/run_acceptance.py"),
-        "--method", run["method"], "--output", str(output),
-        "--screening", "--num_envs", str(plan["num_envs"]),
-        "--train_seed", str(plan["seed"]), "--device", device,
-        "--finetune_lr", str(plan.get("finetune_lr", 5e-5)),
+        sys.executable,
+        str(source / "scripts/run_acceptance.py"),
+        "--method",
+        run["method"],
+        "--output",
+        str(output),
+        "--screening",
+        "--num_envs",
+        str(plan["num_envs"]),
+        "--train_seed",
+        str(plan["seed"]),
+        "--device",
+        device,
+        "--finetune_lr",
+        str(plan.get("finetune_lr", 5e-5)),
     ]
     if "report_episodes" in plan:
         command += ["--report_episodes", str(plan["report_episodes"])]
@@ -70,13 +78,13 @@ def admissible(active_count, all_ready, free_mib, estimate_mib, reserve_mib=2048
 
 def process_start_ticks(pid, command=None):
     """Verify PID ownership before adopting an existing pipeline."""
-    path = Path('/proc') / str(pid)
+    path = Path("/proc") / str(pid)
     try:
-        fields = (path / 'stat').read_text().rsplit(')', 1)[1].split()
-        if fields[0] == 'Z':
+        fields = (path / "stat").read_text().rsplit(")", 1)[1].split()
+        if fields[0] == "Z":
             return None
         if command is not None:
-            actual = (path / 'cmdline').read_bytes().decode().rstrip('\0').split('\0')
+            actual = (path / "cmdline").read_bytes().decode().rstrip("\0").split("\0")
             if actual != command:
                 raise ValueError(f"Pipeline PID {pid} no longer matches its recorded command")
         return int(fields[19])
@@ -85,30 +93,31 @@ def process_start_ticks(pid, command=None):
 
 
 def adopt_running_jobs(previous, jobs):
-    if set(previous['runs']) != set(jobs):
-        raise ValueError('Resume requires the same experiment matrix')
-    if process_start_ticks(previous['queue_pid']) is not None:
-        raise ValueError('Previous dispatcher must exit before takeover')
+    if set(previous["runs"]) != set(jobs):
+        raise ValueError("Resume requires the same experiment matrix")
+    if process_start_ticks(previous["queue_pid"]) is not None:
+        raise ValueError("Previous dispatcher must exit before takeover")
     active = {}
     for name, job in jobs.items():
-        old = previous['runs'][name]
-        if old['command'] != job['command']:
-            raise ValueError(f'Resume cannot change training arguments: {name}')
-        estimate = job['estimated_mib']
+        old = previous["runs"][name]
+        if old["command"] != job["command"]:
+            raise ValueError(f"Resume cannot change training arguments: {name}")
+        estimate = job["estimated_mib"]
         job.update(old, estimated_mib=estimate)
-        job.setdefault('source_commit', previous['source_commit'])
-        if old['status'] == 'running':
-            ticks = process_start_ticks(old['pid'], old['command'])
+        job.setdefault("source_commit", previous["source_commit"])
+        if old["status"] == "running":
+            ticks = process_start_ticks(old["pid"], old["command"])
             if ticks is None:
-                raise ValueError(f'Cannot adopt missing pipeline: {name}')
+                raise ValueError(f"Cannot adopt missing pipeline: {name}")
             job.update(adopted=True, process_start_ticks=ticks)
-            active[name] = old['pid']
+            active[name] = old["pid"]
     return active
 
 
 def check_source(source, expected_commit):
     def git(*args):
         return subprocess.check_output(["git", *args], cwd=source, text=True, timeout=10).strip()
+
     if git("rev-parse", "HEAD") != expected_commit:
         raise RuntimeError("Source HEAD differs from pinned commit")
     if git("status", "--porcelain", "--untracked-files=all", "--", *RUNTIME_PATHS):
@@ -116,10 +125,17 @@ def check_source(source, expected_commit):
 
 
 def free_memory_mib(gpu):
-    output = subprocess.check_output([
-        "nvidia-smi", "-i", str(gpu),
-        "--query-gpu=memory.free", "--format=csv,noheader,nounits",
-    ], text=True, timeout=10)
+    output = subprocess.check_output(
+        [
+            "nvidia-smi",
+            "-i",
+            str(gpu),
+            "--query-gpu=memory.free",
+            "--format=csv,noheader,nounits",
+        ],
+        text=True,
+        timeout=10,
+    )
     lines = output.strip().splitlines()
     if len(lines) != 1:
         raise RuntimeError("GPU selector must identify exactly one GPU")
@@ -139,30 +155,40 @@ def current_stage_ready(job):
         return False
     result = read_json(output / job["method"] / stage / "training_result.json")
     updates = result.get("stage_updates")
-    return (
-        result.get("status") == "running" and result.get("stage") == stage
-        and type(updates) is int and updates >= 1
-    )
+    return result.get("status") == "running" and result.get("stage") == stage and type(updates) is int and updates >= 1
 
 
 def launched_zhang_manifest(jobs, plan):
     """Emit only launched Zhang identities; queued jobs and PPO are not evidence."""
     entries = []
     fields = (
-        "variant", "algorithm", "lr_schedule", "velocity_loss_mode", "height_loss_mode",
-        "optimizer", "weight_decay", "gradient_projection", "plateau_patience", "ahac_max_horizon", "timing",
+        "variant",
+        "algorithm",
+        "lr_schedule",
+        "velocity_loss_mode",
+        "height_loss_mode",
+        "optimizer",
+        "weight_decay",
+        "gradient_projection",
+        "plateau_patience",
+        "ahac_max_horizon",
+        "timing",
     )
     for job in jobs.values():
         if job["method"] != "zhang" or job.get("pid") is None:
             continue
         config = job["train_args"]
-        entries.append({
-            "name": job["name"], "path": job["path"], "seed": plan["seed"],
-            "normalization": config.get("observation_normalization", False),
-            "num_envs": plan["num_envs"],
-            "start_stage": job.get("start_stage", "pretrain_s0"),
-            **{key: config[key] for key in fields if key in config},
-        })
+        entries.append(
+            {
+                "name": job["name"],
+                "path": job["path"],
+                "seed": plan["seed"],
+                "normalization": config.get("observation_normalization", False),
+                "num_envs": plan["num_envs"],
+                "start_stage": job.get("start_stage", "pretrain_s0"),
+                **{key: config[key] for key in fields if key in config},
+            }
+        )
     return {"purpose": "launched_zhang_only", "runs": entries}
 
 
@@ -180,16 +206,24 @@ def main():
     args = parser.parse_args()
     dispatcher = Path(__file__).resolve().parents[1]
     dispatcher_commit = subprocess.check_output(
-        ["git", "rev-parse", "HEAD"], cwd=dispatcher, text=True, timeout=10,
+        ["git", "rev-parse", "HEAD"],
+        cwd=dispatcher,
+        text=True,
+        timeout=10,
     ).strip()
     check_source(dispatcher, dispatcher_commit)
     source = args.source_root.expanduser().resolve() if args.source_root else dispatcher
     check_source(source, args.commit)
     plan_bytes = args.plan.read_bytes()
     plan = json.loads(plan_bytes)
-    if (plan.get("num_envs") != 256 or plan.get("screening") is not True
-            or "max_updates" not in plan or plan["max_updates"] is not None or args.reserve_mib < 512
-            or (args.slots is not None and args.slots < 1)):
+    if (
+        plan.get("num_envs") != 256
+        or plan.get("screening") is not True
+        or "max_updates" not in plan
+        or plan["max_updates"] is not None
+        or args.reserve_mib < 512
+        or (args.slots is not None and args.slots < 1)
+    ):
         parser.error("Requires N256 screening, unlimited updates, reserve >= 512 MiB and positive optional slots")
 
     protocol = runpy.run_path(str(source / "scripts/run_acceptance.py"))
@@ -213,8 +247,9 @@ def main():
         if run["method"] not in ("zhang", "navrl"):
             parser.error("Unsupported method")
         protocol["parse_train_args"](train_tokens(run))
-        protocol["selected_stages"](run.get("start_stage", "pretrain_s0"),
-                                    screening=plan["screening"], method=run["method"])
+        protocol["selected_stages"](
+            run.get("start_stage", "pretrain_s0"), screening=plan["screening"], method=run["method"]
+        )
         if run["method"] == "navrl" and run.get("train_args"):
             parser.error("PPO must not receive Zhang train_args")
         target = (output / run["path"]).resolve()
@@ -222,43 +257,62 @@ def main():
             parser.error("Run outputs must be distinct descendants of queue output")
         targets.add(target)
         jobs[name] = {
-            **run, "output": str(target), "status": "queued", "pid": None,
+            **run,
+            "output": str(target),
+            "status": "queued",
+            "pid": None,
             "estimated_mib": estimated_mib(run),
             "command": command_for(source, target, plan, run, args.device),
         }
 
-    previous = read_json(output / 'queue.json') if args.resume else None
+    previous = read_json(output / "queue.json") if args.resume else None
     if args.resume and not previous:
-        parser.error('Resume requires an existing queue.json')
+        parser.error("Resume requires an existing queue.json")
     active = adopt_running_jobs(previous, jobs) if previous else {}
     output.mkdir(parents=True, exist_ok=args.resume)
     if previous:
         write_json(output / f"queue_before_takeover_{os.getpid()}.json", previous)
-        (output / f"plan_before_takeover_{os.getpid()}.json").write_bytes((output / 'plan.json').read_bytes())
+        (output / f"plan_before_takeover_{os.getpid()}.json").write_bytes((output / "plan.json").read_bytes())
     write_json(output / "plan.json", plan)
     environment = os.environ.copy()
     environment.update(
         NAVRL_EXPECTED_COMMIT=args.commit,
-        PYTHONPATH=str(source / "src"), PYTHONUNBUFFERED="1", OMNI_KIT_ACCEPT_EULA="YES",
-        OPENBLAS_NUM_THREADS="1", OMP_NUM_THREADS="1", MKL_NUM_THREADS="1",
+        PYTHONPATH=str(source / "src"),
+        PYTHONUNBUFFERED="1",
+        OMNI_KIT_ACCEPT_EULA="YES",
+        OPENBLAS_NUM_THREADS="1",
+        OMP_NUM_THREADS="1",
+        MKL_NUM_THREADS="1",
         PYTORCH_ALLOC_CONF="expandable_segments:True",
     )
     environment.pop("PYTORCH_CUDA_ALLOC_CONF", None)
     state = {
-        "status": "running", "created_at": now(), "queue_pid": os.getpid(),
-        "source": str(source), "source_commit": args.commit, "source_clean_at_start": True,
-        "dispatcher_source": str(dispatcher), "dispatcher_commit": dispatcher_commit,
+        "status": "running",
+        "created_at": now(),
+        "queue_pid": os.getpid(),
+        "source": str(source),
+        "source_commit": args.commit,
+        "source_clean_at_start": True,
+        "dispatcher_source": str(dispatcher),
+        "dispatcher_commit": dispatcher_commit,
         "dispatcher_clean_at_start": True,
         "plan_sha256": hashlib.sha256(plan_bytes).hexdigest(),
-        "gpu": args.gpu, "device": args.device,
+        "gpu": args.gpu,
+        "device": args.device,
         "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
-        "slots": args.slots, "reserve_mib": args.reserve_mib,
-        "launch_order": order, "runs": jobs, "stop_dispatch_reason": None,
+        "slots": args.slots,
+        "reserve_mib": args.reserve_mib,
+        "launch_order": order,
+        "runs": jobs,
+        "stop_dispatch_reason": None,
     }
     state_path = output / "queue.json"
     if previous:
-        state.update(previous_dispatcher_commit=previous['dispatcher_commit'], resumed_at=now(),
-                     previous_queue_pid=previous['queue_pid'])
+        state.update(
+            previous_dispatcher_commit=previous["dispatcher_commit"],
+            resumed_at=now(),
+            previous_queue_pid=previous["queue_pid"],
+        )
     failed = False
 
     def stop_dispatch(signum, _frame):
@@ -274,7 +328,7 @@ def main():
             job = jobs[name]
             if isinstance(process, int):
                 ticks = process_start_ticks(process)
-                if ticks == job['process_start_ticks']:
+                if ticks == job["process_start_ticks"]:
                     continue
                 code = None  # An adopted process is not our child; its exit code is unavailable.
             else:
@@ -284,14 +338,22 @@ def main():
             result = read_json(Path(job["output"]) / "training_result.json")
             status = result.get("status")
             valid = (
-                (code == 0 or isinstance(process, int)) and status in ("completed", "stopped")
+                (code == 0 or isinstance(process, int))
+                and status in ("completed", "stopped")
                 and result.get("method") == job["method"]
-                and result.get("screening") is True and result.get("num_envs") == 256
-                and result.get("acceptance_passed") is False and result.get("error") is None
+                and result.get("screening") is True
+                and result.get("num_envs") == 256
+                and result.get("acceptance_passed") is False
+                and result.get("error") is None
                 and (status != "completed" or result.get("stage_thresholds_passed") is True)
             )
-            job.update(status=status if valid else "failed", exit_code=code, finished_at=now(),
-                       result_status=status, error=result.get("error"))
+            job.update(
+                status=status if valid else "failed",
+                exit_code=code,
+                finished_at=now(),
+                result_status=status,
+                error=result.get("error"),
+            )
             del active[name]
             if not valid:
                 failed = True
@@ -320,18 +382,27 @@ def main():
                         if not state["stop_dispatch_reason"] and all(
                             current_stage_ready(jobs[item]) for item in active
                         ):
-                            job.update(status="starting", started_at=now(), free_before_mib=free, concurrent_pipelines_at_launch=len(active) + 1)
+                            job.update(
+                                status="starting",
+                                started_at=now(),
+                                free_before_mib=free,
+                                concurrent_pipelines_at_launch=len(active) + 1,
+                            )
                             write_json(state_path, state)
                             log_path = output / f"{name}.stdout.log"
                             job["stdout_log"] = str(log_path)
                             with log_path.open("xb") as stream:
                                 process = subprocess.Popen(
-                                    job["command"], cwd=source, env=environment, stdout=stream,
-                                    stderr=subprocess.STDOUT, start_new_session=True,
+                                    job["command"],
+                                    cwd=source,
+                                    env=environment,
+                                    stdout=stream,
+                                    stderr=subprocess.STDOUT,
+                                    start_new_session=True,
                                 )
                             active[name] = process
                             job.update(status="running", pid=process.pid, process_group=process.pid)
-                            job['source_commit'] = args.commit
+                            job["source_commit"] = args.commit
                             write_json(output / "zhang_manifest.json", launched_zhang_manifest(jobs, plan))
             except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
                 failed = True

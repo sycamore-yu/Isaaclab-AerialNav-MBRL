@@ -60,7 +60,7 @@ def obstacle_height_field(difficulty, cfg, rng=None):
                 break
             attempts += 1
         history.append((x, y, width, length))
-        heights[x:x + width, y:y + length] = height
+        heights[x : x + width, y : y + length] = height
     x1, x2 = (width_pixels - platform_width) // 2, (width_pixels + platform_width) // 2
     y1, y2 = (length_pixels - platform_width) // 2, (length_pixels + platform_width) // 2
     heights[x1:x2, y1:y2] = 0
@@ -79,11 +79,13 @@ def discrete_obstacles_terrain(difficulty, cfg):
     # Isaac Lab 3.0 asks the sampler for its unpadded origin as well as heights.
     x1, x2 = int((cfg.size[0] / 2 - 1) / cfg.horizontal_scale), int((cfg.size[0] / 2 + 1) / cfg.horizontal_scale)
     y1, y2 = int((cfg.size[1] / 2 - 1) / cfg.horizontal_scale), int((cfg.size[1] / 2 + 1) / cfg.horizontal_scale)
-    origin = np.array([
-        (cfg.size[0] - cfg.horizontal_scale) / 2,
-        (cfg.size[1] - cfg.horizontal_scale) / 2,
-        np.max(heights[x1:x2, y1:y2]) * cfg.vertical_scale,
-    ])
+    origin = np.array(
+        [
+            (cfg.size[0] - cfg.horizontal_scale) / 2,
+            (cfg.size[1] - cfg.horizontal_scale) / 2,
+            np.max(heights[x1:x2, y1:y2]) * cfg.vertical_scale,
+        ]
+    )
     return heights, origin
 
 
@@ -101,15 +103,32 @@ class NavRLObstaclesTerrainCfg(HfTerrainBaseCfg):
 
 def build_terrain_cfg(num_envs, num_obstacles, seed):
     return TerrainImporterCfg(
-        num_envs=num_envs, env_spacing=0.0, prim_path="/World/ground", terrain_type="generator",
+        num_envs=num_envs,
+        env_spacing=0.0,
+        prim_path="/World/ground",
+        terrain_type="generator",
         terrain_generator=TerrainGeneratorCfg(
-            seed=seed, size=(40.0, 40.0), border_width=5.0, num_rows=1, num_cols=1,
-            horizontal_scale=0.1, vertical_scale=0.1, slope_threshold=0.75,
-            use_cache=False, color_scheme="height",
-            sub_terrains={"obstacles": NavRLObstaclesTerrainCfg(
-                horizontal_scale=0.1, vertical_scale=0.1, border_width=0.0,
-                num_obstacles=num_obstacles,
-            )},
+            seed=seed,
+            size=(40.0, 40.0),
+            border_width=5.0,
+            num_rows=1,
+            num_cols=1,
+            horizontal_scale=0.1,
+            vertical_scale=0.1,
+            slope_threshold=0.75,
+            use_cache=False,
+            color_scheme="height",
+            sub_terrains={
+                "obstacles": NavRLObstaclesTerrainCfg(
+                    horizontal_scale=0.1,
+                    vertical_scale=0.1,
+                    border_width=0.0,
+                    num_obstacles=num_obstacles,
+                )
+            },
         ),
-        visual_material=None, max_init_terrain_level=None, collision_group=-1, debug_vis=False,
+        visual_material=None,
+        max_init_terrain_level=None,
+        collision_group=-1,
+        debug_vis=False,
     )

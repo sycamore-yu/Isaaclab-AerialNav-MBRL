@@ -58,9 +58,16 @@ def test_zero_dynamic_motion_and_navigation_keep_fixed_observation_shapes():
     drone = torch.tensor([[0.0, 0.0, 2.0], [1.0, 1.0, 2.0]])
     velocity = torch.zeros_like(drone)
     target = torch.tensor([[10.0, 0.0, 2.0], [10.0, 1.0, 2.0]])
-    terms = navigation_terms(drone, velocity, target, target - drone,
-                             torch.full((2, 1, 36, 4), 4.0), motion, velocity,
-                             torch.tensor([[0.5, 2.5], [0.5, 2.5]]))
+    terms = navigation_terms(
+        drone,
+        velocity,
+        target,
+        target - drone,
+        torch.full((2, 1, 36, 4), 4.0),
+        motion,
+        velocity,
+        torch.tensor([[0.5, 2.5], [0.5, 2.5]]),
+    )
     assert terms["dynamic_obstacle"].shape == (2, 1, 5, 10)
     torch.testing.assert_close(terms["dynamic_obstacle"], torch.zeros(2, 1, 5, 10))
     torch.testing.assert_close(terms["reward_dynamic"], torch.zeros(2))
@@ -75,14 +82,27 @@ def test_setting_zero_active_obstacles_does_not_require_a_dynamic_pose_buffer():
     from isaaclab_navrl.tasks.navigation.task_logic import DynamicObstacleMotion
 
     methods = isolated_methods(
-        "navrl_env.py", "NavRLEnv", ("set_active_obstacles", "_write_dynamic_obstacles"),
-        {"torch": torch, "active_obstacle_indices": active_obstacle_indices,
-         "DynamicObstacleMotion": DynamicObstacleMotion},
+        "navrl_env.py",
+        "NavRLEnv",
+        ("set_active_obstacles", "_write_dynamic_obstacles"),
+        {
+            "torch": torch,
+            "active_obstacle_indices": active_obstacle_indices,
+            "DynamicObstacleMotion": DynamicObstacleMotion,
+        },
     )
     env = SimpleNamespace(
-        cfg=SimpleNamespace(dynamic_capacity=lambda: 0, terrain_seed=0, method="zhang",
-                            dynamic_speed_range=(0.5, 1.5), num_dynamic_obstacles=0),
-        device="cpu", physics_dt=0.01, step_dt=0.1, dynamic_collection=None,
+        cfg=SimpleNamespace(
+            dynamic_capacity=lambda: 0,
+            terrain_seed=0,
+            method="zhang",
+            dynamic_speed_range=(0.5, 1.5),
+            num_dynamic_obstacles=0,
+        ),
+        device="cpu",
+        physics_dt=0.01,
+        step_dt=0.1,
+        dynamic_collection=None,
     )
     for name, method in methods.items():
         setattr(env, name, MethodType(method, env))
@@ -97,8 +117,7 @@ def test_empty_dynamic_geometry_keeps_ground_and_static_gradients(snapshots):
 
     from isaaclab_navrl.zhang.dcol import hybrid_collision_gap
 
-    query = torch.tensor([[[0.0, 0.0, 0.6], [0.0, 0.0, 1.2]],
-                          [[0.0, 0.0, 0.7], [0.0, 0.0, 1.3]]], requires_grad=True)
+    query = torch.tensor([[[0.0, 0.0, 0.6], [0.0, 0.0, 1.2]], [[0.0, 0.0, 0.7], [0.0, 0.0, 1.3]]], requires_grad=True)
     static_closest = query.detach().clone()
     static_closest[..., 0] = torch.tensor([[10.0, 0.1], [10.0, 0.1]])
     positions = torch.empty(2, 1, 0, 3) if snapshots else torch.empty(0, 3)
@@ -108,5 +127,6 @@ def test_empty_dynamic_geometry_keeps_ground_and_static_gradients(snapshots):
     gap = hybrid_collision_gap(query, 0.3, static_signed_distance, positions, torch.empty(0, 3))
     torch.testing.assert_close(gap, torch.tensor([[0.29, -0.2], [0.39, -0.2]]))
     gap.sum().backward()
-    torch.testing.assert_close(query.grad, torch.tensor([[[0.0, 0.0, 1.0], [-1.0, 0.0, 0.0]],
-                                                        [[0.0, 0.0, 1.0], [-1.0, 0.0, 0.0]]]))
+    torch.testing.assert_close(
+        query.grad, torch.tensor([[[0.0, 0.0, 1.0], [-1.0, 0.0, 0.0]], [[0.0, 0.0, 1.0], [-1.0, 0.0, 0.0]]])
+    )

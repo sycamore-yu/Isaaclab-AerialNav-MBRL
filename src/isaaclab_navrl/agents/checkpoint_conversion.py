@@ -58,9 +58,14 @@ def convert_original_state_dict(original: dict[str, torch.Tensor]) -> dict:
         if not torch.isfinite(parameter).all():
             raise ValueError("Original checkpoint contains non-finite model parameters")
     converted = algorithm.save()
-    converted.update(iter=0, infos={
-        "fresh": False, "converted_from_original_navrl": True,
-        "optimizer_reset": True, "value_normalization_folded_into_head": True,
-        "formal_acceptance_training_eligible": False,
-    })
+    converted.update(
+        iter=0,
+        infos={
+            "fresh": False,
+            "converted_from_original_navrl": True,
+            "optimizer_reset": True,
+            "value_normalization_folded_into_head": True,
+            "formal_acceptance_training_eligible": False,
+        },
+    )
     return converted

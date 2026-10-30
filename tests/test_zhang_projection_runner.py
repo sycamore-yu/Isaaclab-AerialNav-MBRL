@@ -64,9 +64,18 @@ def _trainer(path, cfg):
 
 @pytest.mark.parametrize("projection", ("none", "height_priority"))
 def test_runner_probe_uses_pre_call_state_and_changes_no_training_update(tmp_path, monkeypatch, projection):
-    cfg = ZhangTrainCfg(physics_dt=0.01, policy_dt=0.1, variant="step", velocity_loss_mode="variant_default",
-        timesteps=4, max_iterations=2, velocity_window_s=0.2, max_grad_norm=0.05,
-        observation_normalization=True, recovery_enabled=False, gradient_projection=projection,
+    cfg = ZhangTrainCfg(
+        physics_dt=0.01,
+        policy_dt=0.1,
+        variant="step",
+        velocity_loss_mode="variant_default",
+        timesteps=4,
+        max_iterations=2,
+        velocity_window_s=0.2,
+        max_grad_norm=0.05,
+        observation_normalization=True,
+        recovery_enabled=False,
+        gradient_projection=projection,
     )
     baseline = _trainer(tmp_path / "baseline", cfg)
     baseline_result = baseline.run()
@@ -81,9 +90,14 @@ def test_runner_probe_uses_pre_call_state_and_changes_no_training_update(tmp_pat
     checkpointed_forward = measured.model.forward_checkpointed
 
     def record_forward(depth, features, hidden):
-        entry = {name: value.detach().clone() for name, value in (
-            ("depth", depth), ("features", features), ("hidden", hidden),
-        )}
+        entry = {
+            name: value.detach().clone()
+            for name, value in (
+                ("depth", depth),
+                ("features", features),
+                ("hidden", hidden),
+            )
+        }
         result = checkpointed_forward(depth, features, hidden)
         entry["hidden_after_call"] = result[1].detach().clone()
         calls.append(entry)
@@ -163,7 +177,7 @@ def test_runner_probe_uses_pre_call_state_and_changes_no_training_update(tmp_pat
     if projection == "height_priority":
         expected_events.append("projection")
     expected_events.extend(("clip", "finish"))
-    assert events[-len(expected_events):] == expected_events
+    assert events[-len(expected_events) :] == expected_events
     assert events.count("probe") == events.count("finish") == 1
 
     assert len(calls) == 8  # No extra environment rollout or checkpointed policy call.

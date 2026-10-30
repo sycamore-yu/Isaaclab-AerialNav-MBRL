@@ -15,11 +15,23 @@ def randomize_zhang_parameters(env, env_ids, body_radius=0.3):
     """
     if not hasattr(env, "zhang_parameters"):
         env._zhang_rng = torch.Generator(device=env.device).manual_seed(env.cfg.seed + 1729)
-        shapes = {"max_speed": 1, "margin": None, "thr_est_error": 1,
-                  "pitch_ctl_delay": 1, "yaw_ctl_delay": 1, "drag_2": 2,
-                  "z_drag_coef": 1, "wind": 3, "dg": 3,
-                  "camera_pitch": None, "camera_fov_scale": None,
-                  "mass_scale": 1, "inertia_scale": 1, "thrust_scale": 1, "control_gain_scale": 1}
+        shapes = {
+            "max_speed": 1,
+            "margin": None,
+            "thr_est_error": 1,
+            "pitch_ctl_delay": 1,
+            "yaw_ctl_delay": 1,
+            "drag_2": 2,
+            "z_drag_coef": 1,
+            "wind": 3,
+            "dg": 3,
+            "camera_pitch": None,
+            "camera_fov_scale": None,
+            "mass_scale": 1,
+            "inertia_scale": 1,
+            "thrust_scale": 1,
+            "control_gain_scale": 1,
+        }
         env.zhang_parameters = {
             name: torch.zeros((env.num_envs,) if size is None else (env.num_envs, size), device=env.device)
             for name, size in shapes.items()
@@ -76,7 +88,6 @@ def update_zhang_disturbance(env, env_ids, interval_s=0.1):
         env_ids = torch.arange(env.num_envs, device=env.device)
     env_ids = torch.as_tensor(env_ids, device=env.device, dtype=torch.long)
     noise = torch.randn(len(env_ids), 3, device=env.device, generator=env._zhang_rng)
-    env.zhang_parameters["dg"][env_ids] = (
-        env.zhang_parameters["dg"][env_ids] * math.sqrt(1 - interval_s / 4)
-        + noise * 0.2 * math.sqrt(interval_s / 4)
-    )
+    env.zhang_parameters["dg"][env_ids] = env.zhang_parameters["dg"][env_ids] * math.sqrt(
+        1 - interval_s / 4
+    ) + noise * 0.2 * math.sqrt(interval_s / 4)

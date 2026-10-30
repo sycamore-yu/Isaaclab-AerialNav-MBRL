@@ -18,8 +18,12 @@ import warp as wp
 
 
 @wp.kernel
-def _closest_mesh_point(mesh: wp.uint64, points: wp.array(dtype=wp.vec3),
-                        triangles: wp.array(dtype=wp.vec3), output: wp.array(dtype=wp.vec3)):
+def _closest_mesh_point(
+    mesh: wp.uint64,
+    points: wp.array(dtype=wp.vec3),
+    triangles: wp.array(dtype=wp.vec3),
+    output: wp.array(dtype=wp.vec3),
+):
     index = wp.tid()
     query = wp.mesh_query_point_no_sign(mesh, points[index], 1.0e6)
     if query.result:
@@ -31,9 +35,7 @@ def _closest_mesh_point(mesh: wp.uint64, points: wp.array(dtype=wp.vec3),
 
 @wp.func
 def _height_hit(mesh: wp.uint64, point: wp.vec3, ray_top: float, ray_length: float):
-    return wp.mesh_query_ray(
-        mesh, wp.vec3(point[0], point[1], ray_top), wp.vec3(0.0, 0.0, -1.0), ray_length
-    )
+    return wp.mesh_query_ray(mesh, wp.vec3(point[0], point[1], ray_top), wp.vec3(0.0, 0.0, -1.0), ray_length)
 
 
 @wp.func
@@ -44,8 +46,12 @@ def _inside_height_field(mesh: wp.uint64, point: wp.vec3, ray_top: float, ray_le
 
 @wp.func
 def _exit_direction_valid(
-    mesh: wp.uint64, surface: wp.vec3, direction: wp.vec3,
-    ray_top: float, ray_length: float, probe: float,
+    mesh: wp.uint64,
+    surface: wp.vec3,
+    direction: wp.vec3,
+    ray_top: float,
+    ray_length: float,
+    probe: float,
 ):
     """Require a numerically separated crossing at this point, not its whole face.
 
@@ -67,8 +73,12 @@ def _exit_direction_valid(
 
 @wp.func
 def _surface_escape_normal(
-    mesh: wp.uint64, surface: wp.vec3, normal: wp.vec3,
-    ray_top: float, ray_length: float, probe: float,
+    mesh: wp.uint64,
+    surface: wp.vec3,
+    normal: wp.vec3,
+    ray_top: float,
+    ray_length: float,
+    probe: float,
 ):
     result = wp.vec3(0.0, 0.0, 0.0)
     if _exit_direction_valid(mesh, surface, normal, ray_top, ray_length, probe):
@@ -150,8 +160,10 @@ def _refine_nearby_surface(mesh: wp.uint64, point: wp.vec3, triangles: wp.array(
     """Refine the seed and correct face selection within a bounded near-surface neighborhood."""
     point64 = _as_vec3d(point)
     best = _closest_triangle_point_double(
-        point64, _as_vec3d(triangles[3 * seed_face]),
-        _as_vec3d(triangles[3 * seed_face + 1]), _as_vec3d(triangles[3 * seed_face + 2]),
+        point64,
+        _as_vec3d(triangles[3 * seed_face]),
+        _as_vec3d(triangles[3 * seed_face + 1]),
+        _as_vec3d(triangles[3 * seed_face + 2]),
     )
     best_squared = wp.dot(point64 - best, point64 - best)
     winner = seed_face
@@ -163,8 +175,10 @@ def _refine_nearby_surface(mesh: wp.uint64, point: wp.vec3, triangles: wp.array(
         face = int(0)  # noqa: UP018 - mutable Warp query index
         while wp.mesh_query_aabb_next(candidates, face):
             candidate = _closest_triangle_point_double(
-                point64, _as_vec3d(triangles[3 * face]),
-                _as_vec3d(triangles[3 * face + 1]), _as_vec3d(triangles[3 * face + 2]),
+                point64,
+                _as_vec3d(triangles[3 * face]),
+                _as_vec3d(triangles[3 * face + 1]),
+                _as_vec3d(triangles[3 * face + 2]),
             )
             squared = wp.dot(point64 - candidate, point64 - candidate)
             if squared < best_squared:
@@ -346,7 +360,12 @@ class TerrainDistance:
         nondegenerate = norm > 1e-12
         # Height-field cliff conversion can create zero-area triangles.  They
         # have no surface and must not win nearest-point/normal queries.
-        faces, triangles, normals, norm = faces[nondegenerate], triangles[nondegenerate], normals[nondegenerate], norm[nondegenerate]
+        faces, triangles, normals, norm = (
+            faces[nondegenerate],
+            triangles[nondegenerate],
+            normals[nondegenerate],
+            norm[nondegenerate],
+        )
         if not len(faces):
             raise ValueError("TerrainDistance requires at least one nondegenerate triangle.")
         normals = normals / norm[:, None]
@@ -355,13 +374,15 @@ class TerrainDistance:
             raise ValueError("A height-field terrain must have triangles with nonzero XY projection.")
         points = wp.array(vertices, dtype=wp.vec3, device=device)
         self.mesh = wp.Mesh(
-            points=points, indices=wp.array(faces.reshape(-1), dtype=wp.int32, device=device),
+            points=points,
+            indices=wp.array(faces.reshape(-1), dtype=wp.int32, device=device),
         )
         # A vertical face has zero projected area and is parallel to the ray.
         # Omitting it from *only* the occupancy BVH avoids coplanar cliff-hit
         # ambiguity; the complete mesh remains the nearest-surface geometry.
         self.height_mesh = wp.Mesh(
-            points=points, indices=wp.array(faces[projected].reshape(-1), dtype=wp.int32, device=device),
+            points=points,
+            indices=wp.array(faces[projected].reshape(-1), dtype=wp.int32, device=device),
         )
         self._face_normals = wp.array(normals, dtype=wp.vec3, device=device)
         self._face_centers = wp.array(triangles.mean(axis=1), dtype=wp.vec3, device=device)
@@ -371,8 +392,8 @@ class TerrainDistance:
         self._ray_length = float(self.bounds[1][2] - self.bounds[0][2]) + 2.0
         self._normal_probe = max(1e-4, float(np.abs(vertices).max()) * 8 * np.finfo(np.float32).eps)
         self.exit_height_guard_m = max(
-            1e-6, 8 * float(np.finfo(np.float32).eps)
-            * max(1.0, abs(self._ray_top), abs(self._ray_top - self._ray_length)),
+            1e-6,
+            8 * float(np.finfo(np.float32).eps) * max(1.0, abs(self._ray_top), abs(self._ray_top - self._ray_length)),
         )
 
     @classmethod
@@ -402,9 +423,12 @@ class TerrainDistance:
         output = torch.empty_like(points)
         stream = wp.stream_from_torch(torch.cuda.current_stream(points.device)) if points.is_cuda else None
         wp.launch(
-            _closest_mesh_point, dim=len(points),
+            _closest_mesh_point,
+            dim=len(points),
             inputs=[self.mesh.id, wp.from_torch(points, dtype=wp.vec3), self._triangle_points],
-            outputs=[wp.from_torch(output, dtype=wp.vec3)], device=self.device, stream=stream,
+            outputs=[wp.from_torch(output, dtype=wp.vec3)],
+            device=self.device,
+            stream=stream,
         )
         return output.reshape_as(query)
 
@@ -432,17 +456,37 @@ class TerrainDistance:
         if len(points):
             stream = wp.stream_from_torch(torch.cuda.current_stream(points.device)) if points.is_cuda else None
             wp.launch(
-                _signed_mesh_query, dim=len(points),
-                inputs=[self.mesh.id, self.height_mesh.id, wp.from_torch(points, dtype=wp.vec3), self._triangle_points,
-                        self._face_normals, self._face_centers, self._ray_top, self._ray_length, self._normal_probe,
-                        self.exit_search_radius_limit_m],
-                outputs=[wp.from_torch(closest, dtype=wp.vec3), wp.from_torch(mesh_closest, dtype=wp.vec3),
-                         wp.from_torch(outward, dtype=wp.vec3),
-                         wp.from_torch(inside, dtype=wp.int32), wp.from_torch(supported, dtype=wp.int32),
-                         wp.from_torch(height, dtype=wp.float32), wp.from_torch(exit_valid, dtype=wp.int32),
-                         wp.from_torch(used_exit_search, dtype=wp.int32)], device=self.device, stream=stream,
+                _signed_mesh_query,
+                dim=len(points),
+                inputs=[
+                    self.mesh.id,
+                    self.height_mesh.id,
+                    wp.from_torch(points, dtype=wp.vec3),
+                    self._triangle_points,
+                    self._face_normals,
+                    self._face_centers,
+                    self._ray_top,
+                    self._ray_length,
+                    self._normal_probe,
+                    self.exit_search_radius_limit_m,
+                ],
+                outputs=[
+                    wp.from_torch(closest, dtype=wp.vec3),
+                    wp.from_torch(mesh_closest, dtype=wp.vec3),
+                    wp.from_torch(outward, dtype=wp.vec3),
+                    wp.from_torch(inside, dtype=wp.int32),
+                    wp.from_torch(supported, dtype=wp.int32),
+                    wp.from_torch(height, dtype=wp.float32),
+                    wp.from_torch(exit_valid, dtype=wp.int32),
+                    wp.from_torch(used_exit_search, dtype=wp.int32),
+                ],
+                device=self.device,
+                stream=stream,
             )
-        closest, outward = closest.to(dtype=query.dtype).reshape_as(query), outward.to(dtype=query.dtype).reshape_as(query)
+        closest, outward = (
+            closest.to(dtype=query.dtype).reshape_as(query),
+            outward.to(dtype=query.dtype).reshape_as(query),
+        )
         inside, supported = inside.bool().reshape(shape), supported.bool().reshape(shape)
         length = (query - closest).norm(dim=-1)
         distance = torch.where(inside, -length, length)
@@ -458,8 +502,14 @@ class TerrainDistance:
         # adding a host/GPU synchronization to every policy geometry query.
         distance = distance.masked_fill(inside & ~exit_valid, torch.nan)
         return TerrainSignedQuery(
-            distance, closest, inside, height, supported, outward,
-            mesh_closest.to(dtype=query.dtype).reshape_as(query), exit_valid,
+            distance,
+            closest,
+            inside,
+            height,
+            supported,
+            outward,
+            mesh_closest.to(dtype=query.dtype).reshape_as(query),
+            exit_valid,
             used_exit_search.bool().reshape(shape),
         )
 
@@ -500,8 +550,9 @@ def primitive_signed_distance(query, positions, sizes):
     """
     delta = query - positions
     box = escape_abs(delta) - sizes * 0.5
-    cylinder = torch.stack((escape_norm_xy(delta) - sizes[..., 0] * 0.5,
-                            escape_abs(delta[..., 2]) - sizes[..., 2] * 0.5), dim=-1)
+    cylinder = torch.stack(
+        (escape_norm_xy(delta) - sizes[..., 0] * 0.5, escape_abs(delta[..., 2]) - sizes[..., 2] * 0.5), dim=-1
+    )
 
     def sdf(offset):
         return offset.clamp_min(0).norm(dim=-1) + offset.max(dim=-1).values.clamp_max(0)
@@ -519,7 +570,8 @@ def dynamic_signed_distance(query, positions, sizes):
         winner = torch.zeros(len(point), dtype=torch.long, device=query.device)
         for start in range(0, len(positions), 32):
             distance = primitive_signed_distance(
-                point[:, None], positions[None, start:start + 32], sizes[None, start:start + 32])
+                point[:, None], positions[None, start : start + 32], sizes[None, start : start + 32]
+            )
             value, index = distance.min(-1)
             winner = torch.where(value < best, index + start, winner)
             best = torch.minimum(value, best)
@@ -531,8 +583,10 @@ def nearest_obstacle_signed_distance(query, static_signed_distance, dynamic_posi
     """Minimum signed static/ground/full dynamic surface distance, before radius."""
     if static_signed_distance.shape != query.shape[:-1]:
         raise ValueError("static_signed_distance must have shape query.shape[:-1], not closest-point vectors.")
-    return torch.minimum(torch.minimum(static_signed_distance, query[..., 2] - ground_z),
-                         dynamic_signed_distance(query, dynamic_position, dynamic_size))
+    return torch.minimum(
+        torch.minimum(static_signed_distance, query[..., 2] - ground_z),
+        dynamic_signed_distance(query, dynamic_position, dynamic_size),
+    )
 
 
 def nearest_obstacle_vector(query, static_nearest, dynamic_position, dynamic_size):

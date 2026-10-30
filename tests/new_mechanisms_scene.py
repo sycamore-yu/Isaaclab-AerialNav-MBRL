@@ -57,8 +57,10 @@ def check_perception(env):
     assert camera._shared_mesh_view is None
     assert not any(target.track_mesh_transforms for target in camera._raycast_targets_cfg)
     return {
-        "source_resolution_hw": list(camera.image_shape), "policy_shape": list(policy.shape),
-        "last_raw_batch_shape": list(raw.shape), "finite": True,
+        "source_resolution_hw": list(camera.image_shape),
+        "policy_shape": list(policy.shape),
+        "last_raw_batch_shape": list(raw.shape),
+        "finite": True,
         "tracked_dynamic_bodies": camera._shared_mesh_count,
         "mesh_transform_info": camera.mesh_transform_info,
     }
@@ -87,9 +89,13 @@ def check_episode_height_target(env):
     torch.testing.assert_close(env.episode_id[ids.long()], before_episodes[ids.long()] + 1, rtol=0, atol=0)
     torch.testing.assert_close(observation["height_target"], snapshot, rtol=0, atol=0)
     return {
-        "range_m": [low, high], "sample_min_m": float(after.min()), "sample_max_m": float(after.max()),
-        "reset_lanes": ids.tolist(), "before_m": before[ids.long()].tolist(),
-        "after_m": after[ids.long()].tolist(), "unselected_targets_unchanged": True,
+        "range_m": [low, high],
+        "sample_min_m": float(after.min()),
+        "sample_max_m": float(after.max()),
+        "reset_lanes": ids.tolist(),
+        "before_m": before[ids.long()].tolist(),
+        "after_m": after[ids.long()].tolist(),
+        "unselected_targets_unchanged": True,
         "pre_reset_observation_immutable": True,
     }
 
@@ -128,13 +134,13 @@ def below_ground_recovery_gradient(env, action):
     assert float(first["position"][lane, 2]) < 0.0
     first_time = first["first_event_time_s"][lane].clone()
 
-    measured = env.root_state()[lane:lane + 1].detach().clone()
+    measured = env.root_state()[lane : lane + 1].detach().clone()
     position = measured[:, :3].clone().requires_grad_()
     velocity = measured[:, 7:10]
     acceleration = (velocity - initial_velocity) / env.step_dt
-    actuator = env.filtered_command[lane:lane + 1].detach().clone()
+    actuator = env.filtered_command[lane : lane + 1].detach().clone()
     state = PointMassState(position, velocity, acceleration, actuator)
-    parameters = {name: value[lane:lane + 1].detach().clone() for name, value in env.zhang_parameters.items()}
+    parameters = {name: value[lane : lane + 1].detach().clone() for name, value in env.zhang_parameters.items()}
     cfg = ZhangTrainCfg(variant="continuous", timesteps=2, max_iterations=1)
     lookahead = torch.linspace(0, cfg.policy_dt, 10, device=env.device)[None, :, None]
     query = position[:, None] + velocity[:, None] * lookahead
@@ -144,7 +150,7 @@ def below_ground_recovery_gradient(env, action):
     torch.testing.assert_close(terrain_surface[..., :2], query.detach()[..., :2], rtol=0, atol=1e-4)
     signed_distance = env.nearest_obstacle_signed_distance(query)
     assert bool((signed_distance < 0).all()) and bool(torch.isfinite(signed_distance).all())
-    height_target = env.target_pos[lane:lane + 1, 2].detach().clone()
+    height_target = env.target_pos[lane : lane + 1, 2].detach().clone()
 
     _, _, terminated, timeout, info = env.step(action)
     transition = info["transition"]
@@ -157,34 +163,48 @@ def below_ground_recovery_gradient(env, action):
     assert displacement > 1e-5
     assert not bool(transition["reached"][lane]) and int(env.first_reach_step[lane]) == 0
 
-    executed = transition["executed_action"][lane:lane + 1].detach()
+    executed = transition["executed_action"][lane : lane + 1].detach()
     torch.testing.assert_close(executed, torch.zeros_like(executed), rtol=0, atol=0)
     prediction = policy_transition(state, executed, quaternion_matrix(measured[:, 3:7]), parameters, cfg)
     terminal, _ = align_transition(
-        prediction, transition["position"][lane:lane + 1], transition["velocity"][lane:lane + 1], velocity,
-        (terminated | timeout)[lane:lane + 1], env.root_state()[lane:lane + 1, :3],
-        env.root_state()[lane:lane + 1, 7:10], cfg.policy_dt, transition["actuator"][lane:lane + 1],
+        prediction,
+        transition["position"][lane : lane + 1],
+        transition["velocity"][lane : lane + 1],
+        velocity,
+        (terminated | timeout)[lane : lane + 1],
+        env.root_state()[lane : lane + 1, :3],
+        env.root_state()[lane : lane + 1, 7:10],
+        cfg.policy_dt,
+        transition["actuator"][lane : lane + 1],
     )
-    zero = action[lane:lane + 1]
+    zero = action[lane : lane + 1]
     history = {
-        "velocity": [terminal.velocity], "target_velocity": [velocity.detach()],
-        "episode_id": [env.episode_id[lane:lane + 1].clone()], "position": [terminal.position],
-        "obstacle_signed_distance": [signed_distance], "height_target": [height_target],
+        "velocity": [terminal.velocity],
+        "target_velocity": [velocity.detach()],
+        "episode_id": [env.episode_id[lane : lane + 1].clone()],
+        "position": [terminal.position],
+        "obstacle_signed_distance": [signed_distance],
+        "height_target": [height_target],
         "margin": [parameters["margin"]],
-        "done": [(terminated | timeout)[lane:lane + 1].clone()],
-        "collision": [transition["collision"][lane:lane + 1]],
-        "bounds": [transition["bounds"][lane:lane + 1]],
-        "timeout": [transition["timeout"][lane:lane + 1]],
-        "invalid": [transition["invalid"][lane:lane + 1]],
-        "episode_step": [transition["step"][lane:lane + 1]],
-        "command": [zero], "previous_command": [zero],
-        "velocity_prediction": [velocity.detach()], "observed_velocity": [velocity.detach()],
+        "done": [(terminated | timeout)[lane : lane + 1].clone()],
+        "collision": [transition["collision"][lane : lane + 1]],
+        "bounds": [transition["bounds"][lane : lane + 1]],
+        "timeout": [transition["timeout"][lane : lane + 1]],
+        "invalid": [transition["invalid"][lane : lane + 1]],
+        "episode_step": [transition["step"][lane : lane + 1]],
+        "command": [zero],
+        "previous_command": [zero],
+        "velocity_prediction": [velocity.detach()],
+        "observed_velocity": [velocity.detach()],
     }
     losses, _, cost = zhang_transition_costs(history, cfg)
     torch.testing.assert_close(cost.mean(), losses["total"], rtol=0, atol=0)
     component_gradients = {}
-    for name, coefficient in (("obstacle_avoidance", cfg.coef_obj_avoidance),
-                              ("collision", cfg.coef_collide), ("height_boundary", cfg.coef_height_boundary)):
+    for name, coefficient in (
+        ("obstacle_avoidance", cfg.coef_obj_avoidance),
+        ("collision", cfg.coef_collide),
+        ("height_boundary", cfg.coef_height_boundary),
+    ):
         gradient = torch.autograd.grad(coefficient * losses[name], position, retain_graph=True)[0]
         assert bool(torch.isfinite(gradient).all()) and float(gradient[0, 2]) < 0.0
         component_gradients[name] = gradient[0].tolist()
@@ -195,21 +215,31 @@ def below_ground_recovery_gradient(env, action):
     begin, end, raw = env.scene["depth_camera"].last_depth_batch
     assert begin <= lane < end and bool(torch.isfinite(raw[lane - begin]).all())
     return {
-        "status": "passed", "manual_pose_probe": True, "policy_success_claimed": False,
-        "synthetic_detector_events": False, "lane": lane, "placement_m": placement[0].tolist(),
-        "episode_id_before": episode, "episode_id_after": int(env.episode_id[lane]),
-        "policy_steps_below_ground": 2, "continued_displacement_m": displacement,
+        "status": "passed",
+        "manual_pose_probe": True,
+        "policy_success_claimed": False,
+        "synthetic_detector_events": False,
+        "lane": lane,
+        "placement_m": placement[0].tolist(),
+        "episode_id_before": episode,
+        "episode_id_after": int(env.episode_id[lane]),
+        "policy_steps_below_ground": 2,
+        "continued_displacement_m": displacement,
         "first_event_code": int(transition["first_event_code"][lane]),
-        "first_event_time_s": float(first_time), "query_positions_m": query.detach()[0].tolist(),
+        "first_event_time_s": float(first_time),
+        "query_positions_m": query.detach()[0].tolist(),
         "actual_terrain_surfaces_m": terrain_surface[0].tolist(),
         "combined_signed_distance_m": signed_distance.detach()[0].tolist(),
-        "height_target_m": float(height_target[0]), "height_loss_mode": cfg.height_loss_mode,
+        "height_target_m": float(height_target[0]),
+        "height_loss_mode": cfg.height_loss_mode,
         "terminal_position_m": transition["position"][lane].tolist(),
         "losses": {name: float(value.detach()) for name, value in losses.items()},
         "weighted_component_position_gradients": component_gradients,
         "total_pre_step_position_gradient": total_gradient[0].tolist(),
-        "descent_recovers_upward": True, "gradient_uses_existing_aligned_point_mass_adjoint": True,
-        "physx_contact_jacobian": False, "depth_camera": perception,
+        "descent_recovers_upward": True,
+        "gradient_uses_existing_aligned_point_mass_adjoint": True,
+        "physx_contact_jacobian": False,
+        "depth_camera": perception,
         "probe_raw_depth_finite": True,
     }
 
@@ -232,20 +262,18 @@ def real_static_collision(env, action):
     assert bool(deep.any()), "Actual terrain must supply interior samples"
     escaped = env.terrain_distance.signed_distance(query[deep] + 0.001 * normal[deep])
     assert bool((escaped > distance[deep]).all()), "Actual terrain interior gradients must escape"
-    eligible = ((distance > 0.12) & (distance < 0.28) & torch.isfinite(distance)
-                & (normal[:, 2].abs() < 0.02))
+    eligible = (distance > 0.12) & (distance < 0.28) & torch.isfinite(distance) & (normal[:, 2].abs() < 0.02)
     candidates = eligible.nonzero().flatten()
     if not len(candidates):
         return {"status": "no_eligible_vertical_surface", "attempts": [], "synthetic_detector_events": False}
     # Spread candidates across the map instead of probing eight copies of one face.
-    selected = candidates[torch.linspace(0, len(candidates) - 1, min(8, len(candidates)),
-                                         device=env.device).long()]
+    selected = candidates[torch.linspace(0, len(candidates) - 1, min(8, len(candidates)), device=env.device).long()]
     attempts = []
     lane = 6
     ids = torch.tensor([lane], dtype=torch.int32, device=env.device)
     for index in selected.cpu().tolist():
         env._reset_idx(ids)
-        position = query[index:index + 1]
+        position = query[index : index + 1]
         toward = delta[index, :2]
         unit = toward / toward.norm()
         velocity = position.new_zeros(1, 3)
@@ -259,10 +287,14 @@ def real_static_collision(env, action):
         _, _, terminated, timeout, info = env.step(action)
         transition = info["transition"]
         record = {
-            "position_m": position[0].tolist(), "nearest_surface_m": closest[index].tolist(),
-            "distance_m": float(distance[index]), "collision": bool(transition["collision"][lane]),
-            "bounds": bool(transition["bounds"][lane]), "terminated": bool(terminated[lane]),
-            "timeout": bool(timeout[lane]), "first_event_code": int(transition["first_event_code"][lane]),
+            "position_m": position[0].tolist(),
+            "nearest_surface_m": closest[index].tolist(),
+            "distance_m": float(distance[index]),
+            "collision": bool(transition["collision"][lane]),
+            "bounds": bool(transition["bounds"][lane]),
+            "terminated": bool(terminated[lane]),
+            "timeout": bool(timeout[lane]),
+            "first_event_code": int(transition["first_event_code"][lane]),
         }
         attempts.append(record)
         if not record["collision"]:
@@ -280,8 +312,9 @@ def real_static_collision(env, action):
             assert not bool(next_terminated[lane] | next_timeout[lane])
             assert int(env.episode_id[lane]) == episode
             assert int(following["first_event_code"][lane]) == 2
-            torch.testing.assert_close(following["first_event_time_s"][lane],
-                                       transition["first_event_time_s"][lane], rtol=0, atol=0)
+            torch.testing.assert_close(
+                following["first_event_time_s"][lane], transition["first_event_time_s"][lane], rtol=0, atol=0
+            )
             record["continued_displacement_m"] = displacement
         return {"status": "observed", "attempts": attempts, "synthetic_detector_events": False}
     # Report an unobserved optional geometry probe honestly. The explicit event
@@ -314,12 +347,15 @@ def check_failures(env, action):
                 for name in ("collision", "bounds", "invalid", "reached"):
                     terms[name][lane] = name == event
             return terms
+
         return compute
 
     env._compute_terms = inject(original_terms)
     env._compute_first_events = inject(original_events)
-    result = {"synthetic_detector_events": {"collision": [2], "invalid": [3]},
-              "real_pose_bounds": {"lower_lane": 0, "lower_z_m": 0.15, "upper_lane": 1, "upper_z_m": 4.3}}
+    result = {
+        "synthetic_detector_events": {"collision": [2], "invalid": [3]},
+        "real_pose_bounds": {"lower_lane": 0, "lower_z_m": 0.15, "upper_lane": 1, "upper_z_m": 4.3},
+    }
     try:
         initial_episodes = env.episode_id.clone()
         _, _, terminated, timeout, info = env.step(action)
@@ -337,9 +373,11 @@ def check_failures(env, action):
         if continuous:
             assert bool((displacement > 1e-4).all())
         result["first_failure"] = {
-            "episode_id_before": initial_episodes[:3].tolist(), "episode_id_after": env.episode_id[:3].tolist(),
+            "episode_id_before": initial_episodes[:3].tolist(),
+            "episode_id_after": env.episode_id[:3].tolist(),
             "first_event_codes": transition["first_event_code"][:3].tolist(),
-            "first_event_times_s": first_times.tolist(), "forward_displacement_m": displacement.tolist(),
+            "first_event_times_s": first_times.tolist(),
+            "forward_displacement_m": displacement.tolist(),
             "terminated": terminated[:3].tolist(),
         }
         if env.cfg.variant == "dcol":
@@ -368,9 +406,12 @@ def check_failures(env, action):
             assert bool((env.first_reach_step[:3] == 0).all())
         else:
             assert bool((env.first_reach_step[:3] > 0).all())
-        result["recovery"] = {"actual_reached": True, "episode_id_unchanged": True,
-                              "first_event_codes": recovery_codes.tolist(),
-                              "prior_failure_not_overwritten": continuous}
+        result["recovery"] = {
+            "actual_reached": True,
+            "episode_id_unchanged": True,
+            "first_event_codes": recovery_codes.tolist(),
+            "prior_failure_not_overwritten": continuous,
+        }
 
         # Exercise invalid without writing NaNs into the physics engine. The
         # timeout lane has never reached or failed, so its first code must be 5.
@@ -397,9 +438,14 @@ def check_failures(env, action):
         # Same-step resets and subsequent simulation must not mutate snapshots.
         torch.testing.assert_close(transition["first_event_code"][:3], expected, rtol=0, atol=0)
         torch.testing.assert_close(transition["position"][:3], first_position, rtol=0, atol=0)
-        result["reset_checks"] = {"invalid_resets": True, "timeout_resets": True,
-                                  "unaffected_lane_keeps_episode": True, "first_outcome_survives_to_timeout": True,
-                                  "reset_clears_first_event": True, "old_snapshot_immutable": True}
+        result["reset_checks"] = {
+            "invalid_resets": True,
+            "timeout_resets": True,
+            "unaffected_lane_keeps_episode": True,
+            "first_outcome_survives_to_timeout": True,
+            "reset_clears_first_event": True,
+            "old_snapshot_immutable": True,
+        }
         return result
     finally:
         env._compute_terms = original_terms
@@ -421,10 +467,19 @@ def main():
     import isaaclab_navrl.tasks  # noqa: F401
     from isaaclab_navrl.tasks.navigation.config.hummingbird.env_cfg import ZhangNavRLEnvCfg
 
-    result = {"test": "new_mechanisms_scene", "variant": args.variant, "stage": "pretrain_s0",
-              "num_envs": 64, "static_obstacles": 300, "dynamic_obstacles": 0,
-              "randomization": False, "policy_acceptance_test": False, "training_success_statistics": False,
-              "status": "running", "current_check": "configuration"}
+    result = {
+        "test": "new_mechanisms_scene",
+        "variant": args.variant,
+        "stage": "pretrain_s0",
+        "num_envs": 64,
+        "static_obstacles": 300,
+        "dynamic_obstacles": 0,
+        "randomization": False,
+        "policy_acceptance_test": False,
+        "training_success_statistics": False,
+        "status": "running",
+        "current_check": "configuration",
+    }
 
     def progress(name):
         result["current_check"] = name
@@ -485,8 +540,9 @@ def main():
                 result.update(status="passed", current_check="complete")
                 write_result(args.output, result)
             except BaseException as error:
-                result.update(status="failed", error=f"{type(error).__name__}: {error}",
-                              traceback=traceback.format_exc())
+                result.update(
+                    status="failed", error=f"{type(error).__name__}: {error}", traceback=traceback.format_exc()
+                )
                 write_result(args.output, result)
                 raise
             finally:
@@ -496,8 +552,7 @@ def main():
         # Best effort for configuration/launcher errors before entering Kit.
         # In-context assertion failures were already persisted before close.
         if result["status"] != "failed":
-            result.update(status="failed", error=f"{type(error).__name__}: {error}",
-                          traceback=traceback.format_exc())
+            result.update(status="failed", error=f"{type(error).__name__}: {error}", traceback=traceback.format_exc())
             write_result(args.output, result)
         raise
 

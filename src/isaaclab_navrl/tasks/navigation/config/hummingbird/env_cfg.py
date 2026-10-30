@@ -81,20 +81,35 @@ def make_dynamic_cfg(count: int, seed: int) -> RigidObjectCollectionCfg | None:
 @configclass
 class NavigationEventsCfg:
     nominal_dynamics = EventTermCfg(
-        func="isaaclab_navrl.tasks.navigation.randomization:capture_nominal_dynamics", mode="startup",
+        func="isaaclab_navrl.tasks.navigation.randomization:capture_nominal_dynamics",
+        mode="startup",
     )
     mass = EventTermCfg(
-        func="isaaclab.envs.mdp.events:randomize_rigid_body_mass", mode="reset",
-        params={"asset_cfg": SceneEntityCfg("drone"), "mass_distribution_params": (0.9, 1.1),
-                "operation": "scale", "distribution": "uniform", "recompute_inertia": False, "min_mass": 1e-6},
+        func="isaaclab.envs.mdp.events:randomize_rigid_body_mass",
+        mode="reset",
+        params={
+            "asset_cfg": SceneEntityCfg("drone"),
+            "mass_distribution_params": (0.9, 1.1),
+            "operation": "scale",
+            "distribution": "uniform",
+            "recompute_inertia": False,
+            "min_mass": 1e-6,
+        },
     )
     inertia = EventTermCfg(
-        func="isaaclab.envs.mdp.events:randomize_rigid_body_inertia", mode="reset",
-        params={"asset_cfg": SceneEntityCfg("drone"), "inertia_distribution_params": (0.9, 1.1),
-                "operation": "scale", "distribution": "uniform", "diagonal_only": False},
+        func="isaaclab.envs.mdp.events:randomize_rigid_body_inertia",
+        mode="reset",
+        params={
+            "asset_cfg": SceneEntityCfg("drone"),
+            "inertia_distribution_params": (0.9, 1.1),
+            "operation": "scale",
+            "distribution": "uniform",
+            "diagonal_only": False,
+        },
     )
     policy_parameters = EventTermCfg(
-        func="isaaclab_navrl.tasks.navigation.randomization:reset_sim_to_real", mode="reset",
+        func="isaaclab_navrl.tasks.navigation.randomization:reset_sim_to_real",
+        mode="reset",
     )
 
 
@@ -133,7 +148,10 @@ class NavRLEnvCfg(DirectRLEnvCfg):
         ),
     )
     scene = SharedNavigationSceneCfg(
-        num_envs=1024, env_spacing=8.0, replicate_physics=False, filter_collisions=True,
+        num_envs=1024,
+        env_spacing=8.0,
+        replicate_physics=False,
+        filter_collisions=True,
     )
 
     def __post_init__(self):
@@ -178,9 +196,15 @@ class NavRLEnvCfg(DirectRLEnvCfg):
             update_period=self.sim.dt * self.decimation,
             seed=self.seed + 101,
             pixel_noise_std=(
-                0.0 if self.evaluation else
-                (self.sim_to_real.depth_std if self.sim_to_real.enabled and self.sim_to_real.observation_noise else 0.0)
-                if self.training_stage is not None or self.sim_to_real.enabled else 0.02
+                0.0
+                if self.evaluation
+                else (
+                    self.sim_to_real.depth_std
+                    if self.sim_to_real.enabled and self.sim_to_real.observation_noise
+                    else 0.0
+                )
+                if self.training_stage is not None or self.sim_to_real.enabled
+                else 0.02
             ),
             mesh_prim_paths=meshes,
             offset=MultiMeshRayCasterCameraCfg.OffsetCfg(
@@ -188,9 +212,9 @@ class NavRLEnvCfg(DirectRLEnvCfg):
             ),
             pattern_cfg=patterns.PinholeCameraPatternCfg.from_intrinsic_matrix(
                 # Scale the NavRL calibration with the image to preserve its field of view.
-                [554.254691191187 / 4, 0.0, 320.5 / 4,
-                 0.0, 554.254691191187 / 4, 240.5 / 4, 0.0, 0.0, 1.0],
-                width=160, height=120,
+                [554.254691191187 / 4, 0.0, 320.5 / 4, 0.0, 554.254691191187 / 4, 240.5 / 4, 0.0, 0.0, 1.0],
+                width=160,
+                height=120,
             ),
             max_distance=24.0,
             depth_clipping_behavior="max",
@@ -204,11 +228,15 @@ class NavRLEnvCfg(DirectRLEnvCfg):
 @configclass
 class ZhangEventsCfg(NavigationEventsCfg):
     parameters = EventTermCfg(
-        func="isaaclab_navrl.zhang.events:randomize_zhang_parameters", mode="reset",
+        func="isaaclab_navrl.zhang.events:randomize_zhang_parameters",
+        mode="reset",
     )
     disturbance = EventTermCfg(
-        func="isaaclab_navrl.zhang.events:update_zhang_disturbance", mode="interval",
-        interval_range_s=(0.1, 0.1), is_global_time=True, params={"interval_s": 0.1},
+        func="isaaclab_navrl.zhang.events:update_zhang_disturbance",
+        mode="interval",
+        interval_range_s=(0.1, 0.1),
+        is_global_time=True,
+        params={"interval_s": 0.1},
     )
 
 

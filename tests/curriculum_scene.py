@@ -61,28 +61,41 @@ def main():
                 distance = env.nearest_obstacle_signed_distance(query)
                 distance.square().sum().backward()
                 assert torch.isfinite(query.grad).all()
-                stages.append({"active_obstacles": difficulty, "allocated_obstacles": 120,
-                               "depth_finite": True, "distance_gradient_finite": True})
+                stages.append(
+                    {
+                        "active_obstacles": difficulty,
+                        "allocated_obstacles": 120,
+                        "depth_finite": True,
+                        "distance_gradient_finite": True,
+                    }
+                )
                 if difficulty != 120:
                     env.curriculum.counts.zero_()
                     env.curriculum.time_sum.zero_()
                     env.curriculum.return_sum.zero_()
                     env.curriculum.length_sum.zero_()
                     env.curriculum.reset_episodes()
-                    env.curriculum.observe({
-                        "first_event_code": torch.ones(4, dtype=torch.long, device=env.device),
-                        "first_event_time_s": torch.ones(4, device=env.device),
-                        "terminated": torch.ones(4, dtype=torch.bool, device=env.device),
-                        "timeout": torch.zeros(4, dtype=torch.bool, device=env.device),
-                        "episode_return": torch.zeros(4, device=env.device),
-                        "step": torch.ones(4, dtype=torch.long, device=env.device),
-                    })
+                    env.curriculum.observe(
+                        {
+                            "first_event_code": torch.ones(4, dtype=torch.long, device=env.device),
+                            "first_event_time_s": torch.ones(4, device=env.device),
+                            "terminated": torch.ones(4, dtype=torch.bool, device=env.device),
+                            "timeout": torch.zeros(4, dtype=torch.bool, device=env.device),
+                            "episode_return": torch.zeros(4, device=env.device),
+                            "step": torch.ones(4, dtype=torch.long, device=env.device),
+                        }
+                    )
                     env.curriculum.pop_report()
                     ids = env.episode_id.clone()
                     env.advance_curriculum()
                     assert torch.equal(env.episode_id, ids + 1)
-            result = {"test": "curriculum_scene", "synthetic_promotion_outcomes": True,
-                      "policy_acceptance_test": False, "status": "passed", "stages": stages}
+            result = {
+                "test": "curriculum_scene",
+                "synthetic_promotion_outcomes": True,
+                "policy_acceptance_test": False,
+                "status": "passed",
+                "stages": stages,
+            }
             args.output.parent.mkdir(parents=True, exist_ok=True)
             args.output.write_text(json.dumps(result, indent=2) + "\n")
             print("CURRICULUM_SCENE " + json.dumps(result), flush=True)

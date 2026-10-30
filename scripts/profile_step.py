@@ -128,21 +128,29 @@ def main():
             for label, values in totals.items():
                 calls, wall_s = values["calls"], values["wall_s"]
                 phases[label] = {
-                    "calls": calls, "wall_s": wall_s,
+                    "calls": calls,
+                    "wall_s": wall_s,
                     "mean_ms_per_call": wall_s * 1000 / calls if calls else None,
                     "ms_per_policy_step": wall_s * 1000 / args.measured,
                 }
             result = {
-                "method": args.method, "num_envs": args.num_envs, "device": str(env.device),
-                "warmup_policy_steps": args.warmup, "measured_policy_steps_per_run": args.measured,
-                "physics_dt": env.physics_dt, "policy_dt": env.step_dt, "decimation": cfg.decimation,
+                "method": args.method,
+                "num_envs": args.num_envs,
+                "device": str(env.device),
+                "warmup_policy_steps": args.warmup,
+                "measured_policy_steps_per_run": args.measured,
+                "physics_dt": env.physics_dt,
+                "policy_dt": env.step_dt,
+                "decimation": cfg.decimation,
                 "camera_batch_size": args.camera_batch_size if args.method == "zhang" else None,
                 "controller_capture_setup_wall_s": getattr(env.controller, "capture_setup_wall_s", 0.0),
-                "static_obstacles": cfg.num_static_obstacles, "dynamic_obstacles": cfg.num_dynamic_obstacles,
+                "static_obstacles": cfg.num_static_obstacles,
+                "dynamic_obstacles": cfg.num_dynamic_obstacles,
                 "workload": "zero command environment steps, including depth sampling for Zhang; no policy or BPTT",
                 "runs": "warmup, uninstrumented baseline, then instrumented phases in the same shared world",
                 "baseline": {
-                    "wall_s": baseline_s, "ms_per_policy_step": baseline_s * 1000 / args.measured,
+                    "wall_s": baseline_s,
+                    "ms_per_policy_step": baseline_s * 1000 / args.measured,
                     "ms_per_physics_step": baseline_s * 1000 / (args.measured * cfg.decimation),
                     "environment_transitions_per_s": args.num_envs * args.measured / baseline_s,
                     "cuda_sync": "run boundaries only",

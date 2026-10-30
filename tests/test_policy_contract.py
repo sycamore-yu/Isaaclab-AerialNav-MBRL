@@ -22,7 +22,13 @@ from isaaclab_navrl.agents.rsl_rl_cfg import NavRLPpoRunnerCfg
 def make_models(batch=8):
     observation = TensorDict({"policy": torch.randn(batch, 202)}, batch_size=[batch])
     groups = {"actor": ["policy"], "critic": ["policy"]}
-    actor = NavRLActor(observation, groups, "actor", 3, {"class_name": "rsl_rl.modules.distribution:BetaDistribution", "action_range": (-2., 2.)})
+    actor = NavRLActor(
+        observation,
+        groups,
+        "actor",
+        3,
+        {"class_name": "rsl_rl.modules.distribution:BetaDistribution", "action_range": (-2.0, 2.0)},
+    )
     critic = NavRLCritic(observation, groups, "critic", 1, cnns=actor.cnns)
     return observation, actor, critic
 
@@ -98,7 +104,12 @@ def test_official_ppo_updates_and_checkpoint_roundtrip(tmp_path):
     expected_value = runner.alg.critic(probe).detach()
     checkpoint = tmp_path / "checkpoint.pt"
     runner.save(str(checkpoint), infos={"fixture": True})
-    loaded = OnPolicyRunner(TinyVecEnv(), handle_deprecated_rsl_rl_cfg(NavRLPpoRunnerCfg(), version("rsl-rl-lib")).to_dict(), log_dir=None, device="cpu")
+    loaded = OnPolicyRunner(
+        TinyVecEnv(),
+        handle_deprecated_rsl_rl_cfg(NavRLPpoRunnerCfg(), version("rsl-rl-lib")).to_dict(),
+        log_dir=None,
+        device="cpu",
+    )
     assert loaded.load(str(checkpoint), map_location="cpu") == {"fixture": True}
     torch.testing.assert_close(loaded.get_inference_policy()(probe), expected_action, rtol=0, atol=0)
     torch.testing.assert_close(loaded.alg.critic(probe), expected_value, rtol=0, atol=0)
@@ -129,8 +140,9 @@ def test_encoder_against_actual_upstream_source():
     init = next(node for node in ppo_class.body if isinstance(node, ast.FunctionDef) and node.name == "__init__")
     names = {"feature_extractor_network", "dynamic_obstacle_network"}
     assignments = [
-        node for node in init.body if isinstance(node, ast.Assign)
-        and isinstance(node.targets[0], ast.Name) and node.targets[0].id in names
+        node
+        for node in init.body
+        if isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Name) and node.targets[0].id in names
     ]
     exec(compile(ast.Module(assignments, type_ignores=[]), "upstream-ppo", "exec"), namespace)
     lidar = namespace["feature_extractor_network"]
@@ -147,10 +159,16 @@ def test_encoder_against_actual_upstream_source():
     dynamic[1].load_state_dict(actor.cnns.dynamic.state_dict())
     fusion.load_state_dict(actor.cnns.fusion.state_dict())
     reference_head.load_state_dict(actor.mlp.state_dict())
-    reference_features = fusion(torch.cat((
-            lidar(flat[:, 8:152].reshape(-1, 1, 36, 4)),
-            dynamic(flat[:, 152:].reshape(-1, 1, 5, 10)), flat[:, :8],
-    ), dim=-1))
+    reference_features = fusion(
+        torch.cat(
+            (
+                lidar(flat[:, 8:152].reshape(-1, 1, 36, 4)),
+                dynamic(flat[:, 152:].reshape(-1, 1, 5, 10)),
+                flat[:, :8],
+            ),
+            dim=-1,
+        )
+    )
     torch.testing.assert_close(actor.cnns(flat), reference_features, rtol=0, atol=0)
     alpha, beta = reference_head(reference_features)
     torch.testing.assert_close(actor(obs), 4 * alpha / (alpha + beta) - 2, rtol=1e-5, atol=1e-6)
@@ -159,5 +177,10 @@ def test_encoder_against_actual_upstream_source():
 def test_public_distribution_overrides_cannot_silently_change_exported_action_units():
     observation = TensorDict({"policy": torch.zeros(2, 202)}, batch_size=[2])
     with pytest.raises(ValueError, match="fixed"):
-        NavRLActor(observation, {"actor": ["policy"]}, "actor", 3,
-                   {"class_name": "rsl_rl.modules.distribution:BetaDistribution", "action_range": (-1., 1.)})
+        NavRLActor(
+            observation,
+            {"actor": ["policy"]},
+            "actor",
+            3,
+            {"class_name": "rsl_rl.modules.distribution:BetaDistribution", "action_range": (-1.0, 1.0)},
+        )

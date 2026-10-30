@@ -19,14 +19,16 @@ def test_bpearl_angles_and_flattening_match_original():
     root = NAVRL
     path = "isaac-training/third_party/orbit/source/extensions/omni.isaac.orbit/omni/isaac/orbit/sensors/ray_caster/patterns/patterns.py"
     source = subprocess.check_output(["git", "show", f"HEAD:{path}"], cwd=root, text=True)
-    original = next(node for node in ast.parse(source).body
-                    if isinstance(node, ast.FunctionDef) and node.name == "bpearl_pattern")
-    tree = ast.Module(body=[ast.ImportFrom(module="__future__", names=[ast.alias(name="annotations")], level=0),
-                           original], type_ignores=[])
+    original = next(
+        node for node in ast.parse(source).body if isinstance(node, ast.FunctionDef) and node.name == "bpearl_pattern"
+    )
+    tree = ast.Module(
+        body=[ast.ImportFrom(module="__future__", names=[ast.alias(name="annotations")], level=0), original],
+        type_ignores=[],
+    )
     namespace = {"torch": torch}
     exec(compile(ast.fix_missing_locations(tree), path, "exec"), namespace)
-    cfg = SimpleNamespace(horizontal_fov=360.0, horizontal_res=10.0,
-                          vertical_ray_angles=torch.linspace(-10.0, 20.0, 4))
+    cfg = SimpleNamespace(horizontal_fov=360.0, horizontal_res=10.0, vertical_ray_angles=torch.linspace(-10.0, 20.0, 4))
     old_start, old_direction = namespace["bpearl_pattern"](cfg, "cpu")
     new_cfg = patterns.BpearlPatternCfg(horizontal_res=10.0, vertical_ray_angles=(-10.0, 0.0, 10.0, 20.0))
     new_start, new_direction = patterns.bpearl_pattern(new_cfg, "cpu")
@@ -40,7 +42,9 @@ def test_yaw_rotates_both_origins_and_directions_without_roll_or_pitch():
     torch.manual_seed(13)
     count, rays = 3, 144
     quaternion = quat_from_euler_xyz(
-        torch.tensor([0.0, 0.4, -0.5]), torch.tensor([0.0, -0.3, 0.6]), torch.tensor([0.0, 1.5707963, -0.7]),
+        torch.tensor([0.0, 0.4, -0.5]),
+        torch.tensor([0.0, -0.3, 0.6]),
+        torch.tensor([0.0, 1.5707963, -0.7]),
     )
     position = torch.randn(count, 3)
     transforms = torch.cat((position, quaternion), -1).contiguous()
@@ -55,13 +59,34 @@ def test_yaw_rotates_both_origins_and_directions_without_roll_or_pitch():
     world_directions = wp.zeros((count, rays), dtype=wp.vec3f, device="cpu")
     starts_wp = wp.from_torch(starts, dtype=wp.vec3f)
     directions_wp = wp.from_torch(directions, dtype=wp.vec3f)
-    wp.launch(update_ray_caster_kernel, dim=(count, rays), device="cpu", inputs=[
-        wp.from_torch(transforms, dtype=wp.transformf), mask, zero, identity, zero, zero,
-        starts_wp, directions_wp, 1,
-    ], outputs=[out_position, out_quaternion, world_starts, world_directions])
-    wp.launch(rotate_directions_with_yaw, dim=(count, rays), device="cpu", inputs=[
-        out_quaternion, mask, directions_wp,
-    ], outputs=[world_directions])
+    wp.launch(
+        update_ray_caster_kernel,
+        dim=(count, rays),
+        device="cpu",
+        inputs=[
+            wp.from_torch(transforms, dtype=wp.transformf),
+            mask,
+            zero,
+            identity,
+            zero,
+            zero,
+            starts_wp,
+            directions_wp,
+            1,
+        ],
+        outputs=[out_position, out_quaternion, world_starts, world_directions],
+    )
+    wp.launch(
+        rotate_directions_with_yaw,
+        dim=(count, rays),
+        device="cpu",
+        inputs=[
+            out_quaternion,
+            mask,
+            directions_wp,
+        ],
+        outputs=[world_directions],
+    )
     rotations = quaternion[:, None].expand(-1, rays, -1).contiguous()
     expected_start = quat_apply_yaw(rotations, starts) + position[:, None]
     expected_direction = quat_apply_yaw(rotations, directions)

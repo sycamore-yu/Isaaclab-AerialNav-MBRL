@@ -13,10 +13,14 @@ class ZhangPolicy(nn.Module):
     def __init__(self):
         super().__init__()
         self.stem = nn.Sequential(
-            nn.Conv2d(1, 32, 2, 2, bias=False), nn.LeakyReLU(0.05),
-            nn.Conv2d(32, 64, 3, bias=False), nn.LeakyReLU(0.05),
-            nn.Conv2d(64, 128, 3, bias=False), nn.LeakyReLU(0.05),
-            nn.Flatten(), nn.Linear(128 * 2 * 4, 192, bias=False),
+            nn.Conv2d(1, 32, 2, 2, bias=False),
+            nn.LeakyReLU(0.05),
+            nn.Conv2d(32, 64, 3, bias=False),
+            nn.LeakyReLU(0.05),
+            nn.Conv2d(64, 128, 3, bias=False),
+            nn.LeakyReLU(0.05),
+            nn.Flatten(),
+            nn.Linear(128 * 2 * 4, 192, bias=False),
         )
         self.v_proj = nn.Linear(10, 192)
         self.gru = nn.GRUCell(192, 192)
@@ -39,11 +43,20 @@ class ZhangPolicy(nn.Module):
 def quaternion_matrix(quaternion):
     """Body-to-world matrix for Isaac Lab 3.0 XYZW unit quaternions."""
     x, y, z, w = quaternion.unbind(-1)
-    return torch.stack((
-        1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w),
-        2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w),
-        2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y),
-    ), dim=-1).reshape(*quaternion.shape[:-1], 3, 3)
+    return torch.stack(
+        (
+            1 - 2 * (y * y + z * z),
+            2 * (x * y - z * w),
+            2 * (x * z + y * w),
+            2 * (x * y + z * w),
+            1 - 2 * (x * x + z * z),
+            2 * (y * z - x * w),
+            2 * (x * z - y * w),
+            2 * (y * z + x * w),
+            1 - 2 * (x * x + y * y),
+        ),
+        dim=-1,
+    ).reshape(*quaternion.shape[:-1], 3, 3)
 
 
 def policy_state(position, velocity, quaternion, target, max_speed, margin):
@@ -68,4 +81,3 @@ def decode_action(output, heading, thrust_error):
     gravity = output.new_tensor((0.0, 0.0, -9.80665))
     command = (acceleration - velocity_prediction - gravity) * thrust_error + gravity
     return command, velocity_prediction
-

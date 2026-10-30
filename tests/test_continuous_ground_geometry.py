@@ -11,28 +11,38 @@ from isaaclab_navrl.zhang.losses import zhang_transition_costs
 def ground_history(query_height, terminal_height=None):
     """Analytic nearest points for actual static z=0 and shared ground z=.01."""
     count, batch, _ = query_height.shape
-    selected_plane = torch.where(query_height.detach().abs() < (0.01 - query_height.detach()).abs(),
-                                 torch.zeros_like(query_height), torch.full_like(query_height, 0.01))
+    selected_plane = torch.where(
+        query_height.detach().abs() < (0.01 - query_height.detach()).abs(),
+        torch.zeros_like(query_height),
+        torch.full_like(query_height, 0.01),
+    )
     vectors = torch.stack((query_height * 0, query_height * 0, selected_plane - query_height), dim=-1)
     terminal_height = query_height[..., 0] if terminal_height is None else terminal_height
     position = torch.stack((terminal_height * 0, terminal_height * 0, terminal_height), dim=-1)
     zero = query_height.new_zeros(count, batch, 3)
     signed = query_height - 0.01
     return {
-        "velocity": list(zero.unbind(0)), "target_velocity": list(zero.unbind(0)),
+        "velocity": list(zero.unbind(0)),
+        "target_velocity": list(zero.unbind(0)),
         "episode_id": [torch.zeros(batch, dtype=torch.long)] * count,
-        "position": list(position.unbind(0)), "obstacle_vector": list(vectors.unbind(0)),
+        "position": list(position.unbind(0)),
+        "obstacle_vector": list(vectors.unbind(0)),
         "obstacle_signed_distance": list(signed.unbind(0)),
         "height_target": [query_height.new_full((batch,), 2.0)] * count,
         "height_range": [query_height.new_full((batch, 2), 2.0)] * count,
         "margin": [query_height.new_full((batch,), 0.3)] * count,
-        "command": list(zero.unbind(0)), "previous_command": list(zero.unbind(0)),
-        "velocity_prediction": list(zero.unbind(0)), "observed_velocity": list(zero.unbind(0)),
+        "command": list(zero.unbind(0)),
+        "previous_command": list(zero.unbind(0)),
+        "velocity_prediction": list(zero.unbind(0)),
+        "observed_velocity": list(zero.unbind(0)),
         "dcol_gap": list((signed[..., 1:] - 0.3).unbind(0)),
-        **{name: [torch.zeros(batch, dtype=torch.bool, device=query_height.device) for _ in range(count)]
-           for name in ("done", "collision", "bounds", "timeout", "invalid")},
-        "episode_step": [torch.full((batch,), step + 1, dtype=torch.long, device=query_height.device)
-                         for step in range(count)],
+        **{
+            name: [torch.zeros(batch, dtype=torch.bool, device=query_height.device) for _ in range(count)]
+            for name in ("done", "collision", "bounds", "timeout", "invalid")
+        },
+        "episode_step": [
+            torch.full((batch,), step + 1, dtype=torch.long, device=query_height.device) for step in range(count)
+        ],
     }
 
 
@@ -89,8 +99,11 @@ def test_below_ground_both_obstacle_terms_and_legacy_boundary_height_restore_upw
     torch.testing.assert_close(collision_gradient, -32 * softplus_derivative, rtol=1e-12, atol=1e-12)
     torch.testing.assert_close(height_gradient, torch.full_like(height, -2.0), rtol=0, atol=0)
     assert bool((avoidance_gradient < 0).all() & (collision_gradient < 0).all() & (height_gradient < 0).all())
-    expected_gradient = (cfg.coef_obj_avoidance * avoidance_gradient + cfg.coef_collide * collision_gradient
-                         + cfg.coef_height_boundary * height_gradient)
+    expected_gradient = (
+        cfg.coef_obj_avoidance * avoidance_gradient
+        + cfg.coef_collide * collision_gradient
+        + cfg.coef_height_boundary * height_gradient
+    )
     actual_gradient = torch.autograd.grad(cost[0].sum(), height)[0]
     torch.testing.assert_close(actual_gradient, expected_gradient, rtol=1e-12, atol=1e-12)
     torch.testing.assert_close(losses["total"], cost.mean(), rtol=0, atol=0)
@@ -98,8 +111,9 @@ def test_below_ground_both_obstacle_terms_and_legacy_boundary_height_restore_upw
 
 @pytest.mark.parametrize("variant", ("step", "continuous", "dcol"))
 def test_lookahead_crossing_ground_keeps_the_original_detached_approach_formula(variant):
-    query = torch.tensor([[[0.2, 0.15, 0.1, 0.05, 0.02, -0.02, -0.1, -0.2, -0.3, -0.4]]],
-                         dtype=torch.float64, requires_grad=True)
+    query = torch.tensor(
+        [[[0.2, 0.15, 0.1, 0.05, 0.02, -0.02, -0.1, -0.2, -0.3, -0.4]]], dtype=torch.float64, requires_grad=True
+    )
     history = ground_history(query, torch.full((1, 1), 2.0, dtype=torch.float64))
     cfg = ZhangTrainCfg(variant=variant)
     losses, _, cost = zhang_transition_costs(history, cfg)
@@ -121,7 +135,10 @@ def test_lookahead_crossing_ground_keeps_the_original_detached_approach_formula(
 @pytest.mark.parametrize("query_z,terminal_z,should_penalize", [(2.0, -2.0, False), (-0.5, 2.0, True)])
 @pytest.mark.parametrize("variant", ("step", "continuous", "dcol"))
 def test_ground_geometry_uses_pre_step_queries_not_post_step_or_reset_height(
-    query_z, terminal_z, should_penalize, variant,
+    query_z,
+    terminal_z,
+    should_penalize,
+    variant,
 ):
     query = torch.full((3, 1, 10), query_z, dtype=torch.float64, requires_grad=True)
     terminal = torch.full((3, 1), terminal_z, dtype=torch.float64, requires_grad=True)

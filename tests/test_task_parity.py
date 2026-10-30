@@ -40,14 +40,32 @@ def load_definitions(path, names, namespace, strip_decorators=False):
 
 
 def original_controller():
-    namespace = {"torch": torch, "nn": nn, "yaml": yaml, "osp": osp,
-                 "__file__": str(NAVRL / OMNI / "controllers/lee_position_controller.py")}
-    load_definitions(f"{OMNI}/utils/torch.py", {
-        "normalize", "quaternion_to_rotation_matrix", "quaternion_to_euler", "quat_rotate_inverse",
-    }, namespace, strip_decorators=True)
-    load_definitions(f"{OMNI}/controllers/lee_position_controller.py", {
-        "compute_parameters", "LeePositionController",
-    }, namespace)
+    namespace = {
+        "torch": torch,
+        "nn": nn,
+        "yaml": yaml,
+        "osp": osp,
+        "__file__": str(NAVRL / OMNI / "controllers/lee_position_controller.py"),
+    }
+    load_definitions(
+        f"{OMNI}/utils/torch.py",
+        {
+            "normalize",
+            "quaternion_to_rotation_matrix",
+            "quaternion_to_euler",
+            "quat_rotate_inverse",
+        },
+        namespace,
+        strip_decorators=True,
+    )
+    load_definitions(
+        f"{OMNI}/controllers/lee_position_controller.py",
+        {
+            "compute_parameters",
+            "LeePositionController",
+        },
+        namespace,
+    )
     params = yaml.safe_load(source(f"{OMNI}/robots/assets/usd/hummingbird.yaml"))
     return namespace["LeePositionController"](GRAVITY, params)
 
@@ -93,8 +111,9 @@ def test_original_motor_state_and_reset_match_for_250_steps():
 
 def original_height_function():
     namespace = {"np": np}
-    load_definitions(f"{TERRAIN}/height_field/hf_terrains.py", {"discrete_obstacles_terrain"}, namespace,
-                     strip_decorators=True)
+    load_definitions(
+        f"{TERRAIN}/height_field/hf_terrains.py", {"discrete_obstacles_terrain"}, namespace, strip_decorators=True
+    )
     return namespace["discrete_obstacles_terrain"]
 
 
@@ -111,13 +130,21 @@ def test_height_field_matches_original_sampling(seed):
 
 def test_mesh_and_origin_match_original_seed_zero():
     namespace = {"np": np, "trimesh": trimesh, "copy": copy, "functools": functools}
-    load_definitions(f"{TERRAIN}/height_field/utils.py", {
-        "height_field_to_mesh", "convert_height_field_to_mesh",
-    }, namespace)
+    load_definitions(
+        f"{TERRAIN}/height_field/utils.py",
+        {
+            "height_field_to_mesh",
+            "convert_height_field_to_mesh",
+        },
+        namespace,
+    )
     original_mesh = namespace["height_field_to_mesh"](original_height_function())
     cfg = NavRLObstaclesTerrainCfg(
-        size=(40.0, 40.0), horizontal_scale=0.1, vertical_scale=0.1,
-        slope_threshold=0.75, seed=0,
+        size=(40.0, 40.0),
+        horizontal_scale=0.1,
+        vertical_scale=0.1,
+        slope_threshold=0.75,
+        seed=0,
     )
     cfg.obstacle_height_mode = "range"
     np.random.seed(0)

@@ -42,13 +42,13 @@ def _bisect_reference(query, radius, center, extent, cylinder=False):
 
 
 def test_spheres_match_analytic_scale_contact_and_penetration():
-    point = torch.tensor([[2.0, 0, 0], [1.0, 0, 0], [0.5, 0, 0], [0, 0, 0]],
-                         dtype=torch.float64, requires_grad=True)
+    point = torch.tensor([[2.0, 0, 0], [1.0, 0, 0], [0.5, 0, 0], [0, 0, 0]], dtype=torch.float64, requires_grad=True)
     value = sphere_sphere_alpha(point, 0.3, torch.zeros(3), 0.7)
     torch.testing.assert_close(value, torch.tensor([2.0, 1.0, 0.5, 0.0], dtype=torch.float64))
     value.sum().backward()
-    torch.testing.assert_close(point.grad, torch.tensor([[1.0, 0, 0], [1.0, 0, 0], [1.0, 0, 0], [0, 0, 0]],
-                                                       dtype=torch.float64))
+    torch.testing.assert_close(
+        point.grad, torch.tensor([[1.0, 0, 0], [1.0, 0, 0], [1.0, 0, 0], [0, 0, 0]], dtype=torch.float64)
+    )
 
 
 @pytest.mark.parametrize("cylinder", [False, True])
@@ -76,8 +76,10 @@ def test_box_faces_corners_and_planar_limit_have_correct_scale_and_gradient():
     torch.testing.assert_close(point.grad, torch.tensor([[1.25, 0, 0]] * 3, dtype=torch.float64), atol=3e-8, rtol=3e-8)
     corner = torch.ones(1, 3, dtype=torch.float64)
     expected_corner = math.sqrt(3) / (math.sqrt(3) * 0.5 + 0.3)
-    torch.testing.assert_close(sphere_box_alpha(corner, 0.3, torch.zeros(3), torch.full((3,), 0.5)),
-                               torch.tensor([expected_corner], dtype=torch.float64))
+    torch.testing.assert_close(
+        sphere_box_alpha(corner, 0.3, torch.zeros(3), torch.full((3,), 0.5)),
+        torch.tensor([expected_corner], dtype=torch.float64),
+    )
     # A zero-thickness rectangle is a plane locally, away from its edges.
     above_plane = torch.tensor([[0.0, 0.0, 0.3]], dtype=torch.float64, requires_grad=True)
     alpha = sphere_box_alpha(above_plane, 0.3, torch.zeros(3), torch.tensor([2.0, 2.0, 0.0]))
@@ -89,13 +91,16 @@ def test_box_faces_corners_and_planar_limit_have_correct_scale_and_gradient():
 @pytest.mark.parametrize("cylinder", [False, True])
 def test_implicit_query_radius_and_shape_gradients_match_finite_differences(cylinder):
     center = torch.tensor([0.1, -0.2, 0.3], dtype=torch.float64, requires_grad=True)
-    offsets = ([[1.1, 0.3, 0.2], [0.2, 0.1, 1.7], [0.8, 0.3, 1.5], [0.2, 0.1, 0.3]] if cylinder
-               else [[1.4, 0.1, 0.1], [1.1, 0.9, 0.1], [1.1, 0.9, 1.3], [0.4, 0.12, 0.11]])
+    offsets = (
+        [[1.1, 0.3, 0.2], [0.2, 0.1, 1.7], [0.8, 0.3, 1.5], [0.2, 0.1, 0.3]]
+        if cylinder
+        else [[1.4, 0.1, 0.1], [1.1, 0.9, 0.1], [1.1, 0.9, 1.3], [0.4, 0.12, 0.11]]
+    )
     point = (center.detach() + torch.tensor(offsets, dtype=torch.float64)).requires_grad_()
     radius = torch.tensor([0.3] * 4, dtype=torch.float64, requires_grad=True)
-    extent = torch.tensor([0.5, 1.2] if cylinder else [0.6, 0.4, 0.8],
-                          dtype=torch.float64, requires_grad=True)
+    extent = torch.tensor([0.5, 1.2] if cylinder else [0.6, 0.4, 0.8], dtype=torch.float64, requires_grad=True)
     if cylinder:
+
         def function(p, r, c, e):
             return sphere_cylinder_alpha(p, r, c, e[0], e[1])
     else:
@@ -120,8 +125,9 @@ def test_dynamic_minimum_handles_both_primitives_and_owns_scene_snapshots():
     point = torch.tensor([[[1.2, 0, 0], [3.6, 0, 0], [3.0, 0, 1.5]]], dtype=torch.float64, requires_grad=True)
     positions = torch.tensor([[0.0, 0, 0], [3.0, 0, 0]], dtype=torch.float64)
     sizes = torch.tensor([[1.0, 1.0, 1.0], [1.0, 1.0, 2.4]], dtype=torch.float64)
-    value = dynamic_min_alpha(point, torch.tensor([[0.3]], dtype=torch.float64), positions, sizes,
-                              obstacle_chunk_size=1)
+    value = dynamic_min_alpha(
+        point, torch.tensor([[0.3]], dtype=torch.float64), positions, sizes, obstacle_chunk_size=1
+    )
     torch.testing.assert_close(value, torch.tensor([[1.5, 0.75, 1.0]], dtype=torch.float64))
     # Subsequent scene updates/reset must not change the saved loss graph.
     positions.add_(1000)

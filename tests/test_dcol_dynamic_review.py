@@ -41,13 +41,17 @@ def test_hybrid_static_and_ground_use_independent_metric_clearances(empty_dynami
     query = torch.tensor([[0.0, 0.0, 2.0], [0.0, 0.0, 0.2]], dtype=torch.float64, requires_grad=True)
     # First query is 0.2 m from an actual static wall.  The second is near
     # ground and far from the independently supplied static surface.
-    static_closest = torch.tensor([[0.2, 0.0, 2.0], [5.0, 0.0, 0.2]],
-                                  dtype=torch.float64, requires_grad=True)
-    positions = torch.empty((0, 3), dtype=torch.float64) if empty_dynamic else torch.tensor(
-        [[3.0, 0.0, 2.0]], dtype=torch.float64)
+    static_closest = torch.tensor([[0.2, 0.0, 2.0], [5.0, 0.0, 0.2]], dtype=torch.float64, requires_grad=True)
+    positions = (
+        torch.empty((0, 3), dtype=torch.float64)
+        if empty_dynamic
+        else torch.tensor([[3.0, 0.0, 2.0]], dtype=torch.float64)
+    )
     sizes = torch.ones_like(positions)
 
-    gap = hybrid_collision_gap(query, 0.3, (query - static_closest.detach()).norm(dim=-1), positions, sizes, ground_z=0.01)
+    gap = hybrid_collision_gap(
+        query, 0.3, (query - static_closest.detach()).norm(dim=-1), positions, sizes, ground_z=0.01
+    )
     torch.testing.assert_close(gap, torch.tensor([-0.1, -0.11], dtype=torch.float64))
     query_gradient, static_gradient = torch.autograd.grad(gap.sum(), (query, static_closest), allow_unused=True)
     torch.testing.assert_close(query_gradient, torch.tensor([[-1.0, 0.0, 0.0], [0.0, 0.0, 1.0]], dtype=torch.float64))
@@ -73,11 +77,17 @@ def test_dynamic_cpu_and_cuda_values_and_position_gradients_agree(use_hybrid):
     for device in ("cpu", "cuda:0"):
         query = source.detach().to(device).requires_grad_()
         if use_hybrid:
-            value = hybrid_collision_gap(query, radii.to(device), (query - static_closest.to(device)).norm(dim=-1),
-                                         positions.to(device), sizes.to(device))
+            value = hybrid_collision_gap(
+                query,
+                radii.to(device),
+                (query - static_closest.to(device)).norm(dim=-1),
+                positions.to(device),
+                sizes.to(device),
+            )
         else:
-            value = dynamic_min_alpha(query, radii.to(device), positions.to(device), sizes.to(device),
-                                      obstacle_chunk_size=5)
+            value = dynamic_min_alpha(
+                query, radii.to(device), positions.to(device), sizes.to(device), obstacle_chunk_size=5
+            )
         assert value.shape == source.shape[:-1]
         gradient = torch.autograd.grad((value * weights.to(device)).sum(), query)[0]
         assert torch.isfinite(value).all() and torch.isfinite(gradient).all()
@@ -87,17 +97,24 @@ def test_dynamic_cpu_and_cuda_values_and_position_gradients_agree(use_hybrid):
     torch.testing.assert_close(results[0][1], results[1][1], rtol=3e-4, atol=3e-4)
 
 
-@pytest.mark.parametrize("device", ["cpu", pytest.param(
-    "cuda:0", marks=pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable"))])
+@pytest.mark.parametrize(
+    "device",
+    [
+        "cpu",
+        pytest.param("cuda:0", marks=pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")),
+    ],
+)
 def test_each_query_uses_its_own_collision_substep_snapshot_and_owns_the_winner(device):
     # The first two queries are identical, but their collision substeps had
     # different obstacle poses and therefore different winning primitives.
-    query = torch.tensor([[1.3, 0.0, 2.0], [1.3, 0.0, 2.0], [0.0, 0.0, 3.5]],
-                         dtype=torch.float64, device=device, requires_grad=True)
-    positions = torch.tensor([[[0.0, 0.0, 2.0], [10.0, 0.0, 2.0]],
-                              [[10.0, 0.0, 2.0], [0.7, 0.0, 2.0]],
-                              [[10.0, 0.0, 2.0], [0.0, 0.0, 2.0]]],
-                             dtype=torch.float64, device=device)
+    query = torch.tensor(
+        [[1.3, 0.0, 2.0], [1.3, 0.0, 2.0], [0.0, 0.0, 3.5]], dtype=torch.float64, device=device, requires_grad=True
+    )
+    positions = torch.tensor(
+        [[[0.0, 0.0, 2.0], [10.0, 0.0, 2.0]], [[10.0, 0.0, 2.0], [0.7, 0.0, 2.0]], [[10.0, 0.0, 2.0], [0.0, 0.0, 2.0]]],
+        dtype=torch.float64,
+        device=device,
+    )
     sizes = torch.tensor([[2.0, 2.0, 1.0], [1.0, 1.0, 2.4]], dtype=torch.float64, device=device)
     alpha = dynamic_min_alpha(query, 0.3, positions, sizes, obstacle_chunk_size=1)
     torch.testing.assert_close(alpha, torch.tensor([1.0, 0.75, 1.0], dtype=torch.float64, device=device))
@@ -106,17 +123,21 @@ def test_each_query_uses_its_own_collision_substep_snapshot_and_owns_the_winner(
     positions.add_(1000)
     sizes.mul_(0.1)
     gradient = torch.autograd.grad(alpha.sum(), query)[0]
-    expected = torch.tensor([[1 / 1.3, 0.0, 0.0], [1.25, 0.0, 0.0], [0.0, 0.0, 1 / 1.5]],
-                            dtype=torch.float64, device=device)
+    expected = torch.tensor(
+        [[1 / 1.3, 0.0, 0.0], [1.25, 0.0, 0.0], [0.0, 0.0, 1 / 1.5]], dtype=torch.float64, device=device
+    )
     torch.testing.assert_close(gradient, expected)
 
 
 def test_per_environment_positions_broadcast_over_lookahead_samples():
-    query = torch.tensor([[[0.8, 0.0, 2.0], [1.2, 0.0, 2.0]],
-                          [[0.8, 0.0, 2.0], [1.0, 0.0, 2.0]]],
-                         dtype=torch.float64, requires_grad=True)
-    positions = torch.tensor([[[[0.0, 0.0, 2.0], [10.0, 0.0, 2.0]]],
-                              [[[10.0, 0.0, 2.0], [0.2, 0.0, 2.0]]]], dtype=torch.float64)
+    query = torch.tensor(
+        [[[0.8, 0.0, 2.0], [1.2, 0.0, 2.0]], [[0.8, 0.0, 2.0], [1.0, 0.0, 2.0]]],
+        dtype=torch.float64,
+        requires_grad=True,
+    )
+    positions = torch.tensor(
+        [[[[0.0, 0.0, 2.0], [10.0, 0.0, 2.0]]], [[[10.0, 0.0, 2.0], [0.2, 0.0, 2.0]]]], dtype=torch.float64
+    )
     sizes = torch.tensor([[1.0, 1.0, 1.0], [1.0, 1.0, 2.4]], dtype=torch.float64)
     radius = torch.full((2, 1), 0.3, dtype=torch.float64)
     alpha = dynamic_min_alpha(query, radius, positions, sizes, obstacle_chunk_size=1)

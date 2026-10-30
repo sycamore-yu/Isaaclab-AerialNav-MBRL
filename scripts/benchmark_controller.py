@@ -44,10 +44,7 @@ def make_inputs(num_envs, steps, device, seed):
     if steps > 1:
         acceleration[1] = torch.tensor([0.0, 0.0, -9.81])
     state, acceleration, yaw = state.to(device), acceleration.to(device), yaw.to(device)
-    return [
-        (state[index], state[index, :, 7:10], acceleration[index], yaw[index])
-        for index in range(steps)
-    ]
+    return [(state[index], state[index, :, 7:10], acceleration[index], yaw[index]) for index in range(steps)]
 
 
 def compare_controllers(reference, candidate, inputs, device):
@@ -114,11 +111,21 @@ def compare_controllers(reference, candidate, inputs, device):
         compare_outputs(index, "compute")
     return {
         "passed": all(exact.values()) and rng_equal and storage_stable,
-        "steps": len(inputs), "partial_resets": partial_resets,
-        "interfaces": ["explicit acceleration/yaw", "default acceleration", "default yaw", "both defaults", "yaw N or N1"],
-        "reset_envs": len(reset_ids), "bitwise_equal": exact,
-        "max_abs_error": max_abs_error, "cuda_rng_state_equal": rng_equal,
-        "first_failure": first_failure, "captured_storage_addresses_stable": storage_stable,
+        "steps": len(inputs),
+        "partial_resets": partial_resets,
+        "interfaces": [
+            "explicit acceleration/yaw",
+            "default acceleration",
+            "default yaw",
+            "both defaults",
+            "yaw N or N1",
+        ],
+        "reset_envs": len(reset_ids),
+        "bitwise_equal": exact,
+        "max_abs_error": max_abs_error,
+        "cuda_rng_state_equal": rng_equal,
+        "first_failure": first_failure,
+        "captured_storage_addresses_stable": storage_stable,
         "tolerance": "exact torch.equal; no tolerance, relaxed precision, or formula changes",
     }
 
@@ -145,9 +152,11 @@ def timed_run(target, inputs, warmup, synchronized_calls, device):
     if synchronized_calls:
         ordered = sorted(samples)
         result["per_call_ms"] = {
-            "mean": statistics.fmean(samples), "median": statistics.median(samples),
+            "mean": statistics.fmean(samples),
+            "median": statistics.median(samples),
             "p95": ordered[math.ceil(0.95 * len(ordered)) - 1],
-            "minimum": ordered[0], "maximum": ordered[-1],
+            "minimum": ordered[0],
+            "maximum": ordered[-1],
         }
     return result
 
@@ -163,11 +172,11 @@ def benchmark(reference, candidate, inputs, warmup, repeats, device):
             for name, target in order:
                 timings[name].append(timed_run(target, inputs, warmup, synchronized_calls, device))
         medians = {
-            name: statistics.median(run["mean_ms_per_compute"] for run in runs)
-            for name, runs in timings.items()
+            name: statistics.median(run["mean_ms_per_compute"] for run in runs) for name, runs in timings.items()
         }
         results[label] = {
-            "runs": timings, "median_ms_per_compute": medians,
+            "runs": timings,
+            "median_ms_per_compute": medians,
             "speedup": medians["eager"] / medians["cuda_graph_with_input_copies"],
             "cuda_sync": "before and after each compute" if synchronized_calls else "run boundaries only",
         }
@@ -198,12 +207,18 @@ def main():
 
     result = {
         "candidate": "CUDA Graph capture of unchanged LeeRotorController.compute",
-        "torch_version": torch.__version__, "cuda_version": torch.version.cuda,
-        "device": str(device), "device_name": torch.cuda.get_device_name(device),
-        "num_envs": args.num_envs, "physics_dt": 0.01, "seed": args.seed,
+        "torch_version": torch.__version__,
+        "cuda_version": torch.version.cuda,
+        "device": str(device),
+        "device_name": torch.cuda.get_device_name(device),
+        "num_envs": args.num_envs,
+        "physics_dt": 0.01,
+        "seed": args.seed,
         "controller_source_sha256": hashlib.sha256(Path(control_module.__file__).read_bytes()).hexdigest(),
         "adapter_source_sha256": hashlib.sha256(Path(graph_module.__file__).read_bytes()).hexdigest(),
-        "warmup_per_timing_run": args.warmup, "measured_per_run": args.measured, "repeats": args.repeats,
+        "warmup_per_timing_run": args.warmup,
+        "measured_per_run": args.measured,
+        "repeats": args.repeats,
         "scope": "Zhang interface: current velocity, explicit target acceleration and yaw; compute only",
         "timing_note": "candidate includes four input copies; excludes PhysX, apply, task, policy, backward, and optimizer",
         "state_note": "motor throttle persists across calls; partial reset uses the unchanged controller.reset",

@@ -33,10 +33,7 @@ def test_action_delay_selects_same_commands_and_credits_historical_actions():
     lags = torch.tensor([0, 1, 2], dtype=torch.long)
     execution = _action_delay(3, lags)
     differentiable = DifferentiableDelay(history_length=2)
-    commands = [
-        torch.full((3, 3), float(10 * (step + 1)), requires_grad=True)
-        for step in range(5)
-    ]
+    commands = [torch.full((3, 3), float(10 * (step + 1)), requires_grad=True) for step in range(5)]
     expected_gradients = [torch.zeros_like(command) for command in commands]
     losses = []
 
@@ -166,9 +163,7 @@ def test_state_noise_has_requested_scale_and_preserves_true_state():
     quaternion[:, 3] = 1.0
     originals = tuple(value.clone() for value in (position, velocity, quaternion))
 
-    noisy_position, noisy_velocity, noisy_quaternion = perturbation.state(
-        position, velocity, quaternion
-    )
+    noisy_position, noisy_velocity, noisy_quaternion = perturbation.state(position, velocity, quaternion)
 
     for noisy, true, standard_deviation in (
         (noisy_position, originals[0], 0.02),
@@ -183,9 +178,7 @@ def test_state_noise_has_requested_scale_and_preserves_true_state():
             atol=0,
         )
 
-    torch.testing.assert_close(
-        noisy_quaternion.norm(dim=-1), torch.ones(num_envs), rtol=0, atol=2e-6
-    )
+    torch.testing.assert_close(noisy_quaternion.norm(dim=-1), torch.ones(num_envs), rtol=0, atol=2e-6)
     assert not torch.equal(noisy_quaternion, originals[2])
     for actual, expected in zip((position, velocity, quaternion), originals, strict=True):
         torch.testing.assert_close(actual, expected, rtol=0, atol=0)

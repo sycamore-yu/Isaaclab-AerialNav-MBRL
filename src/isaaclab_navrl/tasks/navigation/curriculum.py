@@ -95,7 +95,8 @@ class TrainingCurriculum:
         if counts[0]:
             raise RuntimeError("A completed training episode has no terminal outcome")
         report = {
-            "update": update, "dynamic_obstacles": self.active_obstacles,
+            "update": update,
+            "dynamic_obstacles": self.active_obstacles,
             "episodes": episodes,
             "counts": dict(zip(self.labels, counts[1:], strict=True)),
             **{f"{name}_rate": count / episodes for name, count in zip(self.labels, counts[1:], strict=True)},
@@ -112,11 +113,11 @@ class TrainingCurriculum:
             self.best_by_stage[self.stage_key] = report.copy()
         self.stage_passed |= report["success_rate"] >= self.threshold
         self.acceptance_passed |= (
-            (self.stage_name == "finetune_s2" if self.stage_name else self.active_obstacles == 100)
-            and self.stage_passed
-        )
+            self.stage_name == "finetune_s2" if self.stage_name else self.active_obstacles == 100
+        ) and self.stage_passed
         self.ready_to_advance = (
-            self.stage_name is None and self.stage_index < len(self.stages) - 1
+            self.stage_name is None
+            and self.stage_index < len(self.stages) - 1
             and report["success_rate"] > self.threshold
         )
         self.last_report = report
@@ -144,9 +145,12 @@ class TrainingCurriculum:
         return {
             "stages": list(STAGE_CONFIG) if self.stage_name else list(self.stages),
             "active_dynamic_obstacles": self.active_obstacles,
-            "stage": self.stage_name, "stage_passed": self.stage_passed,
+            "stage": self.stage_name,
+            "stage_passed": self.stage_passed,
             "stage_config": STAGE_CONFIG[self.stage_name] if self.stage_name else None,
-            "promotion_success_rate": self.threshold, "episodes_per_report_min": self.min_episodes,
+            "promotion_success_rate": self.threshold,
+            "episodes_per_report_min": self.min_episodes,
             "acceptance_passed": self.acceptance_passed,
-            "best_by_stage": self.best_by_stage, "latest_training_report": self.last_report,
+            "best_by_stage": self.best_by_stage,
+            "latest_training_report": self.last_report,
         }

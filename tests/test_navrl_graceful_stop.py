@@ -76,7 +76,9 @@ class Curriculum:
         return {
             "stage": self.harness.cfg.training_stage,
             "dynamic_obstacles": self.harness.cfg.num_dynamic_obstacles,
-            "episodes": 64, "success_rate": 0.8 if self.stage_passed else 0.0, "new_best": False,
+            "episodes": 64,
+            "success_rate": 0.8 if self.stage_passed else 0.0,
+            "new_best": False,
         }
 
 
@@ -148,9 +150,17 @@ class Runner:
 
 
 class Harness:
-    def __init__(self, log_dir, *, signal_at_update=None, stop_signal=signal.SIGTERM,
-                 fail_learn=False, pass_stage=False, fail_second_periodic_save=False,
-                 signal_during_final_save=False):
+    def __init__(
+        self,
+        log_dir,
+        *,
+        signal_at_update=None,
+        stop_signal=signal.SIGTERM,
+        fail_learn=False,
+        pass_stage=False,
+        fail_second_periodic_save=False,
+        signal_during_final_save=False,
+    ):
         self.log_dir = log_dir
         self.signal_at_update = signal_at_update
         self.stop_signal = stop_signal
@@ -164,8 +174,11 @@ class Harness:
         self.env_closed = False
         self.runner = None
         self.env = types.SimpleNamespace(
-            cfg=self.cfg, curriculum=self.curriculum, nominal_dynamics={"total_mass_kg": 0.716},
-            nonfinite_events=0, close=self.close_env,
+            cfg=self.cfg,
+            curriculum=self.curriculum,
+            nominal_dynamics={"total_mass_kg": 0.716},
+            nonfinite_events=0,
+            close=self.close_env,
         )
 
     def close_env(self):
@@ -176,14 +189,25 @@ class Harness:
         return self.runner
 
     def run(self, *, max_iterations=4, stage="pretrain_s0", checkpoint=None, stop_after_acceptance=False):
-        tokens = ["train_navrl.py", "--log_dir", str(self.log_dir), "--num_envs", "64",
-                  "--max_iterations", str(max_iterations), "--stage", stage]
+        tokens = [
+            "train_navrl.py",
+            "--log_dir",
+            str(self.log_dir),
+            "--num_envs",
+            "64",
+            "--max_iterations",
+            str(max_iterations),
+            "--stage",
+            stage,
+        ]
         if checkpoint is not None:
             tokens += ["--checkpoint", str(checkpoint)]
         if stop_after_acceptance:
             tokens += ["--stop_after_acceptance"]
         imports = {
-            "gymnasium": types.SimpleNamespace(make=lambda *_args, **_kwargs: types.SimpleNamespace(unwrapped=self.env)),
+            "gymnasium": types.SimpleNamespace(
+                make=lambda *_args, **_kwargs: types.SimpleNamespace(unwrapped=self.env)
+            ),
             "numpy": types.SimpleNamespace(random=types.SimpleNamespace(seed=lambda _seed: None)),
             "torch": types.SimpleNamespace(
                 manual_seed=lambda _seed: None,
@@ -195,8 +219,11 @@ class Harness:
             "isaaclab_navrl.tasks": types.SimpleNamespace(),
             "isaaclab_navrl.agents.continuous_runner": types.SimpleNamespace(ContinuousNavRLRunner=self.make_runner),
             "isaaclab_navrl.agents.rsl_rl_cfg": types.SimpleNamespace(
-                NavRLPpoRunnerCfg=lambda: AgentConfig(1 if self.fail_second_periodic_save else 100)),
-            "isaaclab_navrl.tasks.navigation.config.hummingbird.env_cfg": types.SimpleNamespace(NavRLEnvCfg=lambda: self.cfg),
+                NavRLPpoRunnerCfg=lambda: AgentConfig(1 if self.fail_second_periodic_save else 100)
+            ),
+            "isaaclab_navrl.tasks.navigation.config.hummingbird.env_cfg": types.SimpleNamespace(
+                NavRLEnvCfg=lambda: self.cfg
+            ),
             "isaaclab_navrl.tasks.navigation.curriculum": types.SimpleNamespace(STAGE_CONFIG=STAGES),
         }
         original_import = __import__
@@ -247,8 +274,10 @@ class NavrlGracefulStopTests(unittest.TestCase):
                     self.assertEqual(result["status"], "stopped")
                     self.assertEqual(result["stop_requested"], str(signum))
                     self.assertEqual(result["checkpoint"], str(checkpoint.resolve()))
-                    self.assertEqual((result["completed_updates"], result["stage_updates"], result["environment_steps"]),
-                                     (2, 2, 2 * 32 * 64))
+                    self.assertEqual(
+                        (result["completed_updates"], result["stage_updates"], result["environment_steps"]),
+                        (2, 2, 2 * 32 * 64),
+                    )
                     self.assertFalse(result["stage_passed"])
                     self.assertFalse(result["acceptance_passed"])
                     payload = json.loads(checkpoint.read_text())
@@ -257,8 +286,10 @@ class NavrlGracefulStopTests(unittest.TestCase):
                     self.assertEqual(payload["infos"]["stop_requested"], str(signum))
                     self.assertEqual(harness.runner.learn_calls, 2)
                     self.assertLess(harness.events.index(("learn_finished", 2)), harness.events.index(("report", 2)))
-                    self.assertLess(harness.events.index(("report", 2)),
-                                    harness.events.index(("save", "checkpoint_stopped.tmp.pt", 2)))
+                    self.assertLess(
+                        harness.events.index(("report", 2)),
+                        harness.events.index(("save", "checkpoint_stopped.tmp.pt", 2)),
+                    )
                     self.assertFalse((harness.log_dir / "checkpoint_final.pt").exists())
                     self.assert_closed(harness)
 
@@ -299,8 +330,9 @@ class NavrlGracefulStopTests(unittest.TestCase):
                 self.assertEqual(Path(harness.result()["checkpoint"]).name, "checkpoint_final.pt")
                 self.assert_closed(harness)
             result = second.result()
-            self.assertEqual((result["completed_updates"], result["stage_updates"], result["environment_steps"]),
-                             (3, 1, 3 * 32 * 64))
+            self.assertEqual(
+                (result["completed_updates"], result["stage_updates"], result["environment_steps"]), (3, 1, 3 * 32 * 64)
+            )
             self.assertEqual(second.runner.optimizer_updates, 3)
             self.assertEqual(second.runner.alg.learning_rate, 0.0005)
             self.assertEqual(second.runner.alg.optimizer.param_groups[0]["lr"], 0.0005)

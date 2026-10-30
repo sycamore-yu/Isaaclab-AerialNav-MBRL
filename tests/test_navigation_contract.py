@@ -18,8 +18,14 @@ def test_navrl_free_space_observation_and_reward():
     velocity = torch.tensor([[1.0, 0.0, 0.0]])
     goal = torch.tensor([[10.0, 0.0, 2.0]])
     result = navigation_terms(
-        position, velocity, goal, goal - position, torch.full((1, 1, 36, 4), 4.0),
-        DynamicObstacleMotion(0, 0, "cpu", 0.016), velocity, torch.tensor([[2.0, 2.0]]),
+        position,
+        velocity,
+        goal,
+        goal - position,
+        torch.full((1, 1, 36, 4), 4.0),
+        DynamicObstacleMotion(0, 0, "cpu", 0.016),
+        velocity,
+        torch.tensor([[2.0, 2.0]]),
     )
     torch.testing.assert_close(result["state"], torch.tensor([[1.0, 0.0, 0.0, 10.0, 0.0, 1.0, 0.0, 0.0]]))
     torch.testing.assert_close(result["reward"], torch.tensor([2 + math.log(4)]))
@@ -49,9 +55,12 @@ def test_requested_obstacle_count_is_exact_and_not_rounded_to_96():
 def test_first_arrival_survives_later_collision_and_same_step_collision_wins():
     evaluation = EpisodeEvaluation([[0, 0, 2]] * 2, [[10, 0, 2]] * 2, seed=10000)
     transition = {
-        "reached": torch.tensor([True, True]), "collision": torch.tensor([False, True]),
-        "bounds": torch.tensor([False, False]), "invalid": torch.tensor([False, False]),
-        "timeout": torch.tensor([False, False]), "time_s": torch.tensor([4.0, 5.0]),
+        "reached": torch.tensor([True, True]),
+        "collision": torch.tensor([False, True]),
+        "bounds": torch.tensor([False, False]),
+        "invalid": torch.tensor([False, False]),
+        "timeout": torch.tensor([False, False]),
+        "time_s": torch.tensor([4.0, 5.0]),
         "step": torch.tensor([40, 50]),
     }
     evaluation.update(transition)
@@ -61,18 +70,23 @@ def test_first_arrival_survives_later_collision_and_same_step_collision_wins():
     assert summary["success_rate"] == 0.5
     assert summary["collision_rate"] == 0.5
     assert summary["success_time_mean_s"] == 4.0
+
+
 def test_evaluation_preserves_an_earlier_physics_substep_arrival():
     from isaaclab_navrl.evaluation import EpisodeEvaluation
 
     evaluation = EpisodeEvaluation([[0, 0, 2]], [[1, 0, 2]], seed=4)
     transition = {
-        "reached": torch.tensor([False]), "collision": torch.tensor([True]),
-        "bounds": torch.tensor([False]), "invalid": torch.tensor([False]),
-        "timeout": torch.tensor([False]), "time_s": torch.tensor([0.1]),
-        "step": torch.tensor([1]), "first_event_code": torch.tensor([1]),
+        "reached": torch.tensor([False]),
+        "collision": torch.tensor([True]),
+        "bounds": torch.tensor([False]),
+        "invalid": torch.tensor([False]),
+        "timeout": torch.tensor([False]),
+        "time_s": torch.tensor([0.1]),
+        "step": torch.tensor([1]),
+        "first_event_code": torch.tensor([1]),
         "first_event_time_s": torch.tensor([0.03]),
     }
     evaluation.update(transition)
     assert evaluation.summary()["success_rate"] == 1
     assert abs(evaluation.summary()["success_time_mean_s"] - 0.03) < 1e-6
-

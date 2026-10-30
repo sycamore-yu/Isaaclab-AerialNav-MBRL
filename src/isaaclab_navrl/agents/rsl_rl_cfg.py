@@ -8,7 +8,8 @@ from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlPpoAlgorithmCfg
 class NavRLModelCfg:
     class_name: str = "isaaclab_navrl.agents.models:NavRLActor"
     distribution_cfg: dict | None = {
-        "class_name": "rsl_rl.modules.distribution:BetaDistribution", "action_range": (-2.0, 2.0),
+        "class_name": "rsl_rl.modules.distribution:BetaDistribution",
+        "action_range": (-2.0, 2.0),
     }
     stochastic: bool = False  # Consumed by Isaac Lab's official config migration.
 

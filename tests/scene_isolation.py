@@ -50,7 +50,9 @@ def main():
                 torch.testing.assert_close(state[0], state[1], atol=2e-5, rtol=1e-5)
                 torch.testing.assert_close(observation["policy"][0], observation["policy"][1], atol=2e-5, rtol=1e-5)
             result = {
-                "num_envs": 2, "steps": 64, "initial_positions_identical": True,
+                "num_envs": 2,
+                "steps": 64,
+                "initial_positions_identical": True,
                 "cross_environment_collisions_filtered": True,
                 "same_world_observations_identical": True,
                 "max_state_difference": max_difference,

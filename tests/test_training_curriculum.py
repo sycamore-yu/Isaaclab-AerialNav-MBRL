@@ -12,8 +12,10 @@ def transition(codes, done, times=None):
     return {
         "first_event_code": code,
         "first_event_time_s": torch.tensor(times if times is not None else [1.0] * len(codes)),
-        "terminated": torch.tensor(done), "timeout": code == 5,
-        "episode_return": torch.zeros(len(codes)), "step": torch.ones(len(codes), dtype=torch.long),
+        "terminated": torch.tensor(done),
+        "timeout": code == 5,
+        "episode_return": torch.zeros(len(codes)),
+        "step": torch.ones(len(codes), dtype=torch.long),
     }
 
 
@@ -57,11 +59,11 @@ def test_promotion_uses_current_stage_samples_and_saves_100_stage_target():
 def test_aggregate_includes_all_completed_samples_without_step_mean_bias():
     curriculum = TrainingCurriculum(4, "cpu")
     first = transition([2, 0, 0, 0], [True, False, False, False])
-    first.update(episode_return=torch.tensor([2., 999., 999., 999.]), step=torch.tensor([2, 99, 99, 99]))
+    first.update(episode_return=torch.tensor([2.0, 999.0, 999.0, 999.0]), step=torch.tensor([2, 99, 99, 99]))
     curriculum.observe(first)
     assert curriculum.pop_report() is None
     second = transition([1, 1, 1, 1], [True] * 4)
-    second.update(episode_return=torch.tensor([8., 12., 16., 20.]), step=torch.tensor([4, 6, 8, 10]))
+    second.update(episode_return=torch.tensor([8.0, 12.0, 16.0, 20.0]), step=torch.tensor([4, 6, 8, 10]))
     curriculum.observe(second)
     report = curriculum.pop_report()
     assert report["episodes"] == 5
@@ -78,9 +80,14 @@ def test_aggregate_includes_all_completed_samples_without_step_mean_bias():
 def test_navrl_collision_wins_same_step_and_reset_clears_partial_history():
     curriculum = TrainingCurriculum(2, "cpu")
     values = {name: torch.tensor([False, False]) for name in ("bounds", "invalid", "timeout")}
-    values.update(reached=torch.tensor([True, True]), collision=torch.tensor([True, False]),
-                  terminated=torch.tensor([True, False]), time_s=torch.tensor([2.0, 3.0]),
-                  episode_return=torch.zeros(2), step=torch.ones(2, dtype=torch.long))
+    values.update(
+        reached=torch.tensor([True, True]),
+        collision=torch.tensor([True, False]),
+        terminated=torch.tensor([True, False]),
+        time_s=torch.tensor([2.0, 3.0]),
+        episode_return=torch.zeros(2),
+        step=torch.ones(2, dtype=torch.long),
+    )
     curriculum.observe(values)
     curriculum.reset_episodes()
     curriculum.observe(transition([2, 2], [True, True]))

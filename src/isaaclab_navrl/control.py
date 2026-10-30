@@ -54,29 +54,41 @@ def make_drone_cfg(prim_path):
         spawn=sim_utils.UsdFileCfg(
             usd_path=str(Path(__file__).parent / "assets" / "hummingbird.usd"),
             rigid_props=PhysxRigidBodyCfg(
-                disable_gravity=False, retain_accelerations=False,
-                linear_damping=0.0, angular_damping=0.0,
-                max_linear_velocity=1000.0, max_angular_velocity=1000.0,
+                disable_gravity=False,
+                retain_accelerations=False,
+                linear_damping=0.0,
+                angular_damping=0.0,
+                max_linear_velocity=1000.0,
+                max_angular_velocity=1000.0,
                 max_depenetration_velocity=1.0,
             ),
             articulation_props=PhysxArticulationCfg(
-                enabled_self_collisions=False, solver_position_iteration_count=4,
+                enabled_self_collisions=False,
+                solver_position_iteration_count=4,
                 solver_velocity_iteration_count=0,
             ),
         ),
         init_state=MultirotorCfg.InitialStateCfg(
-            pos=(0.0, 0.0, 2.0), rot=(0.0, 0.0, 0.0, 1.0),
-            lin_vel=(0.0, 0.0, 0.0), ang_vel=(0.0, 0.0, 0.0),
+            pos=(0.0, 0.0, 2.0),
+            rot=(0.0, 0.0, 0.0, 1.0),
+            lin_vel=(0.0, 0.0, 0.0),
+            ang_vel=(0.0, 0.0, 0.0),
             rps={f"rotor_{i}": hover_rps for i in range(4)},
         ),
-        actuators={"thrusters": ThrusterCfg(
-            dt=0.016, thrust_range=(0.0, max_force), max_thrust_rate=1e5,
-            thrust_const_range=(kf_rps, kf_rps),
-            tau_inc_range=(0.0, 0.0), tau_dec_range=(0.0, 0.0),
-            torque_to_thrust_ratio=ROTOR_CONFIG["moment_constants"][0] / ROTOR_CONFIG["force_constants"][0],
-            use_discrete_approximation=True, integration_scheme="euler",
-            thruster_names_expr=[f"rotor_{i}" for i in range(4)],
-        )},
+        actuators={
+            "thrusters": ThrusterCfg(
+                dt=0.016,
+                thrust_range=(0.0, max_force),
+                max_thrust_rate=1e5,
+                thrust_const_range=(kf_rps, kf_rps),
+                tau_inc_range=(0.0, 0.0),
+                tau_dec_range=(0.0, 0.0),
+                torque_to_thrust_ratio=ROTOR_CONFIG["moment_constants"][0] / ROTOR_CONFIG["force_constants"][0],
+                use_discrete_approximation=True,
+                integration_scheme="euler",
+                thruster_names_expr=[f"rotor_{i}" for i in range(4)],
+            )
+        },
         rotor_directions=ROTOR_CONFIG["directions"].copy(),
         allocation_matrix=rotor_allocation().tolist(),
     )
@@ -121,11 +133,20 @@ def _rotation_matrix_wxyz(q):
     twx, twy, twz = tx * w, ty * w, tz * w
     txx, txy, txz = tx * x, ty * x, tz * x
     tyy, tyz, tzz = ty * y, tz * y, tz * z
-    return torch.stack((
-        1 - (tyy + tzz), txy - twz, txz + twy,
-        txy + twz, 1 - (txx + tzz), tyz - twx,
-        txz - twy, tyz + twx, 1 - (txx + tyy),
-    ), -1).unflatten(-1, (3, 3))
+    return torch.stack(
+        (
+            1 - (tyy + tzz),
+            txy - twz,
+            txz + twy,
+            txy + twz,
+            1 - (txx + tzz),
+            tyz - twx,
+            txz - twy,
+            tyz + twx,
+            1 - (txx + tyy),
+        ),
+        -1,
+    ).unflatten(-1, (3, 3))
 
 
 def _rotate_inverse_wxyz(q, vector):
@@ -148,8 +169,7 @@ class LeeRotorController:
         self.num_envs = num_envs
         self.rotor_group = RotorGroup(ROTOR_CONFIG, dt).to(device)
         self.rotor_parameters = {
-            name: value.expand(num_envs, *value.shape).clone()
-            for name, value in self.rotor_group.named_parameters()
+            name: value.expand(num_envs, *value.shape).clone() for name, value in self.rotor_group.named_parameters()
         }
         self._motor_step = torch.vmap(
             lambda parameters, command: torch.func.functional_call(self.rotor_group, parameters, (command,)),
@@ -199,12 +219,12 @@ class LeeRotorController:
         b2 = _normalize(torch.cross(b3, b1, dim=1))
         desired = torch.stack((torch.cross(b2, b3, dim=1), b2, b3), -1)
         error_matrix = 0.5 * (
-            torch.bmm(desired.transpose(-2, -1), rotation)
-            - torch.bmm(rotation.transpose(-2, -1), desired)
+            torch.bmm(desired.transpose(-2, -1), rotation) - torch.bmm(rotation.transpose(-2, -1), desired)
         )
         attitude_error = torch.stack((error_matrix[:, 2, 1], error_matrix[:, 0, 2], error_matrix[:, 1, 0]), -1)
         angular_acceleration = (
-            -attitude_error * self.attitude_gain - angular_velocity * self.angular_rate_gain
+            -attitude_error * self.attitude_gain
+            - angular_velocity * self.angular_rate_gain
             + torch.cross(angular_velocity, angular_velocity, dim=-1)
         )
         thrust = -MASS * (acc * rotation[:, :, 2]).sum(-1, True)

@@ -58,7 +58,9 @@ def main():
                 assert torch.isfinite(reward).all()
                 done_count += int((terminated | timeout).sum())
                 if step < args.steps // 2:
-                    hover_height_error = max(hover_height_error, float((env.root_state()[:, 2] - initial_height).abs().max()))
+                    hover_height_error = max(
+                        hover_height_error, float((env.root_state()[:, 2] - initial_height).abs().max())
+                    )
                     hover_done += int((terminated | timeout).sum())
                 min_range = min(min_range, float(4 - observation["policy"][:, 8:152].max()))
                 assert "transition" in info
@@ -83,18 +85,26 @@ def main():
             torch.testing.assert_close(env.motion.position, obstacle_position)
             assert env.motion.step_count == obstacle_steps
             result = {
-                "method": args.method, "num_envs": args.num_envs, "steps": args.steps,
-                "static_obstacles": cfg.num_static_obstacles, "dynamic_obstacles": cfg.num_dynamic_obstacles,
-                "physics_dt": env.physics_dt, "policy_dt": env.step_dt,
-                "episode_steps": env.max_episode_length, "elapsed_s": elapsed,
+                "method": args.method,
+                "num_envs": args.num_envs,
+                "steps": args.steps,
+                "static_obstacles": cfg.num_static_obstacles,
+                "dynamic_obstacles": cfg.num_dynamic_obstacles,
+                "physics_dt": env.physics_dt,
+                "policy_dt": env.step_dt,
+                "episode_steps": env.max_episode_length,
+                "elapsed_s": elapsed,
                 "transitions_per_s": args.num_envs * args.steps / elapsed,
                 "cuda_peak_allocated_mb": torch.cuda.max_memory_allocated() / 2**20,
                 "device_free_after_reset_mb": free_memory / 2**20,
                 "device_total_mb": total_memory / 2**20,
-                "completed_episodes": done_count, "min_lidar_range_m": min_range,
-                "hover_max_height_error_m": hover_height_error, "hover_completed_episodes": hover_done,
+                "completed_episodes": done_count,
+                "min_lidar_range_m": min_range,
+                "hover_max_height_error_m": hover_height_error,
+                "hover_completed_episodes": hover_done,
                 "forward_speed_after_command_m_s": forward_speed,
-                "depth_shape": depth_shape, "last_depth_change_m": depth_change,
+                "depth_shape": depth_shape,
+                "last_depth_change_m": depth_change,
                 "shared_obstacles_survive_drone_reset": True,
             }
             args.output.parent.mkdir(parents=True, exist_ok=True)

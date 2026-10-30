@@ -100,8 +100,14 @@ class ZhangTrainCfg:
             raise ValueError("weight_decay must be finite and nonnegative")
         if self.height_loss_mode not in ("target_exp", "target_huber", "boundary_huber", "navrl_range"):
             raise ValueError("height_loss_mode must be target_exp, target_huber, boundary_huber, or navrl_range")
-        if (len(self.height_target_range) != 2 or not all(math.isfinite(x) for x in self.height_target_range)
-                or not self.height_bounds[0] < self.height_target_range[0] < self.height_target_range[1] < self.height_bounds[1]):
+        if (
+            len(self.height_target_range) != 2
+            or not all(math.isfinite(x) for x in self.height_target_range)
+            or not self.height_bounds[0]
+            < self.height_target_range[0]
+            < self.height_target_range[1]
+            < self.height_bounds[1]
+        ):
             raise ValueError("height_target_range must be a finite increasing interval inside the height bounds")
         if self.gradient_projection not in ("none", "height_priority"):
             raise ValueError("gradient_projection must be none or height_priority")
@@ -123,9 +129,10 @@ class ZhangTrainCfg:
             raise ValueError("lr_schedule must be cosine, plateau, or constant")
         if any(type(value) is not bool for value in (self.observation_normalization, self.recovery_enabled)):
             raise ValueError("normalization and recovery switches must be boolean")
-        if any(not math.isfinite(value) or value <= 0 for value in (
-            self.lr, self.minimum_lr, self.normalization_variance_floor, self.critic_lr
-        )):
+        if any(
+            not math.isfinite(value) or value <= 0
+            for value in (self.lr, self.minimum_lr, self.normalization_variance_floor, self.critic_lr)
+        ):
             raise ValueError("learning rates and normalization variance floor must be finite and positive")
         if not 0 < self.min_lr_ratio <= 1 or not 0 < self.plateau_factor < 1:
             raise ValueError("Invalid scheduler factor")
@@ -135,16 +142,27 @@ class ZhangTrainCfg:
             raise ValueError("plateau report patience and cooldown must be nonnegative integers")
         if not math.isfinite(self.plateau_threshold) or self.plateau_threshold < 0:
             raise ValueError("plateau_threshold must be finite and nonnegative")
-        if any(type(value) is not int or value < 1 for value in (
-            self.critic_iterations, self.critic_max_iterations,
-            self.ahac_min_horizon, self.ahac_max_horizon, self.ahac_initial_horizon
-        )):
+        if any(
+            type(value) is not int or value < 1
+            for value in (
+                self.critic_iterations,
+                self.critic_max_iterations,
+                self.ahac_min_horizon,
+                self.ahac_max_horizon,
+                self.ahac_initial_horizon,
+            )
+        ):
             raise ValueError("critic iterations and AHAC horizons must be positive integers")
         if not 2 <= self.ahac_min_horizon <= self.ahac_initial_horizon <= self.ahac_max_horizon:
             raise ValueError("AHAC requires 2 <= min <= initial <= max horizon")
-        if any(not math.isfinite(value) or value <= 0 for value in (
-            self.ahac_risk_scale, self.ahac_risk_budget, self.ahac_dual_lr
-        )) or not math.isfinite(self.ahac_risk_clearance) or self.ahac_risk_clearance < 0:
+        if (
+            any(
+                not math.isfinite(value) or value <= 0
+                for value in (self.ahac_risk_scale, self.ahac_risk_budget, self.ahac_dual_lr)
+            )
+            or not math.isfinite(self.ahac_risk_clearance)
+            or self.ahac_risk_clearance < 0
+        ):
             raise ValueError("Invalid AHAC DCOL risk parameters")
         if (self.physics_dt, self.policy_dt) not in ((0.01, 0.1), (0.05, 0.05), (0.02, 0.02)):
             raise ValueError("Supported timing is 100/10 Hz, synchronized 20 Hz, or synchronized 50 Hz")
@@ -155,15 +173,17 @@ class ZhangTrainCfg:
         if not 0 < self.grad_decay <= 1 or self.max_grad_norm <= 0:
             raise ValueError("grad_decay must be in (0, 1] and max_grad_norm must be positive")
         lower, upper = self.height_bounds
-        if not all(math.isfinite(value) for value in (
-            lower, upper, self.boundary_margin, self.boundary_scale, self.coef_height_boundary
-        )):
+        if not all(
+            math.isfinite(value)
+            for value in (lower, upper, self.boundary_margin, self.boundary_scale, self.coef_height_boundary)
+        ):
             raise ValueError("height boundary parameters must be finite")
         if self.boundary_margin < 0 or lower + self.boundary_margin >= upper - self.boundary_margin:
             raise ValueError("height_bounds and boundary_margin must leave a positive interior interval")
         if self.boundary_scale <= 0 or self.coef_height_boundary < 0:
             raise ValueError("boundary_scale must be positive and coef_height_boundary must be nonnegative")
-        if (any(type(update) is not int or update < 1 for update in self.gradient_diagnostic_updates)
-                or len(set(self.gradient_diagnostic_updates)) != len(self.gradient_diagnostic_updates)):
+        if any(type(update) is not int or update < 1 for update in self.gradient_diagnostic_updates) or len(
+            set(self.gradient_diagnostic_updates)
+        ) != len(self.gradient_diagnostic_updates):
             raise ValueError("gradient_diagnostic_updates must contain unique positive integers")
         _ = self.velocity_window_steps

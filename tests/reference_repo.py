@@ -1,4 +1,5 @@
 """External NavRL source used only by parity checks."""
+
 import os
 from pathlib import Path
 

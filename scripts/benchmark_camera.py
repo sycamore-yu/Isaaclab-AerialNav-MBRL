@@ -18,8 +18,11 @@ def summarize(samples):
     upper = min(lower + 1, len(ordered) - 1)
     percentile = ordered[lower] + (ordered[upper] - ordered[lower]) * (fractional_index - lower)
     return {
-        "mean_ms": statistics.mean(samples), "median_ms": statistics.median(samples),
-        "p95_ms": percentile, "min_ms": min(samples), "max_ms": max(samples),
+        "mean_ms": statistics.mean(samples),
+        "median_ms": statistics.median(samples),
+        "p95_ms": percentile,
+        "min_ms": min(samples),
+        "max_ms": max(samples),
         "samples_ms": samples,
     }
 
@@ -68,8 +71,10 @@ def main():
             assert camera._batch_size == min(args.num_envs, cfg.depth_camera_batch_size)
             # Keep the training image-noise cost while holding physical parameters fixed.
             camera.cfg.pixel_noise_std = args.pixel_noise_std
-            assert camera.image_shape == (cfg.scene.depth_camera.pattern_cfg.height,
-                                          cfg.scene.depth_camera.pattern_cfg.width)
+            assert camera.image_shape == (
+                cfg.scene.depth_camera.pattern_cfg.height,
+                cfg.scene.depth_camera.pattern_cfg.width,
+            )
             if not str(env.device).startswith("cuda"):
                 raise ValueError("Use the actual CUDA simulation device for this performance measurement")
             action = torch.zeros(env.num_envs, 3, device=env.device)
@@ -111,22 +116,29 @@ def main():
             transition_stats = measure(complete_policy_transition)
             free_bytes, total_bytes = torch.cuda.mem_get_info(env.device)
             result = {
-                "method": "zhang", "num_envs": env.num_envs,
-                "seed": cfg.seed, "terrain_seed": cfg.terrain_seed,
-                "static_obstacles": cfg.num_static_obstacles, "dynamic_obstacles": cfg.num_dynamic_obstacles,
-                "physics_dt": env.physics_dt, "policy_dt": env.step_dt,
-                "source_resolution": list(camera.image_shape), "pooled_resolution": [12, 16],
+                "method": "zhang",
+                "num_envs": env.num_envs,
+                "seed": cfg.seed,
+                "terrain_seed": cfg.terrain_seed,
+                "static_obstacles": cfg.num_static_obstacles,
+                "dynamic_obstacles": cfg.num_dynamic_obstacles,
+                "physics_dt": env.physics_dt,
+                "policy_dt": env.step_dt,
+                "source_resolution": list(camera.image_shape),
+                "pooled_resolution": [12, 16],
                 "full_resolution_rays_per_frame": env.num_envs * camera.num_rays,
                 "camera_class": f"{type(camera).__module__}.{type(camera).__name__}",
                 "camera_batch_size": camera.cfg.batch_size,
                 "pixel_noise_std": camera.cfg.pixel_noise_std,
                 "nominal_physics_parameters": True,
-                "warmup": args.warmup, "samples": args.samples,
+                "warmup": args.warmup,
+                "samples": args.samples,
                 "mesh_transform_update": mesh_transform_stats,
                 "camera_fixed_scene": camera_stats,
                 "env_step_with_depth": transition_stats,
                 "policy_transitions_per_s": env.num_envs * 1000 / transition_stats["mean_ms"],
-                "device_free_mb": free_bytes / 2**20, "device_total_mb": total_bytes / 2**20,
+                "device_free_mb": free_bytes / 2**20,
+                "device_total_mb": total_bytes / 2**20,
             }
             args.output.parent.mkdir(parents=True, exist_ok=True)
             args.output.write_text(json.dumps(result, indent=2, allow_nan=False) + "\n")
