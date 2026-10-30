@@ -1,0 +1,681 @@
+{
+  "timestamp_utc": "2026-10-29T15:20:16.966264+00:00",
+  "active_source_commit": "552d330969c1275d5d1ccb64ab51f3beb88505ec",
+  "active_queue_status": "running",
+  "active_queue_updated_at": "2026-10-29T15:20:14.946354+00:00",
+  "active_queue_root": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_main_20261029",
+  "active_runs": [
+    {
+      "name": "unified_20hz",
+      "status": "running",
+      "pid": 956637,
+      "process": {
+        "exists": true,
+        "start_ticks": 54480110,
+        "command": "/home/tong/tongworkspace/free/isaaclab-navrl/.venv/bin/python /home/tong/tongworkspace/free/isaaclab-navrl/scripts/run_acceptance.py --method zhang --output /home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_main_20261029/unified_20hz --screening --num_envs 256 --train_seed 0 --device cuda:0 --finetune_lr 5e-05 --report_episodes 1024 --train_args --variant dcol --algorithm bptt --timesteps 150 --velocity_loss_mode full_window --velocity_window_s 2.0 --height_loss_mode target_exp "
+      },
+      "identity": {
+        "fresh": true,
+        "num_envs": 256,
+        "seed": 0,
+        "physics_dt": 0.05,
+        "policy_dt": 0.05,
+        "velocity_loss_mode": "full_window",
+        "algorithm": "bptt",
+        "stage": "pretrain_s0",
+        "static_obstacles": 300,
+        "dynamic_obstacles": 0,
+        "randomization": false
+      },
+      "log_incomplete_lines": {
+        "reports": 0,
+        "updates": 0
+      },
+      "reports": {
+        "latest": {
+          "update": 196,
+          "episodes": 1106,
+          "counts": {
+            "success": 475,
+            "collision": 292,
+            "bounds": 320,
+            "invalid": 0,
+            "timeout": 19
+          },
+          "success_rate": 0.4294755877034358,
+          "collision_rate": 0.2640144665461121,
+          "bounds_rate": 0.28933092224231466,
+          "invalid_rate": 0.0,
+          "timeout_rate": 0.017179023508137433,
+          "success_time_mean_s": 11.734315871392425,
+          "episode_return_mean": 225.86155663174702,
+          "episode_length_mean": 412.65822784810126,
+          "reward_per_step_mean": 0.5473332200585281
+        },
+        "best": {
+          "update": 196,
+          "episodes": 1106,
+          "success_rate": 0.4294755877034358
+        },
+        "last5_weighted": {
+          "episodes": 5501,
+          "successes": 979,
+          "success_rate": 0.1779676422468642
+        }
+      },
+      "last_complete_update": {
+        "update": 207,
+        "environment_steps": 7948800,
+        "rollout_steps": 150,
+        "velocity_valid_samples": 34745.0,
+        "velocity_short_terminal_samples": 0.0,
+        "Optim/param_norm": 27.999919313414775,
+        "Optim/update_norm": 0.10402509795066639,
+        "Optim/update_ratio": 0.0037151927756029,
+        "grad_norm": 1.452392578125,
+        "mean_altitude_m": 1.8397314548492432,
+        "mean_target_altitude_m": 1.561050295829773,
+        "mean_abs_target_altitude_error_m": 0.5204227566719055,
+        "mean_executed_vertical_acceleration_mps2": 0.008268936537206173,
+        "terminal_lower_bound_count": 0,
+        "terminal_upper_bound_count": 12,
+        "executed_action_max_error": 0.0,
+        "elapsed_s": 3281.096356441034,
+        "update_s": 16.07398393796757
+      },
+      "training_result": {
+        "status": "running",
+        "completed_updates": 207,
+        "environment_steps": 7948800,
+        "nonfinite_events": 0,
+        "nonfinite_grad_events": 0,
+        "acceptance_passed": false
+      },
+      "evidence_root": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_main_20261029/unified_20hz/zhang/pretrain_s0"
+    },
+    {
+      "name": "dcol",
+      "status": "running",
+      "pid": 957840,
+      "process": {
+        "exists": true,
+        "start_ticks": 54486118,
+        "command": "/home/tong/tongworkspace/free/isaaclab-navrl/.venv/bin/python /home/tong/tongworkspace/free/isaaclab-navrl/scripts/run_acceptance.py --method zhang --output /home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_main_20261029/dcol --screening --num_envs 256 --train_seed 0 --device cuda:0 --finetune_lr 5e-05 --report_episodes 1024 --train_args --variant dcol --algorithm bptt --timesteps 150 --velocity_loss_mode full_window --velocity_window_s 2.0 --height_loss_mode target_exp --height"
+      },
+      "identity": {
+        "fresh": true,
+        "num_envs": 256,
+        "seed": 0,
+        "physics_dt": 0.01,
+        "policy_dt": 0.1,
+        "velocity_loss_mode": "full_window",
+        "algorithm": "bptt",
+        "stage": "pretrain_s0",
+        "static_obstacles": 300,
+        "dynamic_obstacles": 0,
+        "randomization": false
+      },
+      "log_incomplete_lines": {
+        "reports": 0,
+        "updates": 0
+      },
+      "reports": {
+        "latest": {
+          "update": 57,
+          "episodes": 1313,
+          "counts": {
+            "success": 15,
+            "collision": 402,
+            "bounds": 893,
+            "invalid": 0,
+            "timeout": 3
+          },
+          "success_rate": 0.011424219345011425,
+          "collision_rate": 0.30616907844630614,
+          "bounds_rate": 0.6801218583396801,
+          "invalid_rate": 0.0,
+          "timeout_rate": 0.002284843869002285,
+          "success_time_mean_s": 4.320000068967541,
+          "episode_return_mean": -57.79491889849022,
+          "episode_length_mean": 94.34272658035034,
+          "reward_per_step_mean": -0.6126059845139955
+        },
+        "best": {
+          "update": 41,
+          "episodes": 1036,
+          "success_rate": 0.07818532818532818
+        },
+        "last5_weighted": {
+          "episodes": 6498,
+          "successes": 119,
+          "success_rate": 0.018313327177593104
+        }
+      },
+      "last_complete_update": {
+        "update": 58,
+        "environment_steps": 2227200,
+        "rollout_steps": 150,
+        "velocity_valid_samples": 26994.0,
+        "velocity_short_terminal_samples": 0.0,
+        "Optim/param_norm": 25.21193573334624,
+        "Optim/update_norm": 0.3991407752376139,
+        "Optim/update_ratio": 0.01583142125456395,
+        "grad_norm": 8.737566947937012,
+        "mean_altitude_m": 2.2905542850494385,
+        "mean_target_altitude_m": 1.4982285499572754,
+        "mean_abs_target_altitude_error_m": 1.0480761528015137,
+        "mean_executed_vertical_acceleration_mps2": 0.12463722378015518,
+        "terminal_lower_bound_count": 0,
+        "terminal_upper_bound_count": 539,
+        "executed_action_max_error": 0.0,
+        "elapsed_s": 3199.887216122006,
+        "update_s": 60.55611501191743
+      },
+      "training_result": {
+        "status": "running",
+        "completed_updates": 58,
+        "environment_steps": 2227200,
+        "nonfinite_events": 0,
+        "nonfinite_grad_events": 0,
+        "acceptance_passed": false
+      },
+      "evidence_root": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_main_20261029/dcol/zhang/pretrain_s0"
+    },
+    {
+      "name": "step",
+      "status": "running",
+      "pid": 959653,
+      "process": {
+        "exists": true,
+        "start_ticks": 54496628,
+        "command": "/home/tong/tongworkspace/free/isaaclab-navrl/.venv/bin/python /home/tong/tongworkspace/free/isaaclab-navrl/scripts/run_acceptance.py --method zhang --output /home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_main_20261029/step --screening --num_envs 256 --train_seed 0 --device cuda:0 --finetune_lr 5e-05 --report_episodes 1024 --train_args --variant dcol --algorithm bptt --timesteps 150 --velocity_loss_mode per_step --velocity_window_s 2.0 --height_loss_mode target_exp --height_ta"
+      },
+      "identity": {
+        "fresh": true,
+        "num_envs": 256,
+        "seed": 0,
+        "physics_dt": 0.01,
+        "policy_dt": 0.1,
+        "velocity_loss_mode": "per_step",
+        "algorithm": "bptt",
+        "stage": "pretrain_s0",
+        "static_obstacles": 300,
+        "dynamic_obstacles": 0,
+        "randomization": false
+      },
+      "log_incomplete_lines": {
+        "reports": 0,
+        "updates": 0
+      },
+      "reports": {
+        "latest": {
+          "update": 54,
+          "episodes": 1106,
+          "counts": {
+            "success": 29,
+            "collision": 199,
+            "bounds": 855,
+            "invalid": 0,
+            "timeout": 23
+          },
+          "success_rate": 0.026220614828209764,
+          "collision_rate": 0.17992766726943943,
+          "bounds_rate": 0.7730560578661845,
+          "invalid_rate": 0.0,
+          "timeout_rate": 0.020795660036166366,
+          "success_time_mean_s": 5.0958622460221425,
+          "episode_return_mean": -62.135182111646984,
+          "episode_length_mean": 104.35985533453888,
+          "reward_per_step_mean": -0.5953935247654829
+        },
+        "best": {
+          "update": 51,
+          "episodes": 1275,
+          "success_rate": 0.09019607843137255
+        },
+        "last5_weighted": {
+          "episodes": 6012,
+          "successes": 227,
+          "success_rate": 0.03775781769793746
+        }
+      },
+      "last_complete_update": {
+        "update": 55,
+        "environment_steps": 2112000,
+        "rollout_steps": 150,
+        "velocity_valid_samples": 38400.0,
+        "velocity_short_terminal_samples": 0.0,
+        "Optim/param_norm": 25.234189422708678,
+        "Optim/update_norm": 0.381465490276016,
+        "Optim/update_ratio": 0.015117009858565681,
+        "grad_norm": 6.828949928283691,
+        "mean_altitude_m": 2.134225606918335,
+        "mean_target_altitude_m": 1.4504393339157104,
+        "mean_abs_target_altitude_error_m": 0.9234521985054016,
+        "mean_executed_vertical_acceleration_mps2": 0.07943610101938248,
+        "terminal_lower_bound_count": 0,
+        "terminal_upper_bound_count": 294,
+        "executed_action_max_error": 0.0,
+        "elapsed_s": 3079.6654563260963,
+        "update_s": 59.863193221972324
+      },
+      "training_result": {
+        "status": "running",
+        "completed_updates": 55,
+        "environment_steps": 2112000,
+        "nonfinite_events": 0,
+        "nonfinite_grad_events": 0,
+        "acceptance_passed": false
+      },
+      "evidence_root": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_main_20261029/step/zhang/pretrain_s0"
+    },
+    {
+      "name": "truncated",
+      "status": "running",
+      "pid": 961379,
+      "process": {
+        "exists": true,
+        "start_ticks": 54507138,
+        "command": "/home/tong/tongworkspace/free/isaaclab-navrl/.venv/bin/python /home/tong/tongworkspace/free/isaaclab-navrl/scripts/run_acceptance.py --method zhang --output /home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_main_20261029/truncated --screening --num_envs 256 --train_seed 0 --device cuda:0 --finetune_lr 5e-05 --report_episodes 1024 --train_args --variant dcol --algorithm bptt --timesteps 150 --velocity_loss_mode truncated_window --velocity_window_s 2.0 --height_loss_mode target_ex"
+      },
+      "identity": {
+        "fresh": true,
+        "num_envs": 256,
+        "seed": 0,
+        "physics_dt": 0.01,
+        "policy_dt": 0.1,
+        "velocity_loss_mode": "truncated_window",
+        "algorithm": "bptt",
+        "stage": "pretrain_s0",
+        "static_obstacles": 300,
+        "dynamic_obstacles": 0,
+        "randomization": false
+      },
+      "log_incomplete_lines": {
+        "reports": 0,
+        "updates": 0
+      },
+      "reports": {
+        "latest": {
+          "update": 51,
+          "episodes": 1043,
+          "counts": {
+            "success": 58,
+            "collision": 242,
+            "bounds": 743,
+            "invalid": 0,
+            "timeout": 0
+          },
+          "success_rate": 0.05560882070949185,
+          "collision_rate": 0.23202301054650049,
+          "bounds_rate": 0.7123681687440077,
+          "invalid_rate": 0.0,
+          "timeout_rate": 0.0,
+          "success_time_mean_s": 2.8013793195373027,
+          "episode_return_mean": -133.07632318279087,
+          "episode_length_mean": 70.50814956855226,
+          "reward_per_step_mean": -1.8873892450319674
+        },
+        "best": {
+          "update": 24,
+          "episodes": 1137,
+          "success_rate": 0.056288478452066845
+        },
+        "last5_weighted": {
+          "episodes": 6161,
+          "successes": 150,
+          "success_rate": 0.024346696964778446
+        }
+      },
+      "last_complete_update": {
+        "update": 52,
+        "environment_steps": 1996800,
+        "rollout_steps": 150,
+        "velocity_valid_samples": 29914.0,
+        "velocity_short_terminal_samples": 0.0,
+        "Optim/param_norm": 24.980044884874598,
+        "Optim/update_norm": 0.39778387559374007,
+        "Optim/update_ratio": 0.015924065686310357,
+        "grad_norm": 12.225618362426758,
+        "mean_altitude_m": 2.131852388381958,
+        "mean_target_altitude_m": 1.4862221479415894,
+        "mean_abs_target_altitude_error_m": 0.9636516571044922,
+        "mean_executed_vertical_acceleration_mps2": 0.04404116049408913,
+        "terminal_lower_bound_count": 0,
+        "terminal_upper_bound_count": 260,
+        "executed_action_max_error": 0.0,
+        "elapsed_s": 2961.8908463579137,
+        "update_s": 60.30775063589681
+      },
+      "training_result": {
+        "status": "running",
+        "completed_updates": 52,
+        "environment_steps": 1996800,
+        "nonfinite_events": 0,
+        "nonfinite_grad_events": 0,
+        "acceptance_passed": false
+      },
+      "evidence_root": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_main_20261029/truncated/zhang/pretrain_s0"
+    },
+    {
+      "name": "shac",
+      "status": "running",
+      "pid": 962880,
+      "process": {
+        "exists": true,
+        "start_ticks": 54516147,
+        "command": "/home/tong/tongworkspace/free/isaaclab-navrl/.venv/bin/python /home/tong/tongworkspace/free/isaaclab-navrl/scripts/run_acceptance.py --method zhang --output /home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_main_20261029/shac --screening --num_envs 256 --train_seed 0 --device cuda:0 --finetune_lr 5e-05 --report_episodes 1024 --train_args --variant dcol --algorithm shac --timesteps 32 --velocity_loss_mode full_window --velocity_window_s 2.0 --height_loss_mode target_exp --height_"
+      },
+      "identity": {
+        "fresh": true,
+        "num_envs": 256,
+        "seed": 0,
+        "physics_dt": 0.01,
+        "policy_dt": 0.1,
+        "velocity_loss_mode": "full_window",
+        "algorithm": "shac",
+        "stage": "pretrain_s0",
+        "static_obstacles": 300,
+        "dynamic_obstacles": 0,
+        "randomization": false
+      },
+      "log_incomplete_lines": {
+        "reports": 0,
+        "updates": 0
+      },
+      "reports": {
+        "latest": {
+          "update": 231,
+          "episodes": 1186,
+          "counts": {
+            "success": 8,
+            "collision": 32,
+            "bounds": 1146,
+            "invalid": 0,
+            "timeout": 0
+          },
+          "success_rate": 0.006745362563237774,
+          "collision_rate": 0.026981450252951095,
+          "bounds_rate": 0.9662731871838112,
+          "invalid_rate": 0.0,
+          "timeout_rate": 0.0,
+          "success_time_mean_s": 0.9387500148732215,
+          "episode_return_mean": -49.96023033280397,
+          "episode_length_mean": 20.52698145025295,
+          "reward_per_step_mean": -2.4338810094354284
+        },
+        "best": {
+          "update": 116,
+          "episodes": 1224,
+          "success_rate": 0.015522875816993464
+        },
+        "last5_weighted": {
+          "episodes": 6088,
+          "successes": 49,
+          "success_rate": 0.008048620236530881
+        }
+      },
+      "last_complete_update": {
+        "update": 233,
+        "environment_steps": 1908736,
+        "rollout_steps": 32,
+        "velocity_valid_samples": 901.0,
+        "velocity_short_terminal_samples": 0.0,
+        "Optim/param_norm": 29.097364811045328,
+        "Optim/update_norm": 0.11792365725300637,
+        "Optim/update_ratio": 0.004052726355763964,
+        "grad_norm": 7.2866902351379395,
+        "mean_altitude_m": 2.3227438926696777,
+        "mean_target_altitude_m": 1.4622962474822998,
+        "mean_abs_target_altitude_error_m": 1.1308388710021973,
+        "mean_executed_vertical_acceleration_mps2": 1.3223261833190918,
+        "terminal_lower_bound_count": 0,
+        "terminal_upper_bound_count": 386,
+        "executed_action_max_error": 0.0,
+        "elapsed_s": 2919.328619529959,
+        "update_s": 13.890119749004953
+      },
+      "training_result": {
+        "status": "running",
+        "completed_updates": 233,
+        "environment_steps": 1908736,
+        "nonfinite_events": 0,
+        "nonfinite_grad_events": 0,
+        "acceptance_passed": false
+      },
+      "evidence_root": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_main_20261029/shac/zhang/pretrain_s0"
+    },
+    {
+      "name": "ahac",
+      "status": "running",
+      "pid": 963409,
+      "process": {
+        "exists": true,
+        "start_ticks": 54520657,
+        "command": "/home/tong/tongworkspace/free/isaaclab-navrl/.venv/bin/python /home/tong/tongworkspace/free/isaaclab-navrl/scripts/run_acceptance.py --method zhang --output /home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_main_20261029/ahac --screening --num_envs 256 --train_seed 0 --device cuda:0 --finetune_lr 5e-05 --report_episodes 1024 --train_args --variant dcol --algorithm ahac --timesteps 32 --velocity_loss_mode full_window --velocity_window_s 2.0 --height_loss_mode target_exp --height_"
+      },
+      "identity": {
+        "fresh": true,
+        "num_envs": 256,
+        "seed": 0,
+        "physics_dt": 0.01,
+        "policy_dt": 0.1,
+        "velocity_loss_mode": "full_window",
+        "algorithm": "ahac",
+        "stage": "pretrain_s0",
+        "static_obstacles": 300,
+        "dynamic_obstacles": 0,
+        "randomization": false
+      },
+      "log_incomplete_lines": {
+        "reports": 0,
+        "updates": 0
+      },
+      "reports": {
+        "latest": {
+          "update": 57,
+          "episodes": 1185,
+          "counts": {
+            "success": 20,
+            "collision": 280,
+            "bounds": 885,
+            "invalid": 0,
+            "timeout": 0
+          },
+          "success_rate": 0.016877637130801686,
+          "collision_rate": 0.23628691983122363,
+          "bounds_rate": 0.7468354430379747,
+          "invalid_rate": 0.0,
+          "timeout_rate": 0.0,
+          "success_time_mean_s": 1.9085000026971102,
+          "episode_return_mean": -64.12705705135683,
+          "episode_length_mean": 48.15864978902954,
+          "reward_per_step_mean": -1.3315792143733414
+        },
+        "best": {
+          "update": 23,
+          "episodes": 1039,
+          "success_rate": 0.02213666987487969
+        },
+        "last5_weighted": {
+          "episodes": 5823,
+          "successes": 80,
+          "success_rate": 0.013738622703074016
+        }
+      },
+      "last_complete_update": {
+        "update": 57,
+        "environment_steps": 1789952,
+        "rollout_steps": 224,
+        "velocity_valid_samples": 34882.0,
+        "velocity_short_terminal_samples": 0.0,
+        "Optim/param_norm": 25.25882633244566,
+        "Optim/update_norm": 0.10196917592083132,
+        "Optim/update_ratio": 0.004036972050037221,
+        "grad_norm": 7.041965484619141,
+        "mean_altitude_m": 2.2713847160339355,
+        "mean_target_altitude_m": 1.5067793130874634,
+        "mean_abs_target_altitude_error_m": 1.040118932723999,
+        "mean_executed_vertical_acceleration_mps2": 0.20634491741657257,
+        "terminal_lower_bound_count": 0,
+        "terminal_upper_bound_count": 912,
+        "executed_action_max_error": 0.0,
+        "elapsed_s": 2826.7509075639537,
+        "update_s": 97.87970326491632
+      },
+      "training_result": {
+        "status": "running",
+        "completed_updates": 57,
+        "environment_steps": 1789952,
+        "nonfinite_events": 0,
+        "nonfinite_grad_events": 0,
+        "acceptance_passed": false
+      },
+      "evidence_root": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_main_20261029/ahac/zhang/pretrain_s0"
+    },
+    {
+      "name": "plateau",
+      "status": "running",
+      "pid": 991053,
+      "process": {
+        "exists": true,
+        "start_ticks": 54750847,
+        "command": "/home/tong/tongworkspace/free/isaaclab-navrl/.venv/bin/python /home/tong/tongworkspace/free/isaaclab-navrl/scripts/run_acceptance.py --method zhang --output /home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_main_20261029/plateau --screening --num_envs 256 --train_seed 0 --device cuda:0 --finetune_lr 5e-05 --report_episodes 1024 --train_args --variant dcol --algorithm bptt --timesteps 150 --velocity_loss_mode full_window --velocity_window_s 2.0 --height_loss_mode target_exp --hei"
+      },
+      "identity": {
+        "fresh": true,
+        "num_envs": 256,
+        "seed": 0,
+        "physics_dt": 0.01,
+        "policy_dt": 0.1,
+        "velocity_loss_mode": "full_window",
+        "algorithm": "bptt",
+        "stage": "pretrain_s0",
+        "static_obstacles": 300,
+        "dynamic_obstacles": 0,
+        "randomization": false
+      },
+      "log_incomplete_lines": {
+        "reports": 0,
+        "updates": 0
+      },
+      "reports": {
+        "latest": {
+          "update": 6,
+          "episodes": 1101,
+          "counts": {
+            "success": 10,
+            "collision": 188,
+            "bounds": 903,
+            "invalid": 0,
+            "timeout": 0
+          },
+          "success_rate": 0.009082652134423252,
+          "collision_rate": 0.17075386012715713,
+          "bounds_rate": 0.8201634877384196,
+          "invalid_rate": 0.0,
+          "timeout_rate": 0.0,
+          "success_time_mean_s": 2.688999988511205,
+          "episode_return_mean": -140.16819528879412,
+          "episode_length_mean": 67.68210717529519,
+          "reward_per_step_mean": -2.0709785959494664
+        },
+        "best": {
+          "update": 6,
+          "episodes": 1101,
+          "success_rate": 0.009082652134423252
+        },
+        "last5_weighted": {
+          "episodes": 2410,
+          "successes": 14,
+          "success_rate": 0.005809128630705394
+        }
+      },
+      "last_complete_update": {
+        "update": 8,
+        "environment_steps": 307200,
+        "rollout_steps": 150,
+        "velocity_valid_samples": 31995.0,
+        "velocity_short_terminal_samples": 0.0,
+        "Optim/param_norm": 23.520008535002752,
+        "Optim/update_norm": 0.4273684003977229,
+        "Optim/update_ratio": 0.018170418593245412,
+        "grad_norm": 14.088747024536133,
+        "mean_altitude_m": 1.5794782638549805,
+        "mean_target_altitude_m": 1.5531123876571655,
+        "mean_abs_target_altitude_error_m": 0.7381628155708313,
+        "mean_executed_vertical_acceleration_mps2": -0.028751762583851814,
+        "terminal_lower_bound_count": 0,
+        "terminal_upper_bound_count": 6,
+        "executed_action_max_error": 0.0,
+        "elapsed_s": 524.1907065309351,
+        "update_s": 59.207364112953655
+      },
+      "training_result": {
+        "status": "running",
+        "completed_updates": 8,
+        "environment_steps": 307200,
+        "nonfinite_events": 0,
+        "nonfinite_grad_events": 0,
+        "acceptance_passed": false
+      },
+      "evidence_root": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_main_20261029/plateau/zhang/pretrain_s0"
+    },
+    {
+      "name": "navrl_ppo",
+      "status": "queued",
+      "pid": null,
+      "process": null
+    },
+    {
+      "name": "continuous",
+      "status": "queued",
+      "pid": null,
+      "process": null,
+      "log_incomplete_lines": {
+        "reports": 0,
+        "updates": 0
+      },
+      "evidence_root": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_main_20261029/continuous/zhang/pretrain_s0"
+    }
+  ],
+  "gpu": {
+    "total_mib": 24564,
+    "used_mib": 22843,
+    "free_mib": 1241,
+    "utilization_pct": 99
+  },
+  "wave2": {
+    "queue_root": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_restart_controls_wave2_20261029",
+    "source_commit": "6a5eb1d1ec1730e7fff9d6ffdcecdf8c0cea465b",
+    "status": "dispatch_stopped",
+    "stop_dispatch_reason": "signal:15",
+    "stopped": [
+      "ahac300",
+      "dcol_per_step",
+      "dcol_plateau2",
+      "dcol_rms",
+      "dcol_truncated",
+      "navrl_ppo"
+    ],
+    "queued": [
+      "continuous",
+      "dcol_adam",
+      "dcol_full_window",
+      "dcol_height_priority",
+      "dcol_target_huber",
+      "shac"
+    ]
+  },
+  "worktree_state": {
+    "expected_frozen_training_missing": true,
+    "expected_dispatcher_missing": true,
+    "editable_recreated_at_main_commit": "552d330969c1275d5d1ccb64ab51f3beb88505ec"
+  },
+  "validation": {
+    "all_active_zhang_runs_screening_N256": true,
+    "formal_zhang_N1024_pipeline_present": false,
+    "final_stage_passed": false
+  },
+  "note": "Snapshot reads complete JSONL objects only; concurrent training may advance after timestamp. 20Hz and 10Hz runs have different simulation time semantics."
+}

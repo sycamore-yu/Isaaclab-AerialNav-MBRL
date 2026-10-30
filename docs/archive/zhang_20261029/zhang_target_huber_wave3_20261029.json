@@ -1,0 +1,267 @@
+{
+  "snapshot_at_utc": "2026-10-29T16:03:08.732177+00:00",
+  "source": "/home/tong/tongworkspace/free/.worktrees/isaaclab-navrl/zhang-height-huber-20261029",
+  "source_commit": "0ac7e235fd62b1a0534517d2083683193efd13c8",
+  "source_clean": true,
+  "purpose": "fresh_100hz_10hz_huber_shape_screening",
+  "output_root": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_target_huber_wave3_20261029",
+  "launch_manifest": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_target_huber_wave3_20261029/launch.json",
+  "run_results": [
+    {
+      "name": "huber_full_window",
+      "parent": {
+        "pid": 1035659,
+        "alive": true,
+        "start_ticks": 55043578,
+        "cmdline": "/home/tong/tongworkspace/free/isaaclab-navrl/.venv/bin/python -u /home/tong/tongworkspace/free/.worktrees/isaaclab-navrl/zhang-height-huber-20261029/scripts/run_acceptance.py --method zhang --screening --num_envs 256 --train_seed 0 --device cuda:0 --finetune_lr 5e-5 --report_episodes 1024 --output /home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_target_huber_wave3_20261029/huber_full_window --train_args --variant dcol --algorithm bptt --timesteps 150 --velocity_window_s 2.0 --height_loss_mode target_huber --height_target_min 0.5 --height_target_max 2.5 --coef_height_boundary 1.0 --optimizer adamw --weight_decay 0.01 --lr 0.001 --lr_schedule cosine --plateau_patience 2 --observation_normalization 0 --recovery_enabled 1 --max_grad_norm 5.0 --grad_decay 0.4 --camera_batch_size 64 --gradient_projection none --timing baseline --velocity_loss_mode full_window"
+      },
+      "children": [
+        {
+          "pid": 1035662,
+          "alive": true,
+          "start_ticks": 55043585,
+          "cmdline": "/home/tong/tongworkspace/free/isaaclab-navrl/.venv/bin/python /home/tong/tongworkspace/free/.worktrees/isaaclab-navrl/zhang-height-huber-20261029/scripts/train_zhang.py --stage pretrain_s0 --log_dir /home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_target_huber_wave3_20261029/huber_full_window/zhang/pretrain_s0 --num_envs 256 --seed 0 --terrain_seed 0 --device cuda:0 --stop_after_acceptance --report_episodes 1024 --variant dcol --algorithm bptt --timesteps 150 --velocity_window_s 2.0 --height_loss_mode target_huber --height_target_min 0.5 --height_target_max 2.5 --coef_height_boundary 1.0 --optimizer adamw --weight_decay 0.01 --lr 0.001 --lr_schedule cosine --plateau_patience 2 --observation_normalization 0 --recovery_enabled 1 --max_grad_norm 5.0 --grad_decay 0.4 --camera_batch_size 64 --gradient_projection none --timing baseline --velocity_loss_mode full_window"
+        }
+      ],
+      "config_sha256": "7c43f714e679dc8d4a7661ff9c8ad171b67f41c88d3776987610469614a0cb22",
+      "train": {
+        "timesteps": 150,
+        "physics_dt": 0.01,
+        "policy_dt": 0.1,
+        "velocity_loss_mode": "full_window",
+        "height_loss_mode": "target_huber",
+        "optimizer": "adamw",
+        "weight_decay": 0.01,
+        "lr": 0.001,
+        "lr_schedule": "cosine",
+        "observation_normalization": false,
+        "recovery_enabled": true
+      },
+      "environment": {
+        "num_envs": 256,
+        "static_obstacles": 300,
+        "dynamic_obstacles": 0,
+        "randomization": false,
+        "report_episodes": 1024,
+        "depth_camera": {
+          "width": 160,
+          "height": 120,
+          "batch_size": 64,
+          "policy_shape": [
+            12,
+            16
+          ],
+          "pixel_noise_std": 0.0
+        },
+        "static_obstacle_distance": null
+      },
+      "parent_checkpoint": null,
+      "stage_result": {
+        "status": "running",
+        "completed_updates": 5,
+        "environment_steps": 192000,
+        "acceptance_passed": false,
+        "nonfinite_events": 0,
+        "nonfinite_grad_events": 0,
+        "error": null
+      },
+      "complete_update_rows": 5,
+      "latest_update": {
+        "update": 5,
+        "environment_steps": 192000,
+        "grad_norm": 5.397463798522949,
+        "executed_action_max_error": 0.0,
+        "velocity_valid_samples": 31786.0,
+        "velocity_short_terminal_samples": 0.0,
+        "mean_altitude_m": 2.200288772583008,
+        "mean_target_altitude_m": 1.4977742433547974,
+        "mean_abs_target_altitude_error_m": 0.9975208044052124,
+        "terminal_lower_bound_count": 0,
+        "terminal_upper_bound_count": 200,
+        "Optim/param_norm": 23.438247224880644,
+        "Optim/update_norm": 0.4502849223369112,
+        "Optim/update_ratio": 0.019211544191704594
+      },
+      "reports": {
+        "count": 1,
+        "latest": {
+          "update": 4,
+          "dynamic_obstacles": 0,
+          "episodes": 1098,
+          "counts": {
+            "success": 3,
+            "collision": 71,
+            "bounds": 1024,
+            "invalid": 0,
+            "timeout": 0
+          },
+          "success_rate": 0.00273224043715847,
+          "collision_rate": 0.06466302367941712,
+          "bounds_rate": 0.9326047358834244,
+          "invalid_rate": 0.0,
+          "timeout_rate": 0.0,
+          "success_time_mean_s": 7.006666898727417,
+          "episode_return_mean": -164.09062040134424,
+          "episode_length_mean": 129.4744990892532,
+          "reward_per_step_mean": -1.2673586038608917,
+          "stage": "pretrain_s0",
+          "static_obstacles": 300,
+          "randomization": false,
+          "new_best": true,
+          "checkpoint": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_target_huber_wave3_20261029/huber_full_window/zhang/pretrain_s0/checkpoint_best_pretrain_s0.pt"
+        },
+        "recent_5_episodes": 1098,
+        "recent_5_success_rate": 0.00273224043715847
+      }
+    },
+    {
+      "name": "huber_per_step",
+      "parent": {
+        "pid": 1035660,
+        "alive": true,
+        "start_ticks": 55043578,
+        "cmdline": "/home/tong/tongworkspace/free/isaaclab-navrl/.venv/bin/python -u /home/tong/tongworkspace/free/.worktrees/isaaclab-navrl/zhang-height-huber-20261029/scripts/run_acceptance.py --method zhang --screening --num_envs 256 --train_seed 0 --device cuda:0 --finetune_lr 5e-5 --report_episodes 1024 --output /home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_target_huber_wave3_20261029/huber_per_step --train_args --variant dcol --algorithm bptt --timesteps 150 --velocity_window_s 2.0 --height_loss_mode target_huber --height_target_min 0.5 --height_target_max 2.5 --coef_height_boundary 1.0 --optimizer adamw --weight_decay 0.01 --lr 0.001 --lr_schedule cosine --plateau_patience 2 --observation_normalization 0 --recovery_enabled 1 --max_grad_norm 5.0 --grad_decay 0.4 --camera_batch_size 64 --gradient_projection none --timing baseline --velocity_loss_mode per_step"
+      },
+      "children": [
+        {
+          "pid": 1035661,
+          "alive": true,
+          "start_ticks": 55043584,
+          "cmdline": "/home/tong/tongworkspace/free/isaaclab-navrl/.venv/bin/python /home/tong/tongworkspace/free/.worktrees/isaaclab-navrl/zhang-height-huber-20261029/scripts/train_zhang.py --stage pretrain_s0 --log_dir /home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_target_huber_wave3_20261029/huber_per_step/zhang/pretrain_s0 --num_envs 256 --seed 0 --terrain_seed 0 --device cuda:0 --stop_after_acceptance --report_episodes 1024 --variant dcol --algorithm bptt --timesteps 150 --velocity_window_s 2.0 --height_loss_mode target_huber --height_target_min 0.5 --height_target_max 2.5 --coef_height_boundary 1.0 --optimizer adamw --weight_decay 0.01 --lr 0.001 --lr_schedule cosine --plateau_patience 2 --observation_normalization 0 --recovery_enabled 1 --max_grad_norm 5.0 --grad_decay 0.4 --camera_batch_size 64 --gradient_projection none --timing baseline --velocity_loss_mode per_step"
+        }
+      ],
+      "config_sha256": "af62f2dff2516a844aa431e1cafc1cc6342cdc5f1cc7edfc72ea514507926fae",
+      "train": {
+        "timesteps": 150,
+        "physics_dt": 0.01,
+        "policy_dt": 0.1,
+        "velocity_loss_mode": "per_step",
+        "height_loss_mode": "target_huber",
+        "optimizer": "adamw",
+        "weight_decay": 0.01,
+        "lr": 0.001,
+        "lr_schedule": "cosine",
+        "observation_normalization": false,
+        "recovery_enabled": true
+      },
+      "environment": {
+        "num_envs": 256,
+        "static_obstacles": 300,
+        "dynamic_obstacles": 0,
+        "randomization": false,
+        "report_episodes": 1024,
+        "depth_camera": {
+          "width": 160,
+          "height": 120,
+          "batch_size": 64,
+          "policy_shape": [
+            12,
+            16
+          ],
+          "pixel_noise_std": 0.0
+        },
+        "static_obstacle_distance": null
+      },
+      "parent_checkpoint": null,
+      "stage_result": {
+        "status": "running",
+        "completed_updates": 5,
+        "environment_steps": 192000,
+        "acceptance_passed": false,
+        "nonfinite_events": 0,
+        "nonfinite_grad_events": 0,
+        "error": null
+      },
+      "complete_update_rows": 5,
+      "latest_update": {
+        "update": 5,
+        "environment_steps": 192000,
+        "grad_norm": 5.557717323303223,
+        "executed_action_max_error": 0.0,
+        "velocity_valid_samples": 38400.0,
+        "velocity_short_terminal_samples": 0.0,
+        "mean_altitude_m": 2.1857519149780273,
+        "mean_target_altitude_m": 1.4999055862426758,
+        "mean_abs_target_altitude_error_m": 0.9920204877853394,
+        "terminal_lower_bound_count": 0,
+        "terminal_upper_bound_count": 205,
+        "Optim/param_norm": 23.43717249812867,
+        "Optim/update_norm": 0.44881809497184133,
+        "Optim/update_ratio": 0.019149839640752647
+      },
+      "reports": {
+        "count": 1,
+        "latest": {
+          "update": 4,
+          "dynamic_obstacles": 0,
+          "episodes": 1077,
+          "counts": {
+            "success": 3,
+            "collision": 51,
+            "bounds": 1023,
+            "invalid": 0,
+            "timeout": 0
+          },
+          "success_rate": 0.002785515320334262,
+          "collision_rate": 0.04735376044568245,
+          "bounds_rate": 0.9498607242339833,
+          "invalid_rate": 0.0,
+          "timeout_rate": 0.0,
+          "success_time_mean_s": 7.2666670481363935,
+          "episode_return_mean": -160.45097279083762,
+          "episode_length_mean": 130.64531104921076,
+          "reward_per_step_mean": -1.2281418407002744,
+          "stage": "pretrain_s0",
+          "static_obstacles": 300,
+          "randomization": false,
+          "new_best": true,
+          "checkpoint": "/home/tong/tongworkspace/free/isaaclab-navrl/logs/curriculum/zhang_target_huber_wave3_20261029/huber_per_step/zhang/pretrain_s0/checkpoint_best_pretrain_s0.pt"
+        },
+        "recent_5_episodes": 1077,
+        "recent_5_success_rate": 0.002785515320334262
+      }
+    }
+  ],
+  "main_queue": {
+    "status": "draining",
+    "stop_dispatch_reason": "signal:15",
+    "updated_at": "2026-10-29T16:03:04.994246+00:00",
+    "running_unified_20hz": {
+      "status": "running",
+      "completed_updates": 404,
+      "environment_steps": 15513600,
+      "reports": {
+        "count": 55,
+        "latest": {
+          "update": 404,
+          "dynamic_obstacles": 0,
+          "episodes": 1068,
+          "counts": {
+            "success": 700,
+            "collision": 199,
+            "bounds": 118,
+            "invalid": 0,
+            "timeout": 51
+          },
+          "success_rate": 0.6554307116104869,
+          "collision_rate": 0.18632958801498128,
+          "bounds_rate": 0.1104868913857678,
+          "invalid_rate": 0.0,
+          "timeout_rate": 0.047752808988764044,
+          "success_time_mean_s": 12.648857200810951,
+          "episode_return_mean": 1179.0750484698722,
+          "episode_length_mean": 573.9063670411985,
+          "reward_per_step_mean": 2.054472848155788,
+          "stage": "pretrain_s0",
+          "static_obstacles": 300,
+          "randomization": false,
+          "new_best": false
+        },
+        "recent_5_episodes": 5323,
+        "recent_5_success_rate": 0.669735111779072
+      }
+    }
+  },
+  "gpu_csv_total_used_free_utilization": "24564, 9951, 14133, 96",
+  "acceptance_passed": false
+}
