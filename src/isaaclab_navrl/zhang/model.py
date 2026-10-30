@@ -40,18 +40,21 @@ class ZhangPolicy(nn.Module):
             self.fc.weight.mul_(0.01)
 
     def forward(self, depth_features, state, hidden=None):
+        """Return six outputs and complete [N, recurrent_state_size] memory.
+
+        GRU memory is h; SRU memory packs [h, c]. Only h feeds the output head.
+        """
         feature = self.act(self.stem(depth_features) + self.v_proj(state))
         if self.recurrent_model == "gru":
-            hidden = self.gru(feature, hidden)
-            output_hidden = hidden
+            h = self.gru(feature, hidden)
+            hidden = h
         else:
             if hidden is None:
                 hidden = feature.new_zeros(len(feature), self.recurrent_state_size)
             h, c = self.sru(feature, *hidden.split(192, dim=-1))
             # Pack both states so existing per-environment reset/detach/probes cover the full memory.
             hidden = torch.cat((h, c), dim=-1)
-            output_hidden = h
-        return self.fc(self.act(output_hidden)), hidden
+        return self.fc(self.act(h)), hidden
 
     def forward_checkpointed(self, depth_features, state, hidden):
         """Recompute neural activations during backward; never replay PhysX."""
