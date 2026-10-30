@@ -1,5 +1,8 @@
 # 20 Hz 默认与新五组对照
 
+后续迭代遵循 [Zhang 对照开发流程](ZHANG_COMPARISON_WORKFLOW.md)：
+用当前默认配置做对照，选出更好的配置后提交为新默认，再开始下一轮。
+
 当前默认改为已保留的 `zhang_main_20261029/unified_20hz` 配置：DCOL、BPTT、
 物理/策略动作/深度/LiDAR 统一20Hz、H150、完整2秒速度窗口（40步）、
 `target_exp`高度损失、AdamW、无RMS、无梯度投影、cosine。相机仍为160×120，批64。
