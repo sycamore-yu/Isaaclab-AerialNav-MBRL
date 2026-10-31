@@ -121,7 +121,8 @@ class PolicyPerturbation:
         if self._observation_key != key:
             self.latest_observation = sample().clone()
             tick = self.latest_observation.new_full((self.num_envs, 1), key)
-            delivered = self.observation_buffer.compute(torch.cat((self.latest_observation, tick), dim=-1)).clone()
+            # DelayBuffer.compute owns its result; subsequent writes cannot mutate it.
+            delivered = self.observation_buffer.compute(torch.cat((self.latest_observation, tick), dim=-1))
             self._observation = delivered[:, :-1]
             self._observation_age_s = (key - delivered[:, -1]) * self.policy_dt
             self._observation_key = key
