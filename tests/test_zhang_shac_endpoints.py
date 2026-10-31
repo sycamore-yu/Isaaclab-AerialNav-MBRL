@@ -97,7 +97,7 @@ def _run_endpoint_case(tmp_path, trigger_step=1, algorithm="shac", failure_cost=
         failure_terminal_cost=failure_cost,
     )
     trainer = ZhangTrainer(env, cfg, tmp_path)
-    trainer._dcol_gap = lambda query, radius, positions=None, **kwargs: query[..., 0] * 0 + 5
+    trainer._collision_gap = lambda query, radius, positions=None, **kwargs: query[..., 0] * 0 + 5
     original_initialize = trainer._initialize_critic
     endpoints, values, targets = [], [], []
 

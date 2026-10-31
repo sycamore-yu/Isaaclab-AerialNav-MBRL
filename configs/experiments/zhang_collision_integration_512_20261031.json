@@ -1,0 +1,58 @@
+{
+  "title": "DCOL / SDF x original / trapezoid position integration",
+  "budget_interpretation": "user_confirmed_512_optimizer_updates",
+  "num_envs": 256,
+  "timesteps": 150,
+  "updates": 512,
+  "seed": 0,
+  "terrain_seed": 0,
+  "lr": 0.001,
+  "lr_schedule": "cosine",
+  "cosine_period_updates": 400,
+  "physics": "newton_mjwarp",
+  "frontend": "warp",
+  "stage": "finetune_s1",
+  "perception": "depth",
+  "policy_class": "ZhangPolicy",
+  "variant": "dcol",
+  "recurrent_model": "gru",
+  "fresh": true,
+  "checkpoint": null,
+  "loss_timing": "pre_reset",
+  "height_bounds_reset": true,
+  "runs": [
+    {
+      "name": "dcol_original",
+      "collision_metric": "dcol",
+      "position_integration": "original"
+    },
+    {
+      "name": "sdf_original",
+      "collision_metric": "sdf",
+      "position_integration": "original"
+    },
+    {
+      "name": "dcol_trapezoid",
+      "collision_metric": "dcol",
+      "position_integration": "trapezoid"
+    },
+    {
+      "name": "sdf_trapezoid",
+      "collision_metric": "sdf",
+      "position_integration": "trapezoid"
+    }
+  ],
+  "slots": 4,
+  "estimated_training_mib": 4096,
+  "reserve_mib": 2048,
+  "gradient_diagnostic_updates": [
+    1,
+    512
+  ],
+  "evaluation_episodes": 256,
+  "evaluation_seed": 11000,
+  "evaluation_terrain_seed": 11000,
+  "base_default_main_commit": "addcbff4bbaf4f8ae1201b3fe6447600909abbb2",
+  "priority": "These four named controls first; keep old operator-paused study stopped; other authorized sessions may run concurrently when capacity remains",
+  "scope": "Four fresh original depth CNN+GRU controls. Collision metric and differentiable surrogate position integrator are the only experimental factors. Pre-reset losses and height-bound reset are fixed. Newton physical integration is unchanged."
+}

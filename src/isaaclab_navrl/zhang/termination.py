@@ -33,12 +33,14 @@ def reset_first_event(event_code, event_time, env_ids):
     event_time[env_ids] = 0
 
 
-def first_events(root_state, target, collision_gap):
+def first_events(root_state, target, collision_gap, *, height_bounds_reset=True):
     """Shared Zhang policy-boundary and physics-substep sphere predicates."""
     position = root_state[:, :3]
     return {
         "collision": collision_gap <= 0,
-        "bounds": (position[:, 2] < 0.2) | (position[:, 2] > 4.0),
+        "bounds": ((position[:, 2] < 0.2) | (position[:, 2] > 4.0))
+        if height_bounds_reset
+        else torch.zeros_like(collision_gap, dtype=torch.bool),
         "reached": (target - position).norm(dim=-1) < 0.5,
         "invalid": ~torch.isfinite(root_state).all(dim=-1),
     }

@@ -20,7 +20,8 @@ class ZhangInference:
             and payload.get("environment", {}).get("observation_contract") != OBSERVATION_CONTRACT
         ):
             raise ValueError("Observation timing changed; evaluate the old delayed-input policy with its frozen source")
-        self.cfg = ZhangTrainCfg(**payload["train_cfg"])
+        self.training_collision_metric = payload["train_cfg"].get("collision_metric", "dcol")
+        self.cfg = ZhangTrainCfg(**(payload["train_cfg"] | {"collision_metric": "sdf"}))
         self.cfg.validate()
         self.env = env
         self.model = ZhangPolicy(self.cfg.recurrent_model).to(env.device).eval()

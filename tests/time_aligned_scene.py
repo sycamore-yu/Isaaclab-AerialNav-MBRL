@@ -64,7 +64,7 @@ def main():
                 env.curriculum = TrainingCurriculum(32, env.device, stage=cfg.training_stage)
                 (args.output / run["name"]).mkdir()
                 trainer = ZhangTrainer(env, ZhangTrainCfg(**values), args.output / run["name"])
-                original_gap = trainer._dcol_gap
+                original_gap = trainer._collision_gap
                 checks = {"intermediate_samples": 0, "terminal_samples": 0, "maximum_motion_m": 0.0}
 
                 def gap(
@@ -89,7 +89,7 @@ def main():
                         _checks["terminal_samples"] += len(query)
                     return _gap(query, radius, positions, **kwargs)
 
-                trainer._dcol_gap = gap
+                trainer._collision_gap = gap
                 result = trainer.run()
                 rows = [json.loads(line) for line in (trainer.log_dir / "updates.jsonl").read_text().splitlines()]
                 assert result["completed_updates"] == 2

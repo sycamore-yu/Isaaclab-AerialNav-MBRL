@@ -284,7 +284,7 @@ def zhang_transition_costs(history, cfg, velocity_history=None):
             torch.stack(history["relative_velocity"]), torch.stack(history["obstacle_normal"]), distance[:, :, 1:]
         )
         approach = closing.clamp_min(1).detach()
-    collision_gap = torch.stack(history["dcol_gap"]) if cfg.variant == "dcol" else distance[:, :, 1:]
+    collision_gap = torch.stack(history["collision_gap"]) if cfg.variant == "dcol" else distance[:, :, 1:]
     command = torch.stack(history["command"])
     command_previous = torch.stack(history["previous_command"])
     position = torch.stack(history["position"])

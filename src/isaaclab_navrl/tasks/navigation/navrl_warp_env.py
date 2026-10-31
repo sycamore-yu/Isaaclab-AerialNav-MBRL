@@ -271,7 +271,10 @@ class _WarpNavigation:
             collision_gap=self.nearest_obstacle_signed_distance(state[:, :3]) - 0.3,
         )
         self._run_warp("first_events", self._warp_events.launch)
-        return dict(self._warp_events.terms)
+        terms = dict(self._warp_events.terms)
+        if not getattr(self.cfg, "height_bounds_reset", True):
+            terms["bounds"] = torch.zeros_like(terms["bounds"])
+        return terms
 
     def _compute_terms(self):
         state = self.root_state()

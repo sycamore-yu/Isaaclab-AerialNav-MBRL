@@ -23,7 +23,9 @@ class ZhangTrainCfg:
     physics_dt: float = 0.05
     policy_dt: float = 0.05
     velocity_loss_mode: Literal["variant_default", "per_step", "truncated_window", "full_window", "ema"] | None = None
-    collision_metric: Literal["dcol", "sdf"] = "dcol"
+    collision_metric: Literal["sdf"] = "sdf"
+    position_integration: Literal["original", "trapezoid"] = "original"
+    perception: Literal["depth"] = "depth"
     approach_mode: Literal["finite_difference", "relative"] = "finite_difference"
     lateral_avoidance: float = 0.0
     risk_speed_floor: float = 1.0
@@ -103,6 +105,10 @@ class ZhangTrainCfg:
         return steps
 
     def validate(self) -> None:
+        if self.position_integration not in ("original", "trapezoid"):
+            raise ValueError("position_integration must be original or trapezoid")
+        if self.perception != "depth":
+            raise ValueError("Original Zhang uses depth observations")
         if self.loss_timing not in ("deferred", "pre_reset"):
             raise ValueError("loss_timing must be deferred or pre_reset")
         if self.loss_timing == "pre_reset" and (
@@ -119,8 +125,7 @@ class ZhangTrainCfg:
         if self.recurrent_model == "sru_lstm_gated" and self.algorithm != "bptt":
             raise ValueError("SRU-LSTM-Gated currently requires --algorithm bptt; SHAC/AHAC are not supported")
         _ = self.resolved_velocity_loss_mode
-        if self.collision_metric not in ("dcol", "sdf") or (self.collision_metric == "sdf" and self.variant != "dcol"):
-            raise ValueError("collision_metric must be dcol or sdf; sdf comparison requires variant dcol timing")
+        self.validate_collision_metric()
         if self.approach_mode not in ("finite_difference", "relative"):
             raise ValueError("approach_mode must be finite_difference or relative")
         if not math.isfinite(self.lateral_avoidance) or self.lateral_avoidance < 0:
@@ -222,3 +227,7 @@ class ZhangTrainCfg:
         ) != len(self.gradient_diagnostic_updates):
             raise ValueError("gradient_diagnostic_updates must contain unique positive integers")
         _ = self.velocity_window_steps
+
+    def validate_collision_metric(self):
+        if self.collision_metric != "sdf":
+            raise ValueError("Current Zhang uses SDF only; use the explicit historical DCOL reference for comparisons")

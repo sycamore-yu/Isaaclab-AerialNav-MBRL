@@ -259,7 +259,12 @@ class NavRLEnv(DirectRLEnv):
 
         state = self.root_state()
         radius = 0.3  # Shared task sphere; training safety margins are separate.
-        return first_events(state, self.target_pos, self.nearest_obstacle_signed_distance(state[:, :3]) - radius)
+        return first_events(
+            state,
+            self.target_pos,
+            self.nearest_obstacle_signed_distance(state[:, :3]) - radius,
+            height_bounds_reset=getattr(self.cfg, "height_bounds_reset", True),
+        )
 
     def _compute_terms(self):
         state = self.root_state()

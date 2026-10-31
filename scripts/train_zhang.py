@@ -1,6 +1,7 @@
 """Train one Zhang BPTT, SHAC, or AHAC curriculum stage on Isaac Lab 3.0."""
 
 import argparse
+import hashlib
 import os
 import time
 from dataclasses import asdict, fields
@@ -14,12 +15,13 @@ from isaaclab_navrl.training import DEFAULT_STAGE, STAGE_CONFIG, STAGES, gracefu
 from isaaclab_navrl.zhang.cli import add_train_args, parse_train_args
 
 
-def main():
+def main(*, reference_dcol=False):
     process_started = float(os.environ.get("NAVRL_STAGE_STARTED_MONOTONIC", time.monotonic()))
     verify_training_import()
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument("--log_dir", type=Path, required=True)
     parser.add_argument("--num_envs", type=int, default=1024)
+    parser.add_argument("--height_bounds_reset", type=int, choices=(0, 1), default=1)
     parser.add_argument("--report_episodes", type=int, default=1024)
     parser.add_argument("--max_iterations", type=int, default=None, help="Optional smoke-run limit; default unlimited")
     parser.add_argument("--stop_after_acceptance", action="store_true", help="Finish when this stage reaches 80%")
@@ -79,11 +81,17 @@ def main():
     from isaaclab_navrl.tasks.navigation.depth_history import OBSERVATION_CONTRACT
     from isaaclab_navrl.zhang.config import ZhangTrainCfg
 
+    config_type = ZhangTrainCfg
+    if reference_dcol:
+        from isaaclab_navrl.reference.config import DcolReferenceTrainCfg
+
+        config_type = DcolReferenceTrainCfg
     stage = STAGE_CONFIG[args.stage].copy()
     if args.num_dynamic_obstacles is not None:
         stage["dynamic_obstacles"] = args.num_dynamic_obstacles
     cfg = ZhangNavRLEnvCfg()
     cfg.variant = args.variant
+    cfg.height_bounds_reset = bool(args.height_bounds_reset)
     cfg.timing = args.timing
     cfg.training_report_episodes = args.report_episodes
     cfg.height_target_range = (args.height_target_min, args.height_target_max)
@@ -105,7 +113,9 @@ def main():
     train_values = {
         field.name: getattr(args, field.name) for field in fields(ZhangTrainCfg) if hasattr(args, field.name)
     }
-    train_cfg = ZhangTrainCfg(
+    if reference_dcol:
+        train_values["collision_metric"] = "dcol"
+    train_cfg = config_type(
         **train_values,
         physics=args.physics_preset,
         physics_dt=cfg.sim.dt,
@@ -149,6 +159,7 @@ def main():
             "dynamic_obstacle_collision_response": False,
             "collision_terminates": args.variant != "continuous",
             "height_bounds_reset": cfg.height_bounds_reset,
+            "perception": "depth",
             "bounds_terminates": args.variant != "continuous",
             "physics_dt": cfg.sim.dt,
             "policy_dt": cfg.sim.dt * cfg.decimation,
@@ -182,11 +193,59 @@ def main():
             run_config["environment"].update(runtime_metadata(env))
             write_json(args.log_dir / "config.json", run_config)
             write_json(args.log_dir / "nominal_dynamics.json", env.nominal_dynamics)
-            trainer = ZhangTrainer(env, train_cfg, args.log_dir)
+            trainer_type = ZhangTrainer
+            if reference_dcol:
+                from isaaclab_navrl.reference.runner import DcolReferenceTrainer
+
+                trainer_type = DcolReferenceTrainer
+            trainer = trainer_type(env, train_cfg, args.log_dir)
+            initialize_rollout = trainer._initialize_rollout
+
+            def initial_rollout():
+                values = initialize_rollout()
+                receipt = args.log_dir / "initial_rollout.json"
+                if not receipt.exists():
+                    world = {
+                        "root_state": env.root_state(),
+                        "target": env.target_pos,
+                        "obstacle_position": env.motion.position,
+                        "obstacle_velocity": env.motion.velocity,
+                        **{f"parameter/{key}": value for key, value in env.zhang_parameters.items()},
+                    }
+                    hashes = {
+                        key: hashlib.sha256(value.detach().cpu().numpy().tobytes()).hexdigest()
+                        for key, value in world.items()
+                    }
+                    write_json(
+                        receipt,
+                        {
+                            "world_sha256": hashlib.sha256(str(sorted(hashes.items())).encode()).hexdigest(),
+                            "fields": hashes,
+                            "seed": args.seed,
+                            "terrain_seed": args.terrain_seed,
+                        },
+                    )
+                return values
+
+            trainer._initialize_rollout = initial_rollout
             trainer.process_started_at = process_started
             with graceful_training_stop(trainer):
                 if args.checkpoint is not None:
                     trainer.load_stage_checkpoint(args.checkpoint)
+                initial_hash = hashlib.sha256()
+                for name, parameter in trainer.model.state_dict().items():
+                    initial_hash.update(name.encode())
+                    initial_hash.update(parameter.detach().cpu().numpy().tobytes())
+                write_json(
+                    args.log_dir / "initialization.json",
+                    {
+                        "model_sha256": initial_hash.hexdigest(),
+                        "policy_class": type(trainer.model).__name__,
+                        "perception": train_cfg.perception,
+                        "fresh": args.checkpoint is None,
+                        "seed": args.seed,
+                    },
+                )
                 trainer.run()
         finally:
             env.close()

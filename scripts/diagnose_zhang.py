@@ -30,10 +30,10 @@ def main():
     from profile_step import instrument_methods
 
     import isaaclab_navrl.tasks  # noqa: F401
+    from isaaclab_navrl.reference.diagnostics import compare_dynamic_metrics
     from isaaclab_navrl.tasks.navigation.config.hummingbird.env_cfg import ZhangNavRLEnvCfg
     from isaaclab_navrl.zhang.actor_critic import CostActorCritic
     from isaaclab_navrl.zhang.config import ZhangTrainCfg
-    from isaaclab_navrl.zhang.diagnostics import compare_dynamic_metrics
     from isaaclab_navrl.zhang.runner import ZhangTrainer
 
     checkpoint = args.checkpoint.resolve()

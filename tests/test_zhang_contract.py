@@ -345,7 +345,7 @@ def test_dcol_changes_only_collision_gap_and_preserves_approach_weight():
     vectors[0, :, 0] = torch.linspace(2.0, 1.1, 10)
     history["obstacle_signed_distance"] = [vectors.norm(dim=-1)] * 3
     gap = torch.full((3, 1, 9), 0.02, requires_grad=True)
-    history["dcol_gap"] = list(gap.unbind(0))
+    history["collision_gap"] = list(gap.unbind(0))
     original, _, _ = zhang_transition_costs(
         history,
         ZhangTrainCfg(

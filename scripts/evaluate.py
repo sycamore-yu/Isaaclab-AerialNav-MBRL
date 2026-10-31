@@ -22,6 +22,7 @@ def main():
     parser.add_argument("--terrain_seed", type=int, default=10000)
     parser.add_argument("--static_obstacles", type=int, default=350)
     parser.add_argument("--dynamic_obstacles", type=int, default=100)
+    parser.add_argument("--stage", choices=("pretrain_s0", "pretrain_s1", "finetune_s1"))
     add_launcher_args(parser)
     parser.set_defaults(visualizer=["none"])
     args = parse_physics_args(parser)
@@ -44,7 +45,15 @@ def main():
     cfg.num_static_obstacles = args.static_obstacles
     cfg.num_dynamic_obstacles = args.dynamic_obstacles
     cfg.seed, cfg.terrain_seed = args.seed, args.terrain_seed
-    cfg.evaluation = True
+    cfg.evaluation = args.stage is None
+    if args.stage:
+        from isaaclab_navrl.training import STAGE_CONFIG
+
+        stage = STAGE_CONFIG[args.stage]
+        cfg.training_stage = args.stage
+        cfg.num_static_obstacles = stage["static_obstacles"]
+        cfg.num_dynamic_obstacles = stage["dynamic_obstacles"]
+        cfg.sim_to_real.enabled = stage["randomization"]
     cfg.sim.device = args.device
     select_physics(cfg, args.physics_preset)
     cfg.configure_scene()
@@ -80,11 +89,22 @@ def main():
                 "checkpoint": str(args.checkpoint.resolve()),
                 "seed": args.seed,
                 "terrain_seed": args.terrain_seed,
-                "static_obstacles": args.static_obstacles,
-                "dynamic_obstacles": args.dynamic_obstacles,
+                "static_obstacles": cfg.num_static_obstacles,
+                "dynamic_obstacles": cfg.num_dynamic_obstacles,
                 "physics_dt": env.physics_dt,
                 "policy_dt": env.step_dt,
                 "episode_timeout_s": cfg.episode_length_s,
+                "stage": args.stage,
+                "randomization": cfg.sim_to_real.enabled,
+                "height_bounds_reset": getattr(cfg, "height_bounds_reset", True),
+                **(
+                    {
+                        "training_collision_metric": policy.training_collision_metric,
+                        "position_integration": policy.cfg.position_integration,
+                    }
+                    if args.method == "zhang"
+                    else {}
+                ),
                 "elapsed_s": time.perf_counter() - start,
                 "summary": evaluation.summary(),
                 "episodes": evaluation.rows,

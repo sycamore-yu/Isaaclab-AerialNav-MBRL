@@ -12,7 +12,7 @@ from isaaclab_navrl.tasks.navigation.geometry import (
     primitive_signed_distance,
 )
 from isaaclab_navrl.zhang.config import ZhangTrainCfg
-from isaaclab_navrl.zhang.dcol import dynamic_min_alpha, hybrid_collision_gap
+from isaaclab_navrl.reference.dcol import dynamic_min_alpha, hybrid_collision_gap
 from isaaclab_navrl.zhang.losses import zhang_transition_costs
 
 

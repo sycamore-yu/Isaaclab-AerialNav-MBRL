@@ -129,14 +129,14 @@ def test_real_runner_new_modes_keep_terminal_poses_and_reset_graphs(tmp_path, ch
         **changes,
     )
     trainer = ZhangTrainer(env, cfg, tmp_path)
-    original_gap = trainer._dcol_gap
+    original_gap = trainer._collision_gap
     samples = []
 
     def gap(query, radius, positions, **kwargs):
         samples.append(positions.clone())
         return original_gap(query, radius, positions, **kwargs)
 
-    trainer._dcol_gap = gap
+    trainer._collision_gap = gap
     result = trainer.run()
     assert result["completed_updates"] == 2 and result["nonfinite_grad_events"] == 0
     torch.testing.assert_close(samples[0][0, :, 0, 0], 2.0 - torch.linspace(0, 0.1, 10)[1:-1])

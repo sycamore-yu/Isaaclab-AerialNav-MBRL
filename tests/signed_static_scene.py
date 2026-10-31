@@ -195,7 +195,7 @@ def loss_probe(terrain, point, expected_outward):
     import torch.nn.functional as functional
 
     from isaaclab_navrl.tasks.navigation.geometry import nearest_obstacle_signed_distance
-    from isaaclab_navrl.zhang.dcol import hybrid_collision_gap
+    from isaaclab_navrl.reference.dcol import hybrid_collision_gap
 
     query = point.detach().clone().reshape(1, 3).requires_grad_()
     signed = terrain.signed_query(query)

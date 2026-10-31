@@ -23,8 +23,8 @@ from isaaclab_navrl.training import (
 )
 
 from .actor_critic import ActorCriticSettings, CostActorCritic, short_horizon_cost_objective
+from .collision import height_bounded_gap, metric_navigation_gap
 from .critic_state import CriticHistory, critic_observation
-from .dcol import height_bounded_gap, metric_navigation_gap
 from .diagnostics import GradientDiagnostic, collision_records, critic_vertical_probe
 from .dynamics import PointMassState, align_state, align_transition, policy_transition
 from .losses import VelocityEMA, risk_speed_scale, zhang_transition_costs
@@ -80,7 +80,7 @@ class ZhangTrainer:
         return zhang_transition_costs(history, cfg, velocity_history)
 
     def begin_rollout_loss(self):
-        self.pre_reset_dcol = None
+        self.pre_reset_collision = None
         self.step_loss = (
             PreResetLoss(self.cfg, zhang_transition_costs, self.velocity_history)
             if self.cfg.loss_timing == "pre_reset"
@@ -126,9 +126,9 @@ class ZhangTrainer:
                 scored = sample | {"position": terminal.position, "velocity": terminal.velocity}
                 if self.cfg.variant == "dcol":
                     position, obstacles = self._collision_endpoint(positions, terminal.position, transition)
-                    gap = self._dcol_gap(position, parameters["margin"], obstacles)
-                    self.pre_reset_dcol = (position, obstacles, gap)
-                    scored["dcol_gap"] = torch.cat((sample["dcol_lookahead"], gap[:, None]), dim=1)
+                    gap = self._collision_gap(position, parameters["margin"], obstacles)
+                    self.pre_reset_collision = (position, obstacles, gap)
+                    scored["collision_gap"] = torch.cat((sample["collision_lookahead"], gap[:, None]), dim=1)
                 if self.cfg.failure_terminal_cost:
                     code = transition["first_event_code"]
                     scored["failure_terminal"] = transition["terminated"] & (code >= 2) & (code <= 4)
@@ -269,28 +269,17 @@ class ZhangTrainer:
             self.actor_critic.load_state_dict(self._pending_critic_state)
             self._pending_critic_state = None
 
-    def _dcol_gap(self, query, radius, obstacle_positions=None, *, static_distance=None):
-        """Select dynamic DCOL or SDF without changing sample times or static geometry."""
+    def _collision_gap(self, query, radius, obstacle_positions=None, *, static_distance=None):
+        """Metric SDF minus the safety radius, at the existing sample times."""
         from isaaclab_navrl.tasks.navigation.geometry import nearest_obstacle_signed_distance
-
-        from .dcol import hybrid_collision_gap
 
         radius = radius.reshape(-1, *([1] * (query.ndim - 2))).expand(query.shape[:-1])
         static_distance = (
             self.env.terrain_distance.signed_distance(query) if static_distance is None else static_distance
         )
         obstacle_positions = self.env.motion.position if obstacle_positions is None else obstacle_positions
-        if self.cfg.collision_metric == "sdf":
-            return (
-                nearest_obstacle_signed_distance(query, static_distance, obstacle_positions, self.env.motion.size)
-                - radius
-            )
-        return hybrid_collision_gap(
-            query,
-            radius,
-            static_distance,
-            obstacle_positions,
-            self.env.motion.size,
+        return (
+            nearest_obstacle_signed_distance(query, static_distance, obstacle_positions, self.env.motion.size) - radius
         )
 
     def load_stage_checkpoint(self, path):
@@ -601,7 +590,7 @@ class ZhangTrainer:
             )
         if self.cfg.variant == "dcol":
             write_json(
-                self.log_dir / "dcol_geometry.json",
+                self.log_dir / "collision_geometry.json",
                 {
                     "scope": "hybrid_dynamic_" + self.cfg.collision_metric,
                     "dynamic_geometry": "sphere_vs_axis_aligned_box_or_finite_z_cylinder",
@@ -752,14 +741,14 @@ class ZhangTrainer:
                     # Source main_cuda records p + v * sub_div before env.run, including terminating steps.
                     history["obstacle_signed_distance"].append(obstacle_distance)
                     if self.cfg.variant == "dcol":
-                        dcol_lookahead = self._dcol_gap(
+                        collision_lookahead = self._collision_gap(
                             query[:, 1:-1],
                             parameters["margin"],
                             obstacle_positions[:, 1:-1],
                             static_distance=static_distance[:, 1:-1],
                         )
                     if self.cfg.variant == "dcol":
-                        history["dcol_lookahead"].append(dcol_lookahead)
+                        history["collision_lookahead"].append(collision_lookahead)
                     history["margin"].append(parameters["margin"])
                     history["target_velocity"].append(target_velocity)
                     history["height_target"].append(observation["height_target"].detach().clone())
@@ -835,15 +824,17 @@ class ZhangTrainer:
                         # Use the first collision's actual physical substep, including its
                         # obstacle poses. A later policy-end position can already have passed
                         # the object. Its aligned surrogate graph survives same-step reset.
-                        if self.pre_reset_dcol is None:
+                        if self.pre_reset_collision is None:
                             collision_position, collision_obstacles = self._collision_endpoint(
                                 predicted_positions, terminal_state.position, transition
                             )
-                            terminal_gap = self._dcol_gap(collision_position, parameters["margin"], collision_obstacles)
+                            terminal_gap = self._collision_gap(
+                                collision_position, parameters["margin"], collision_obstacles
+                            )
                         else:
-                            collision_position, collision_obstacles, terminal_gap = self.pre_reset_dcol
-                            self.pre_reset_dcol = None
-                        history["dcol_gap"].append(torch.cat((dcol_lookahead, terminal_gap[:, None]), dim=1))
+                            collision_position, collision_obstacles, terminal_gap = self.pre_reset_collision
+                            self.pre_reset_collision = None
+                        history["collision_gap"].append(torch.cat((collision_lookahead, terminal_gap[:, None]), dim=1))
                         if self.horizon_controller is not None:
                             endpoint_clearance = metric_navigation_gap(
                                 collision_position,

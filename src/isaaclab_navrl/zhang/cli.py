@@ -53,6 +53,7 @@ TRAIN_ARG_TYPES = {
     "velocity_window_s": float,
     "velocity_loss_mode": str,
     "collision_metric": str,
+    "position_integration": str,
     "approach_mode": str,
     "lateral_avoidance": float,
     "risk_speed_floor": float,

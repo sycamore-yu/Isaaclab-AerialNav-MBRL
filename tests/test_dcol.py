@@ -5,7 +5,7 @@ import math
 import pytest
 import torch
 
-from isaaclab_navrl.zhang.dcol import (
+from isaaclab_navrl.reference.dcol import (
     dynamic_min_alpha,
     sphere_box_alpha,
     sphere_cylinder_alpha,

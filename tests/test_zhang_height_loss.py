@@ -27,7 +27,7 @@ def _history(position, height_target):
         "episode_id": list(torch.zeros_like(events, dtype=torch.long).unbind(0)),
         "episode_step": list(torch.arange(1, count + 1, device=position.device)[:, None].expand(-1, batch).unbind(0)),
         "obstacle_signed_distance": [position.new_full((batch, 10), 10.0)] * count,
-        "dcol_gap": [position.new_full((batch, 9), 9.7)] * count,
+        "collision_gap": [position.new_full((batch, 9), 9.7)] * count,
         "margin": [position.new_full((batch,), 0.3)] * count,
     }
     for name in ("done", "collision", "bounds", "timeout", "invalid"):
@@ -180,7 +180,7 @@ def test_height_mode_changes_only_its_term_and_preserves_other_cost_gradients():
             "command": list(command.unbind(0)),
             "velocity_prediction": list(prediction.unbind(0)),
             "obstacle_signed_distance": list(signed.unbind(0)),
-            "dcol_gap": list((signed[..., 1:] - 0.3).unbind(0)),
+            "collision_gap": list((signed[..., 1:] - 0.3).unbind(0)),
         }
     )
     cfg = ZhangTrainCfg(
@@ -218,7 +218,7 @@ def test_signed_obstacle_distance_is_used_without_unsigned_or_ground_fallback(va
             "obstacle_signed_distance": list(signed.unbind(0)),
             "obstacle_vector": list(unsigned_vector.unbind(0)),
             "ground_signed_distance": list(legacy_ground.unbind(0)),
-            "dcol_gap": list((signed[..., 1:] - 0.3).unbind(0)),
+            "collision_gap": list((signed[..., 1:] - 0.3).unbind(0)),
         }
     )
     cfg = _height_only_cfg(variant=variant, coef_obj_avoidance=1.0, coef_collide=1.0)

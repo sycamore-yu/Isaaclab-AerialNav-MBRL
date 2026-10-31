@@ -35,7 +35,7 @@ def ground_history(query_height, terminal_height=None):
         "previous_command": list(zero.unbind(0)),
         "velocity_prediction": list(zero.unbind(0)),
         "observed_velocity": list(zero.unbind(0)),
-        "dcol_gap": list((signed[..., 1:] - 0.3).unbind(0)),
+        "collision_gap": list((signed[..., 1:] - 0.3).unbind(0)),
         **{
             name: [torch.zeros(batch, dtype=torch.bool, device=query_height.device) for _ in range(count)]
             for name in ("done", "collision", "bounds", "timeout", "invalid")

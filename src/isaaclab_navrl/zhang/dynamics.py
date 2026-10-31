@@ -49,7 +49,7 @@ def disturbance_acceleration(velocity, quaternion_xyzw, parameters):
     return _disturbance(velocity, quaternion_matrix(quaternion_xyzw), parameters)
 
 
-def point_mass_step(state, command, rotation, parameters, dt, grad_decay):
+def point_mass_step(state, command, rotation, parameters, dt, grad_decay, *, position_integration="original"):
     response = parameters["pitch_ctl_delay"] * parameters.get("control_gain_scale", 1.0)
     # The point-mass adjoint approximates slower attitude response at higher inertia.
     # PhysX uses the sampled inertia tensor directly; both use the same sampled scale.
@@ -71,15 +71,30 @@ def point_mass_step(state, command, rotation, parameters, dt, grad_decay):
         + _disturbance(state.velocity, rotation, parameters)
         + airmode
     )
-    position = gradient_decay(state.position, grad_decay**dt) + state.velocity * dt + 0.5 * state.acceleration * dt * dt
     velocity = gradient_decay(state.velocity, grad_decay**dt) + 0.5 * (state.acceleration + acceleration) * dt
+    if position_integration == "trapezoid":
+        position = gradient_decay(state.position, grad_decay**dt) + 0.5 * (state.velocity + velocity) * dt
+    elif position_integration == "original":
+        position = (
+            gradient_decay(state.position, grad_decay**dt) + state.velocity * dt + 0.5 * state.acceleration * dt * dt
+        )
+    else:
+        raise ValueError("position_integration must be original or trapezoid")
     return PointMassState(position, velocity, acceleration, actuator)
 
 
 def policy_transition(state, command, rotation, parameters, cfg, *, record_positions=False):
     positions = []
     for _ in range(round(cfg.policy_dt / cfg.physics_dt)):
-        state = point_mass_step(state, command, rotation, parameters, cfg.physics_dt, cfg.grad_decay)
+        state = point_mass_step(
+            state,
+            command,
+            rotation,
+            parameters,
+            cfg.physics_dt,
+            cfg.grad_decay,
+            position_integration=cfg.position_integration,
+        )
         if record_positions:
             positions.append(state.position)
     if record_positions:

@@ -11,7 +11,7 @@ from isaaclab_navrl.tasks.navigation.geometry import (
     nearest_obstacle_signed_distance,
     nearest_obstacle_vector,
 )
-from isaaclab_navrl.zhang.dcol import dynamic_min_alpha, hybrid_collision_gap
+from isaaclab_navrl.reference.dcol import dynamic_min_alpha, hybrid_collision_gap
 
 
 def stepped_heightfield(*, reverse_winding=False):

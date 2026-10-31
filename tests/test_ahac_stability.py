@@ -5,13 +5,14 @@ import math
 import pytest
 import torch
 
+from isaaclab_navrl.reference.dcol import hybrid_collision_gap
 from isaaclab_navrl.zhang.actor_critic import (
     ActorCriticSettings,
     AdaptiveHorizonController,
     CostActorCritic,
     critic_split_indices,
 )
-from isaaclab_navrl.zhang.dcol import height_bounded_gap, hybrid_collision_gap, metric_navigation_gap
+from isaaclab_navrl.zhang.collision import height_bounded_gap, metric_navigation_gap
 
 
 def test_single_dangerous_trajectory_is_not_diluted_by_256_environments():

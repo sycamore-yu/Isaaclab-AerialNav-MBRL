@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-from isaaclab_navrl.zhang.dcol import dynamic_min_alpha, hybrid_collision_gap
+from isaaclab_navrl.reference.dcol import dynamic_min_alpha, hybrid_collision_gap
 
 
 @pytest.fixture(autouse=True)
