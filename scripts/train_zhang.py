@@ -140,8 +140,12 @@ def main(*, reference_dcol=False):
         if args.algorithm == "ahac"
         else args.algorithm,
         "height_loss_mode": train_cfg.height_loss_mode,
-        "static_obstacle_distance": "signed_heightfield_occupancy_exit_proxy",
-        "static_projection": "float64_selected_face_refinement_float32_storage",
+        "static_obstacle_distance": "curobo_v2_known_occupancy_pba_esdf"
+        if cfg.geometry_backend == "curobo_v2"
+        else "signed_heightfield_occupancy_exit_proxy",
+        "static_projection": "fp16_esdf_trilinear_fp32_gradient"
+        if cfg.geometry_backend == "curobo_v2"
+        else "float64_selected_face_refinement_float32_storage",
         "environment": {
             "physics": args.physics_preset,
             "frontend": args.frontend,
