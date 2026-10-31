@@ -1,0 +1,25 @@
+# Local environments and caches
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+.build/
+dist/
+# Training and evaluation artifacts
+logs/
+runs/
+recordings/
+checkpoints/
+*.rrd
+*.tfevents.*
+# Local state and developer metadata
+.env
+.env.*
+!.env.example
+AGENTS.md
+CONTEXT.md
+.worktrees/
+# Never commit local simulation traces
+*.core

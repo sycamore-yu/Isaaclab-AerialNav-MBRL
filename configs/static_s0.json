@@ -1,0 +1,18 @@
+{
+  "profile": "static_obstacle_avoidance",
+  "training_stage": "pretrain_s0",
+  "algorithm": "bptt",
+  "variant": "dcol",
+  "recurrent_model": "gru",
+  "physics": "isaacsim_physx",
+  "frontend": "torch",
+  "timing": "unified_20hz",
+  "num_envs": 256,
+  "seed": 0,
+  "terrain_seed": 0,
+  "static_obstacles": 300,
+  "dynamic_obstacles": 0,
+  "randomization": false,
+  "rollout_steps": 150,
+  "height_loss_mode": "goal_height_band"
+}

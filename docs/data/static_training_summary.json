@@ -1,0 +1,66 @@
+{
+  "description": "Single-seed training reports, not an independent evaluation",
+  "wall_clock_definition": "process_elapsed_s: cumulative training process time including initialization",
+  "time_to_threshold": {
+    "50%": {
+      "update": 107,
+      "success_count": 593,
+      "completed_episodes": 1056,
+      "success_rate": 0.5615530303030303,
+      "process_elapsed_s": 1453.7975770200137,
+      "environment_steps": 4108800,
+      "average_environment_steps_per_s": 2826.2531627148505,
+      "static_obstacles": 300,
+      "dynamic_obstacles": 0
+    },
+    "70%": {
+      "update": 157,
+      "success_count": 752,
+      "completed_episodes": 1072,
+      "success_rate": 0.7014925373134329,
+      "process_elapsed_s": 2068.7039271380054,
+      "environment_steps": 6028800,
+      "average_environment_steps_per_s": 2914.2884686938637,
+      "static_obstacles": 300,
+      "dynamic_obstacles": 0
+    },
+    "80%": {
+      "update": 224,
+      "success_count": 851,
+      "completed_episodes": 1054,
+      "success_rate": 0.8074003795066413,
+      "process_elapsed_s": 2906.783271893044,
+      "environment_steps": 8601600,
+      "average_environment_steps_per_s": 2959.1473444795915,
+      "static_obstacles": 300,
+      "dynamic_obstacles": 0
+    }
+  },
+  "best": {
+    "update": 798,
+    "success_count": 944,
+    "completed_episodes": 1055,
+    "success_rate": 0.8947867298578199,
+    "process_elapsed_s": 11391.27799025504,
+    "environment_steps": 30643200,
+    "average_environment_steps_per_s": 2690.058132741077,
+    "static_obstacles": 300,
+    "dynamic_obstacles": 0
+  },
+  "source_revision": "02ab73d854f367007f22a25a988c83c6f2031684",
+  "experiment": {
+    "num_envs": 256,
+    "seed": 0,
+    "terrain_seed": 0,
+    "algorithm": "bptt",
+    "variant": "dcol",
+    "static_obstacles": 300,
+    "dynamic_obstacles": 0,
+    "randomization": false,
+    "physics": "isaacsim_physx",
+    "frontend": "torch",
+    "policy_frequency_hz": 20,
+    "rollout_steps": 150,
+    "device": "NVIDIA GeForce RTX 4090 (host identified at audit; original training JSON does not record device name)"
+  }
+}
