@@ -292,7 +292,13 @@ class ZhangTrainer:
         # Version-3 persisted configs predate optional failure-cost and target-rate fields.
         saved_config = asdict(
             type(self.cfg)(
-                **(payload["train_cfg"] | {"loss_timing": payload["train_cfg"].get("loss_timing", "deferred")})
+                **(
+                    payload["train_cfg"]
+                    | {
+                        "loss_timing": payload["train_cfg"].get("loss_timing", "deferred"),
+                        "position_integration": payload["train_cfg"].get("position_integration", "original"),
+                    }
+                )
             )
         )
         allowed_stage_changes = {"lr", "max_iterations", "stop_after_acceptance", "gradient_diagnostic_updates"}

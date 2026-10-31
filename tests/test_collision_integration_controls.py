@@ -175,3 +175,17 @@ def test_factorial_progress_names_the_two_actual_factors(tmp_path):
     assert result["title"] == plan["title"] and len(result["rows"]) == 4
     assert "height reset=True are fixed" in result["limits"]
     assert "Training reset rules differ" not in result["limits"]
+
+
+def test_selected_default_is_sdf_trapezoid_with_pre_reset_loss():
+    cfg = ZhangTrainCfg()
+    assert cfg.collision_metric == "sdf"
+    assert cfg.position_integration == "trapezoid"
+    assert cfg.loss_timing == "pre_reset"
+    cfg.validate()
+
+
+def test_uncompared_algorithms_keep_their_original_integrator_default():
+    assert ZhangTrainCfg(algorithm="shac").position_integration == "original"
+    assert ZhangTrainCfg(algorithm="ahac").position_integration == "original"
+    assert ZhangTrainCfg(algorithm="bptt", velocity_loss_mode="ema").position_integration == "original"

@@ -35,6 +35,7 @@ TRAIN_ARG_CHOICES = {
 }
 TRAIN_ARG_CHOICES["velocity_loss_mode"] = get_args(get_args(ZhangTrainCfg.__annotations__["velocity_loss_mode"])[0])
 TRAIN_ARG_CHOICES["loss_timing"] = ("deferred", "pre_reset")
+TRAIN_ARG_CHOICES["position_integration"] = ("original", "trapezoid")
 TRAIN_ARG_CHOICES["timing"] = ("baseline", "unified_20hz", "unified_50hz")
 TRAIN_ARG_TYPES = {
     "timing": str,
@@ -188,6 +189,7 @@ def add_train_args(parser):
         lr=None,
         velocity_loss_mode=None,
         loss_timing=None,
+        position_integration=None,
         height_target_min=defaults["height_target_range"][0],
         height_target_max=defaults["height_target_range"][1],
     )

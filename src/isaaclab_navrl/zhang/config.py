@@ -24,7 +24,7 @@ class ZhangTrainCfg:
     policy_dt: float = 0.05
     velocity_loss_mode: Literal["variant_default", "per_step", "truncated_window", "full_window", "ema"] | None = None
     collision_metric: Literal["sdf"] = "sdf"
-    position_integration: Literal["original", "trapezoid"] = "original"
+    position_integration: Literal["original", "trapezoid"] | None = None
     perception: Literal["depth"] = "depth"
     approach_mode: Literal["finite_difference", "relative"] = "finite_difference"
     lateral_avoidance: float = 0.0
@@ -81,6 +81,10 @@ class ZhangTrainCfg:
     def __post_init__(self):
         if self.velocity_loss_mode is None:
             self.velocity_loss_mode = "per_step" if self.algorithm in ("shac", "ahac") else "full_window"
+        if self.position_integration is None:
+            self.position_integration = (
+                "trapezoid" if self.algorithm == "bptt" and self.velocity_loss_mode == "full_window" else "original"
+            )
         if self.loss_timing is None:
             self.loss_timing = (
                 "pre_reset" if self.algorithm == "bptt" and self.velocity_loss_mode == "full_window" else "deferred"

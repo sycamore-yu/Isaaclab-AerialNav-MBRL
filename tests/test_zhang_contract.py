@@ -513,7 +513,13 @@ def test_collision_substep_trace_matches_the_model_and_keeps_only_its_causal_gra
     parameters, rotation, cfg = (
         nominal_parameters(1),
         torch.eye(3)[None],
-        ZhangTrainCfg(physics_dt=0.01, policy_dt=0.1, variant="step", velocity_loss_mode="variant_default"),
+        ZhangTrainCfg(
+            physics_dt=0.01,
+            policy_dt=0.1,
+            variant="step",
+            velocity_loss_mode="variant_default",
+            position_integration="original",
+        ),
     )
     final, positions = policy_transition(start, command, rotation, parameters, cfg, record_positions=True)
     expected = policy_transition(start, command, rotation, parameters, cfg)
@@ -628,11 +634,23 @@ def test_pre_step_lookahead_preserves_gradient_for_a_crossed_obstacle():
     }
     pre_loss, _, _ = zhang_transition_costs(
         dict(base, obstacle_signed_distance=[pre_vectors.norm(dim=-1)]),
-        ZhangTrainCfg(physics_dt=0.01, policy_dt=0.1, variant="step", velocity_loss_mode="variant_default"),
+        ZhangTrainCfg(
+            physics_dt=0.01,
+            policy_dt=0.1,
+            variant="step",
+            velocity_loss_mode="variant_default",
+            position_integration="original",
+        ),
     )
     post_loss, _, _ = zhang_transition_costs(
         dict(base, obstacle_signed_distance=[post_vectors.norm(dim=-1)]),
-        ZhangTrainCfg(physics_dt=0.01, policy_dt=0.1, variant="step", velocity_loss_mode="variant_default"),
+        ZhangTrainCfg(
+            physics_dt=0.01,
+            policy_dt=0.1,
+            variant="step",
+            velocity_loss_mode="variant_default",
+            position_integration="original",
+        ),
     )
     assert pre_loss["obstacle_avoidance"] > 0
     assert post_loss["obstacle_avoidance"] == 0
