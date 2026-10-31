@@ -84,6 +84,10 @@ The checkpoint exporter only accepts the current public checkpoint schema. Legac
 - `docs/data/static_training_summary.json`: sanitized training time evidence.
 - `tests/`: CPU contract tests; optional upstream parity tests use explicitly configured external checkouts.
 
+## Publishing
+
+The code is maintained on a history-isolated release branch of the original development repository and exported into an independent public Git repository. See [the release and synchronization workflow](docs/publishing.md). Do not push the development repository history.
+
 ## Provenance, limitations, and license
 
 The flight dynamics and terrain implementation build upon openly licensed work by the Isaac Lab, OmniDrones, and original NavRL teams. The optional SRU cell retains its original MIT attribution. The `hummingbird.usd` asset is an exact SHA-256 match to the OmniDrones asset included in the NavRL third-party checkout. See [third-party notices](THIRD_PARTY_NOTICES.md) and the preserved license files.
