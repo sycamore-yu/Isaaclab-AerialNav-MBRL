@@ -92,6 +92,7 @@ def main(*, reference_dcol=False):
     cfg = ZhangNavRLEnvCfg()
     cfg.variant = args.variant
     cfg.height_bounds_reset = bool(args.height_bounds_reset)
+    cfg.geometry_backend = args.geometry_backend
     cfg.timing = args.timing
     cfg.training_report_episodes = args.report_episodes
     cfg.height_target_range = (args.height_target_min, args.height_target_max)
@@ -115,6 +116,8 @@ def main(*, reference_dcol=False):
     }
     if reference_dcol:
         train_values["collision_metric"] = "dcol"
+        train_values["geometry_backend"] = "native"
+        cfg.geometry_backend = "native"
     train_cfg = config_type(
         **train_values,
         physics=args.physics_preset,
@@ -151,14 +154,13 @@ def main(*, reference_dcol=False):
             "variant": args.variant,
             "drone_collision_response": args.variant != "continuous",
             "height_target_range": list(cfg.height_target_range),
-            "target_speed_range": [args.target_speed_min, args.target_speed_max]
-            if args.target_speed_min is not None
-            else [2.25, 9.75],
+            "target_speed_range": list(cfg.target_speed_range or (1.0, 6.0)),
             "height_target_source": "current_episode_navigation_goal_z",
             "capture_terminal_observation": cfg.capture_terminal_observation,
             "dynamic_obstacle_collision_response": False,
             "collision_terminates": args.variant != "continuous",
             "height_bounds_reset": cfg.height_bounds_reset,
+            "geometry_backend": cfg.geometry_backend,
             "perception": "depth",
             "bounds_terminates": args.variant != "continuous",
             "physics_dt": cfg.sim.dt,
@@ -199,6 +201,8 @@ def main(*, reference_dcol=False):
 
                 trainer_type = DcolReferenceTrainer
             trainer = trainer_type(env, train_cfg, args.log_dir)
+            if cfg.geometry_backend == "curobo_v2":
+                write_json(args.log_dir / "geometry_backend.json", env.terrain_distance.metadata())
             initialize_rollout = trainer._initialize_rollout
 
             def initial_rollout():

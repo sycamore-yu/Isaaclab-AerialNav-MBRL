@@ -133,6 +133,7 @@ def test_reconfiguring_scene_preserves_speed_event_parameters():
     exec(compile(module, str(path), "exec"), namespace)
     cfg = namespace["Config"]()
     cfg.variant, cfg.timing = "dcol", "unified_20hz"
+    cfg.geometry_backend = "native"
     cfg.height_target_range, cfg.target_speed_range = (0.5, 2.5), (2, 6)
     cfg.sim = SimpleNamespace()
     cfg.scene = SimpleNamespace(drone=SimpleNamespace(spawn=SimpleNamespace()), lidar=SimpleNamespace())

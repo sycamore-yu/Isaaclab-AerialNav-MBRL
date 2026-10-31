@@ -2,12 +2,14 @@
 
 本项目基于 Isaac Lab 3.0.0 提供 NavRL 与 Zhang 两个导航任务。支持 PhysX＋Torch、Newton＋Torch 和 Newton＋Warp。项目脚本默认采用 **Newton＋Warp**，也可显式选择其他组合。并行无人机共用静态地图，不相互碰撞。
 
-三个组合使用相同的动态障碍运动模型。PhysX 保留全局、无物理碰撞的运动学障碍；Newton 不再为动态障碍创建刚体。Newton 相机从全局运动张量更新共享 Warp 网格，任务的动态碰撞检查仍使用解析几何。
+三个组合使用相同的动态障碍运动模型。PhysX 保留全局、无物理碰撞的运动学障碍；Newton 不再为动态障碍创建刚体。Newton 相机从全局运动张量更新共享 Warp 网格；Zhang 默认用 cuRoboV2 查询几何距离和碰撞，NavRL/PPO 保留解析几何。
 
 | 方法 | Gym 任务 | 训练方式 |
 |---|---|---|
 | NavRL | `Isaac-NavRL-Hummingbird-Direct-v0` | 官方 RSL-RL PPO、共享编码器、Beta 速度动作 |
 | Zhang | `Isaac-NavRL-Zhang-Hummingbird-Direct-v0` | CNN + GRU192、所选物理后端前向、可微质点模型反向 |
+
+Zhang 新训练的目标速度默认每回合从 **Uniform(1,6) m/s** 独立采样；几何距离、避障损失与几何碰撞事件默认使用 **cuRoboV2**。起点、终点分别在四条地图边界上均匀采样，默认高度为 `[0.5,2.5] m`，并非全地图内部均匀采样。cuRobo 依赖与对照结果见 [几何后端说明](docs/CUROBO_V2_GEOMETRY_20261031.md)。
 
 Zhang BPTT 可通过 `--recurrent_model sru_lstm_gated` 选择 SRU-LSTM-Gated，默认仍为 `gru`。
 SRU 沿用 CNN、10 维状态及 6 维输出，完整维护 192 维 `h` 和 192 维 `c`。

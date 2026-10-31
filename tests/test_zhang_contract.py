@@ -1001,7 +1001,9 @@ def test_event_randomization_uses_geometry_margin_and_nominal_evaluation():
     env = EventEnv()
     randomize_zhang_parameters(env, None, body_radius=0.3)
     parameters = env.zhang_parameters
-    assert bool(((parameters["max_speed"] >= 2.25) & (parameters["max_speed"] <= 9.75)).all())
+    assert bool(((parameters["max_speed"] >= 1.0) & (parameters["max_speed"] <= 6.0)).all())
+    generator = torch.Generator().manual_seed(env.cfg.seed + 1729)
+    torch.testing.assert_close(parameters["max_speed"], 1.0 + 5.0 * torch.rand(16, 1, generator=generator))
     assert bool(((parameters["margin"] >= 0.3) & (parameters["margin"] <= 0.5)).all())
     untouched = {key: value[1:].clone() for key, value in parameters.items()}
     randomize_zhang_parameters(env, torch.tensor([0]), body_radius=0.3)

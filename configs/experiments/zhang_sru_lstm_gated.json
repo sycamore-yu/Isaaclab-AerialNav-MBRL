@@ -26,6 +26,7 @@
       "method": "zhang",
       "train_args": {
         "variant": "dcol",
+        "geometry_backend": "native",
         "algorithm": "bptt",
         "timesteps": 150,
         "velocity_loss_mode": "full_window",

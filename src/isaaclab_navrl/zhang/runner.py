@@ -279,7 +279,14 @@ class ZhangTrainer:
         )
         obstacle_positions = self.env.motion.position if obstacle_positions is None else obstacle_positions
         return (
-            nearest_obstacle_signed_distance(query, static_distance, obstacle_positions, self.env.motion.size) - radius
+            nearest_obstacle_signed_distance(
+                query,
+                static_distance,
+                obstacle_positions,
+                self.env.motion.size,
+                dynamic_backend=getattr(self.env.terrain_distance, "dynamic_signed_distance", None),
+            )
+            - radius
         )
 
     def load_stage_checkpoint(self, path):
@@ -297,6 +304,7 @@ class ZhangTrainer:
                     | {
                         "loss_timing": payload["train_cfg"].get("loss_timing", "deferred"),
                         "position_integration": payload["train_cfg"].get("position_integration", "original"),
+                        "geometry_backend": payload["train_cfg"].get("geometry_backend", "native"),
                     }
                 )
             )
@@ -376,6 +384,8 @@ class ZhangTrainer:
                 "policy_dt": self.env.step_dt,
                 "depth_camera_batch_size": getattr(self.env.cfg, "depth_camera_batch_size", None),
                 "height_target_range": self.env.cfg.height_target_range,
+                "target_speed_range": getattr(self.env.cfg, "target_speed_range", None),
+                "geometry_backend": self.cfg.geometry_backend,
                 "training_stage": self.env.cfg.training_stage,
                 "variant": self.cfg.variant,
                 "sim_to_real": asdict(self.env.cfg.sim_to_real),
@@ -704,6 +714,7 @@ class ZhangTrainer:
                         obstacle_positions,
                         self.env.motion.size,
                         dynamic_velocity=self.env.motion.velocity if self.cfg.approach_mode == "relative" else None,
+                        dynamic_backend=getattr(self.env.terrain_distance, "dynamic_signed_distance", None),
                     )
                     if self.cfg.approach_mode == "relative":
                         obstacle_distance, obstacle_velocity = geometry

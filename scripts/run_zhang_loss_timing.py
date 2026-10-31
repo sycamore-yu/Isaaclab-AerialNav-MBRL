@@ -83,7 +83,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--tuning_controller_pid", type=int)
-    parser.add_argument("--plan", type=Path, default=Path("configs/experiments/zhang_collision_integration_512_20261031.json"))
+    parser.add_argument(
+        "--plan", type=Path, default=Path("configs/experiments/zhang_collision_integration_512_20261031.json")
+    )
     args = parser.parse_args()
     root = args.output.resolve()
     checkout = Path(__file__).resolve().parents[1]
@@ -173,6 +175,7 @@ def main():
         ]
         if control:
             command += ["--position_integration", control["position_integration"]]
+        command += ["--geometry_backend", "native"]
         if plan.get("gradient_diagnostic_updates"):
             command += ["--gradient_diagnostic_updates", ",".join(map(str, plan["gradient_diagnostic_updates"]))]
         with (root / (name + ".log")).open("x") as log:
@@ -197,6 +200,8 @@ def main():
         command = [
             sys.executable,
             str(source / "scripts/evaluate.py"),
+            "--geometry_backend",
+            "native",
             "--method",
             "zhang",
             "--checkpoint",

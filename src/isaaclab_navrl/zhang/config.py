@@ -25,6 +25,7 @@ class ZhangTrainCfg:
     velocity_loss_mode: Literal["variant_default", "per_step", "truncated_window", "full_window", "ema"] | None = None
     collision_metric: Literal["sdf"] = "sdf"
     position_integration: Literal["original", "trapezoid"] | None = None
+    geometry_backend: Literal["native", "curobo_v2"] = "curobo_v2"
     perception: Literal["depth"] = "depth"
     approach_mode: Literal["finite_difference", "relative"] = "finite_difference"
     lateral_avoidance: float = 0.0
@@ -109,6 +110,13 @@ class ZhangTrainCfg:
         return steps
 
     def validate(self) -> None:
+        self.validate_collision_metric()
+        if self.geometry_backend not in ("native", "curobo_v2"):
+            raise ValueError("geometry_backend must be native or curobo_v2")
+        if self.geometry_backend == "curobo_v2" and (
+            self.collision_metric != "sdf" or self.approach_mode != "finite_difference"
+        ):
+            raise ValueError("cuRoboV2 requires SDF and finite_difference approach mode")
         if self.position_integration not in ("original", "trapezoid"):
             raise ValueError("position_integration must be original or trapezoid")
         if self.perception != "depth":
@@ -129,7 +137,6 @@ class ZhangTrainCfg:
         if self.recurrent_model == "sru_lstm_gated" and self.algorithm != "bptt":
             raise ValueError("SRU-LSTM-Gated currently requires --algorithm bptt; SHAC/AHAC are not supported")
         _ = self.resolved_velocity_loss_mode
-        self.validate_collision_metric()
         if self.approach_mode not in ("finite_difference", "relative"):
             raise ValueError("approach_mode must be finite_difference or relative")
         if not math.isfinite(self.lateral_avoidance) or self.lateral_avoidance < 0:

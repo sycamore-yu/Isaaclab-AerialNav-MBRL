@@ -15,6 +15,7 @@ from isaaclab_navrl.physics import create_navigation_env, parse_physics_args, ru
 def main():
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument("--method", choices=("navrl", "zhang"), required=True)
+    parser.add_argument("--geometry_backend", choices=("native", "curobo_v2"))
     parser.add_argument("--checkpoint", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--episodes", type=int, default=100)
@@ -40,6 +41,10 @@ def main():
     from isaaclab_navrl.tasks.navigation.config.hummingbird.env_cfg import NavRLEnvCfg, ZhangNavRLEnvCfg
 
     cfg = (ZhangNavRLEnvCfg if args.method == "zhang" else NavRLEnvCfg)()
+    if args.geometry_backend is not None:
+        if args.method != "zhang":
+            parser.error("--geometry_backend requires --method zhang")
+        cfg.geometry_backend = args.geometry_backend
     cfg.training_curriculum = False
     cfg.scene.num_envs = args.episodes
     cfg.num_static_obstacles = args.static_obstacles
@@ -100,6 +105,9 @@ def main():
                 **(
                     {
                         "training_collision_metric": policy.training_collision_metric,
+                        "training_geometry_backend": policy.training_geometry_backend,
+                        "evaluation_geometry_backend": cfg.geometry_backend,
+                        "target_speed_range": list(cfg.target_speed_range or (1.0, 6.0)),
                         "position_integration": policy.cfg.position_integration,
                     }
                     if args.method == "zhang"

@@ -148,7 +148,9 @@ def test_four_cell_factorial_rejects_changed_initial_world(tmp_path, monkeypatch
         directory = tmp_path / run["name"]
         directory.mkdir()
         config_type = DcolReferenceTrainCfg if run["collision_metric"] == "dcol" else ZhangTrainCfg
-        cfg = config_type(position_integration=run["position_integration"], max_iterations=512)
+        cfg = config_type(
+            position_integration=run["position_integration"], geometry_backend="native", max_iterations=512
+        )
         config = {
             "train": asdict(cfg),
             "environment": {"num_envs": 256, "height_bounds_reset": True},

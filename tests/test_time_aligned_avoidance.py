@@ -98,7 +98,7 @@ def test_ema_reset_detach_formula_and_independent_random_stream():
     [
         {"velocity_loss_mode": "ema"},
         {"velocity_loss_mode": "ema", "algorithm": "shac"},
-        {"approach_mode": "relative", "lateral_avoidance": 1.0, "risk_speed_floor": 0.25},
+        {"approach_mode": "relative", "lateral_avoidance": 1.0, "risk_speed_floor": 0.25, "geometry_backend": "native"},
         {"collision_metric": "sdf"},
     ],
 )

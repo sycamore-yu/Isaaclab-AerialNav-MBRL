@@ -85,6 +85,10 @@ class NavRLEnv(DirectRLEnv):
             self.set_active_obstacles(cfg.num_dynamic_obstacles)
         elif self.drone.__backend_name__ == "newton":
             self.set_active_obstacles(cfg.num_dynamic_obstacles)
+        if getattr(cfg, "geometry_backend", "native") == "curobo_v2":
+            from isaaclab_navrl.reference.curobo_geometry import CuroboGeometry
+
+            self.terrain_distance = CuroboGeometry(self.terrain_distance, self.motion.size)
         self.target_pos = torch.zeros(self.num_envs, 3, device=self.device)
         self.target_dir = torch.zeros_like(self.target_pos)
         self.height_range = torch.zeros(self.num_envs, 2, device=self.device)
@@ -251,7 +255,11 @@ class NavRLEnv(DirectRLEnv):
 
     def nearest_obstacle_signed_distance(self, query):
         return nearest_obstacle_signed_distance(
-            query, self.terrain_distance.signed_distance(query), self.motion.position, self.motion.size
+            query,
+            self.terrain_distance.signed_distance(query),
+            self.motion.position,
+            self.motion.size,
+            dynamic_backend=getattr(self.terrain_distance, "dynamic_signed_distance", None),
         )
 
     def _compute_first_events(self):

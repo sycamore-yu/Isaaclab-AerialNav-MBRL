@@ -313,12 +313,13 @@ class ZhangNavRLEnvCfg(NavRLEnvCfg):
     training_report_episodes: int | None = 1024
     sim_to_real: SimToRealCfg = SimToRealCfg(enabled=STAGE_CONFIG[DEFAULT_STAGE]["randomization"])
     height_bounds_reset: bool = True
+    geometry_backend: str = "curobo_v2"
     variant: str = "dcol"
     timing: str = "unified_20hz"
     capture_terminal_observation: bool = False
     depth_camera_batch_size: int = 64
     height_target_range: tuple[float, float] = (0.5, 2.5)
-    target_speed_range: tuple[float, float] | None = None
+    target_speed_range: tuple[float, float] | None = (1.0, 6.0)
     decimation = 10
     events = ZhangEventsCfg()
 
@@ -330,6 +331,8 @@ class ZhangNavRLEnvCfg(NavRLEnvCfg):
     def configure_scene(self):
         if self.variant not in ("step", "continuous", "dcol"):
             raise ValueError(f"Unknown Zhang variant: {self.variant}")
+        if self.geometry_backend not in ("native", "curobo_v2"):
+            raise ValueError("geometry_backend must be native or curobo_v2")
         if self.timing not in ("baseline", "unified_20hz", "unified_50hz"):
             raise ValueError(f"Unknown Zhang timing: {self.timing}")
         self.sim.dt = {"baseline": 0.01, "unified_20hz": 0.05, "unified_50hz": 0.02}[self.timing]
