@@ -1,0 +1,658 @@
+{
+  "source_root": "/home/tong/tongworkspace/free/.worktrees/isaaclab-navrl/optim-loop-fs1-20261031/.optim-agent-runs/newton-fs1-u616-20261031",
+  "screened_candidates": 11,
+  "total_training_starts": 16,
+  "training_start_limit": 16,
+  "screen": [
+    {
+      "name": "agent_c07",
+      "state": "complete",
+      "value": 0.72265625,
+      "weights": {
+        "coef_v": 1.0,
+        "coef_obj_avoidance": 4.0,
+        "coef_collide": 7.5,
+        "coef_d_acc": 0.01,
+        "coef_d_jerk": 0.001,
+        "coef_height_boundary": 1.0,
+        "timesteps": 150,
+        "target_speed_min": 2.25,
+        "target_speed_max": 9.75,
+        "height_target_min": 0.5,
+        "height_target_max": 2.5,
+        "cosine_period_updates": 400
+      },
+      "evidence": "/home/tong/tongworkspace/free/.worktrees/isaaclab-navrl/optim-loop-fs1-20261031/.optim-agent-runs/newton-fs1-u616-20261031/baseline_fs1_dyn40/screen/agent_c07/result.json"
+    },
+    {
+      "name": "agent_c08",
+      "state": "complete",
+      "value": 0.7265625,
+      "weights": {
+        "coef_v": 1.0,
+        "coef_obj_avoidance": 3.5,
+        "coef_collide": 7.5,
+        "coef_d_acc": 0.01,
+        "coef_d_jerk": 0.001,
+        "coef_height_boundary": 1.0,
+        "timesteps": 150,
+        "target_speed_min": 2.25,
+        "target_speed_max": 9.75,
+        "height_target_min": 0.5,
+        "height_target_max": 2.5,
+        "cosine_period_updates": 400
+      },
+      "evidence": "/home/tong/tongworkspace/free/.worktrees/isaaclab-navrl/optim-loop-fs1-20261031/.optim-agent-runs/newton-fs1-u616-20261031/baseline_fs1_dyn40/screen/agent_c08/result.json"
+    },
+    {
+      "name": "agent_c09",
+      "state": "complete",
+      "value": 0.7265625,
+      "weights": {
+        "coef_v": 1.0,
+        "coef_obj_avoidance": 3.5,
+        "coef_collide": 12.5,
+        "coef_d_acc": 0.01,
+        "coef_d_jerk": 0.001,
+        "coef_height_boundary": 1.0,
+        "timesteps": 150,
+        "target_speed_min": 2.25,
+        "target_speed_max": 9.75,
+        "height_target_min": 0.5,
+        "height_target_max": 2.5,
+        "cosine_period_updates": 400
+      },
+      "evidence": "/home/tong/tongworkspace/free/.worktrees/isaaclab-navrl/optim-loop-fs1-20261031/.optim-agent-runs/newton-fs1-u616-20261031/baseline_fs1_dyn40/screen/agent_c09/result.json"
+    },
+    {
+      "name": "agent_c10",
+      "state": "complete",
+      "value": 0.703125,
+      "weights": {
+        "coef_v": 1.0,
+        "coef_obj_avoidance": 3.5,
+        "coef_collide": 7.5,
+        "coef_d_acc": 0.005,
+        "coef_d_jerk": 0.001,
+        "coef_height_boundary": 1.0,
+        "timesteps": 150,
+        "target_speed_min": 2.25,
+        "target_speed_max": 9.75,
+        "height_target_min": 0.5,
+        "height_target_max": 2.5,
+        "cosine_period_updates": 400
+      },
+      "evidence": "/home/tong/tongworkspace/free/.worktrees/isaaclab-navrl/optim-loop-fs1-20261031/.optim-agent-runs/newton-fs1-u616-20261031/baseline_fs1_dyn40/screen/agent_c10/result.json"
+    },
+    {
+      "name": "agent_c11",
+      "state": "complete",
+      "value": 0.734375,
+      "weights": {
+        "coef_v": 1.0,
+        "coef_obj_avoidance": 3.5,
+        "coef_collide": 7.5,
+        "coef_d_acc": 0.01,
+        "coef_d_jerk": 0.001,
+        "coef_height_boundary": 1.0,
+        "timesteps": 200,
+        "target_speed_min": 2.25,
+        "target_speed_max": 9.75,
+        "height_target_min": 0.5,
+        "height_target_max": 2.5,
+        "cosine_period_updates": 400
+      },
+      "evidence": "/home/tong/tongworkspace/free/.worktrees/isaaclab-navrl/optim-loop-fs1-20261031/.optim-agent-runs/newton-fs1-u616-20261031/baseline_fs1_dyn40/screen/agent_c11/result.json"
+    },
+    {
+      "name": "agent_c12",
+      "state": "complete",
+      "value": 0.76171875,
+      "weights": {
+        "coef_v": 1.0,
+        "coef_obj_avoidance": 3.5,
+        "coef_collide": 7.5,
+        "coef_d_acc": 0.01,
+        "coef_d_jerk": 0.001,
+        "coef_height_boundary": 1.0,
+        "timesteps": 256,
+        "target_speed_min": 2.25,
+        "target_speed_max": 9.75,
+        "height_target_min": 0.5,
+        "height_target_max": 2.5,
+        "cosine_period_updates": 400
+      },
+      "evidence": "/home/tong/tongworkspace/free/.worktrees/isaaclab-navrl/optim-loop-fs1-20261031/.optim-agent-runs/newton-fs1-u616-20261031/baseline_fs1_dyn40/screen/agent_c12/result.json"
+    },
+    {
+      "name": "agent_c13",
+      "state": "complete",
+      "value": 0.7109375,
+      "weights": {
+        "coef_v": 1.0,
+        "coef_obj_avoidance": 4.0,
+        "coef_collide": 7.5,
+        "coef_d_acc": 0.01,
+        "coef_d_jerk": 0.001,
+        "coef_height_boundary": 1.0,
+        "timesteps": 256,
+        "target_speed_min": 2.25,
+        "target_speed_max": 9.75,
+        "height_target_min": 0.5,
+        "height_target_max": 2.5,
+        "cosine_period_updates": 400
+      },
+      "evidence": "/home/tong/tongworkspace/free/.worktrees/isaaclab-navrl/optim-loop-fs1-20261031/.optim-agent-runs/newton-fs1-u616-20261031/baseline_fs1_dyn40/screen/agent_c13/result.json"
+    },
+    {
+      "name": "agent_c14",
+      "state": "complete",
+      "value": 0.7265625,
+      "weights": {
+        "coef_v": 1.0,
+        "coef_obj_avoidance": 3.25,
+        "coef_collide": 7.5,
+        "coef_d_acc": 0.01,
+        "coef_d_jerk": 0.001,
+        "coef_height_boundary": 1.0,
+        "timesteps": 256,
+        "target_speed_min": 2.25,
+        "target_speed_max": 9.75,
+        "height_target_min": 0.5,
+        "height_target_max": 2.5,
+        "cosine_period_updates": 400
+      },
+      "evidence": "/home/tong/tongworkspace/free/.worktrees/isaaclab-navrl/optim-loop-fs1-20261031/.optim-agent-runs/newton-fs1-u616-20261031/baseline_fs1_dyn40/screen/agent_c14/result.json"
+    },
+    {
+      "name": "agent_c15",
+      "state": "complete",
+      "value": 0.6875,
+      "weights": {
+        "coef_v": 1.0,
+        "coef_obj_avoidance": 3.5,
+        "coef_collide": 7.5,
+        "coef_d_acc": 0.01,
+        "coef_d_jerk": 0.001,
+        "coef_height_boundary": 1.0,
+        "timesteps": 150,
+        "target_speed_min": 2.25,
+        "target_speed_max": 9.75,
+        "height_target_min": 0.5,
+        "height_target_max": 2.5,
+        "cosine_period_updates": 1200
+      },
+      "evidence": "/home/tong/tongworkspace/free/.worktrees/isaaclab-navrl/optim-loop-fs1-20261031/.optim-agent-runs/newton-fs1-u616-20261031/baseline_fs1_dyn40/screen/agent_c15/result.json"
+    },
+    {
+      "name": "agent_c16",
+      "state": "complete",
+      "value": 0.73828125,
+      "weights": {
+        "coef_v": 1.1,
+        "coef_obj_avoidance": 3.5,
+        "coef_collide": 7.5,
+        "coef_d_acc": 0.01,
+        "coef_d_jerk": 0.001,
+        "coef_height_boundary": 1.0,
+        "timesteps": 150,
+        "target_speed_min": 2.25,
+        "target_speed_max": 9.75,
+        "height_target_min": 0.5,
+        "height_target_max": 2.5,
+        "cosine_period_updates": 400
+      },
+      "evidence": "/home/tong/tongworkspace/free/.worktrees/isaaclab-navrl/optim-loop-fs1-20261031/.optim-agent-runs/newton-fs1-u616-20261031/baseline_fs1_dyn40/screen/agent_c16/result.json"
+    },
+    {
+      "name": "agent_c17",
+      "state": "complete",
+      "value": 0.734375,
+      "weights": {
+        "coef_v": 1.0,
+        "coef_obj_avoidance": 3.5,
+        "coef_collide": 7.5,
+        "coef_d_acc": 0.01,
+        "coef_d_jerk": 0.001,
+        "coef_height_boundary": 1.0,
+        "timesteps": 150,
+        "target_speed_min": 3.0,
+        "target_speed_max": 9.75,
+        "height_target_min": 0.5,
+        "height_target_max": 2.5,
+        "cosine_period_updates": 400
+      },
+      "evidence": "/home/tong/tongworkspace/free/.worktrees/isaaclab-navrl/optim-loop-fs1-20261031/.optim-agent-runs/newton-fs1-u616-20261031/baseline_fs1_dyn40/screen/agent_c17/result.json"
+    },
+    {
+      "name": "baseline",
+      "state": "complete",
+      "value": 0.7109375,
+      "weights": {
+        "coef_v": 1.0,
+        "coef_obj_avoidance": 3.0,
+        "coef_collide": 7.5,
+        "coef_d_acc": 0.01,
+        "coef_d_jerk": 0.001,
+        "coef_height_boundary": 1.0,
+        "timesteps": 150,
+        "target_speed_min": 2.25,
+        "target_speed_max": 9.75,
+        "height_target_min": 0.5,
+        "height_target_max": 2.5,
+        "cosine_period_updates": 400
+      },
+      "evidence": "/home/tong/tongworkspace/free/.worktrees/isaaclab-navrl/optim-loop-fs1-20261031/.optim-agent-runs/newton-fs1-u616-20261031/baseline_fs1_dyn40/screen/baseline/result.json"
+    }
+  ],
+  "confirmation": {
+    "baseline_128_s20001": {
+      "state": "complete",
+      "value": 0.65625,
+      "feasible": true,
+      "acceptance_passed": false,
+      "rates": {
+        "s20001/u16/e11000": {
+          "S": 0.70703125,
+          "C": 0.26171875,
+          "H": 0.0,
+          "Z": 0.00390625
+        },
+        "s20001/u16/e11001": {
+          "S": 0.76171875,
+          "C": 0.20703125,
+          "H": 0.00390625,
+          "Z": 0.0
+        },
+        "s20001/u32/e11000": {
+          "S": 0.703125,
+          "C": 0.28515625,
+          "H": 0.00390625,
+          "Z": 0.0
+        },
+        "s20001/u32/e11001": {
+          "S": 0.75390625,
+          "C": 0.2265625,
+          "H": 0.0,
+          "Z": 0.0
+        },
+        "s20001/u64/e11000": {
+          "S": 0.65625,
+          "C": 0.3125,
+          "H": 0.00390625,
+          "Z": 0.0
+        },
+        "s20001/u64/e11001": {
+          "S": 0.6953125,
+          "C": 0.26953125,
+          "H": 0.00390625,
+          "Z": 0.00390625
+        },
+        "s20001/u96/e11000": {
+          "S": 0.72265625,
+          "C": 0.2578125,
+          "H": 0.0078125,
+          "Z": 0.0
+        },
+        "s20001/u96/e11001": {
+          "S": 0.76171875,
+          "C": 0.2265625,
+          "H": 0.0,
+          "Z": 0.0
+        },
+        "s20001/u128/e11000": {
+          "S": 0.71484375,
+          "C": 0.26953125,
+          "H": 0.0078125,
+          "Z": 0.0
+        },
+        "s20001/u128/e11001": {
+          "S": 0.73046875,
+          "C": 0.25,
+          "H": 0.0,
+          "Z": 0.00390625
+        }
+      }
+    },
+    "baseline_128_s20002": {
+      "state": "complete",
+      "value": 0.69140625,
+      "feasible": true,
+      "acceptance_passed": false,
+      "rates": {
+        "s20002/u16/e11000": {
+          "S": 0.7109375,
+          "C": 0.22265625,
+          "H": 0.0078125,
+          "Z": 0.00390625
+        },
+        "s20002/u16/e11001": {
+          "S": 0.81640625,
+          "C": 0.16796875,
+          "H": 0.00390625,
+          "Z": 0.0
+        },
+        "s20002/u32/e11000": {
+          "S": 0.65234375,
+          "C": 0.296875,
+          "H": 0.0,
+          "Z": 0.0
+        },
+        "s20002/u32/e11001": {
+          "S": 0.65234375,
+          "C": 0.28515625,
+          "H": 0.0,
+          "Z": 0.0
+        },
+        "s20002/u64/e11000": {
+          "S": 0.69140625,
+          "C": 0.25390625,
+          "H": 0.0,
+          "Z": 0.00390625
+        },
+        "s20002/u64/e11001": {
+          "S": 0.76171875,
+          "C": 0.18359375,
+          "H": 0.0,
+          "Z": 0.00390625
+        },
+        "s20002/u96/e11000": {
+          "S": 0.703125,
+          "C": 0.2578125,
+          "H": 0.0,
+          "Z": 0.00390625
+        },
+        "s20002/u96/e11001": {
+          "S": 0.71875,
+          "C": 0.23046875,
+          "H": 0.00390625,
+          "Z": 0.00390625
+        },
+        "s20002/u128/e11000": {
+          "S": 0.71484375,
+          "C": 0.2578125,
+          "H": 0.00390625,
+          "Z": 0.0
+        },
+        "s20002/u128/e11001": {
+          "S": 0.69921875,
+          "C": 0.28125,
+          "H": 0.0,
+          "Z": 0.0
+        }
+      }
+    },
+    "selected_128_s20001": {
+      "state": "complete",
+      "value": -1.00171875,
+      "feasible": false,
+      "acceptance_passed": false,
+      "rates": {
+        "s20001/u16/e11000": {
+          "S": 0.6484375,
+          "C": 0.25,
+          "H": 0.00390625,
+          "Z": 0.00390625
+        },
+        "s20001/u16/e11001": {
+          "S": 0.67578125,
+          "C": 0.1953125,
+          "H": 0.00390625,
+          "Z": 0.01171875
+        },
+        "s20001/u32/e11000": {
+          "S": 0.640625,
+          "C": 0.2890625,
+          "H": 0.00390625,
+          "Z": 0.0078125
+        },
+        "s20001/u32/e11001": {
+          "S": 0.70703125,
+          "C": 0.22265625,
+          "H": 0.0,
+          "Z": 0.0078125
+        },
+        "s20001/u64/e11000": {
+          "S": 0.765625,
+          "C": 0.20703125,
+          "H": 0.0078125,
+          "Z": 0.0
+        },
+        "s20001/u64/e11001": {
+          "S": 0.77734375,
+          "C": 0.20703125,
+          "H": 0.0,
+          "Z": 0.00390625
+        },
+        "s20001/u96/e11000": {
+          "S": 0.7109375,
+          "C": 0.234375,
+          "H": 0.0,
+          "Z": 0.00390625
+        },
+        "s20001/u96/e11001": {
+          "S": 0.73828125,
+          "C": 0.21875,
+          "H": 0.00390625,
+          "Z": 0.0
+        },
+        "s20001/u128/e11000": {
+          "S": 0.71484375,
+          "C": 0.23828125,
+          "H": 0.0078125,
+          "Z": 0.00390625
+        },
+        "s20001/u128/e11001": {
+          "S": 0.74609375,
+          "C": 0.20703125,
+          "H": 0.00390625,
+          "Z": 0.00390625
+        }
+      }
+    },
+    "selected_128_s20002": {
+      "state": "complete",
+      "value": -1.03078125,
+      "feasible": false,
+      "acceptance_passed": false,
+      "rates": {
+        "s20002/u16/e11000": {
+          "S": 0.70703125,
+          "C": 0.24609375,
+          "H": 0.0,
+          "Z": 0.00390625
+        },
+        "s20002/u16/e11001": {
+          "S": 0.7578125,
+          "C": 0.1875,
+          "H": 0.0,
+          "Z": 0.0078125
+        },
+        "s20002/u32/e11000": {
+          "S": 0.6171875,
+          "C": 0.2890625,
+          "H": 0.00390625,
+          "Z": 0.01171875
+        },
+        "s20002/u32/e11001": {
+          "S": 0.69140625,
+          "C": 0.26171875,
+          "H": 0.0,
+          "Z": 0.0078125
+        },
+        "s20002/u64/e11000": {
+          "S": 0.65625,
+          "C": 0.296875,
+          "H": 0.0,
+          "Z": 0.00390625
+        },
+        "s20002/u64/e11001": {
+          "S": 0.703125,
+          "C": 0.21875,
+          "H": 0.00390625,
+          "Z": 0.00390625
+        },
+        "s20002/u96/e11000": {
+          "S": 0.6640625,
+          "C": 0.30859375,
+          "H": 0.0,
+          "Z": 0.00390625
+        },
+        "s20002/u96/e11001": {
+          "S": 0.71875,
+          "C": 0.23828125,
+          "H": 0.00390625,
+          "Z": 0.00390625
+        },
+        "s20002/u128/e11000": {
+          "S": 0.69921875,
+          "C": 0.21484375,
+          "H": 0.0,
+          "Z": 0.00390625
+        },
+        "s20002/u128/e11001": {
+          "S": 0.6875,
+          "C": 0.23046875,
+          "H": 0.0,
+          "Z": 0.00390625
+        }
+      }
+    },
+    "selected_agent_128_20261031": {
+      "state": "complete",
+      "value": -1.03078125,
+      "feasible": false,
+      "acceptance_passed": false,
+      "rates": {
+        "s20001/u16/e11000": {
+          "S": 0.6484375,
+          "C": 0.25,
+          "H": 0.00390625,
+          "Z": 0.00390625
+        },
+        "s20001/u16/e11001": {
+          "S": 0.67578125,
+          "C": 0.1953125,
+          "H": 0.00390625,
+          "Z": 0.01171875
+        },
+        "s20001/u32/e11000": {
+          "S": 0.640625,
+          "C": 0.2890625,
+          "H": 0.00390625,
+          "Z": 0.0078125
+        },
+        "s20001/u32/e11001": {
+          "S": 0.70703125,
+          "C": 0.22265625,
+          "H": 0.0,
+          "Z": 0.0078125
+        },
+        "s20001/u64/e11000": {
+          "S": 0.765625,
+          "C": 0.20703125,
+          "H": 0.0078125,
+          "Z": 0.0
+        },
+        "s20001/u64/e11001": {
+          "S": 0.77734375,
+          "C": 0.20703125,
+          "H": 0.0,
+          "Z": 0.00390625
+        },
+        "s20001/u96/e11000": {
+          "S": 0.7109375,
+          "C": 0.234375,
+          "H": 0.0,
+          "Z": 0.00390625
+        },
+        "s20001/u96/e11001": {
+          "S": 0.73828125,
+          "C": 0.21875,
+          "H": 0.00390625,
+          "Z": 0.0
+        },
+        "s20001/u128/e11000": {
+          "S": 0.71484375,
+          "C": 0.23828125,
+          "H": 0.0078125,
+          "Z": 0.00390625
+        },
+        "s20001/u128/e11001": {
+          "S": 0.74609375,
+          "C": 0.20703125,
+          "H": 0.00390625,
+          "Z": 0.00390625
+        },
+        "s20002/u16/e11000": {
+          "S": 0.70703125,
+          "C": 0.24609375,
+          "H": 0.0,
+          "Z": 0.00390625
+        },
+        "s20002/u16/e11001": {
+          "S": 0.7578125,
+          "C": 0.1875,
+          "H": 0.0,
+          "Z": 0.0078125
+        },
+        "s20002/u32/e11000": {
+          "S": 0.6171875,
+          "C": 0.2890625,
+          "H": 0.00390625,
+          "Z": 0.01171875
+        },
+        "s20002/u32/e11001": {
+          "S": 0.69140625,
+          "C": 0.26171875,
+          "H": 0.0,
+          "Z": 0.0078125
+        },
+        "s20002/u64/e11000": {
+          "S": 0.65625,
+          "C": 0.296875,
+          "H": 0.0,
+          "Z": 0.00390625
+        },
+        "s20002/u64/e11001": {
+          "S": 0.703125,
+          "C": 0.21875,
+          "H": 0.00390625,
+          "Z": 0.00390625
+        },
+        "s20002/u96/e11000": {
+          "S": 0.6640625,
+          "C": 0.30859375,
+          "H": 0.0,
+          "Z": 0.00390625
+        },
+        "s20002/u96/e11001": {
+          "S": 0.71875,
+          "C": 0.23828125,
+          "H": 0.00390625,
+          "Z": 0.00390625
+        },
+        "s20002/u128/e11000": {
+          "S": 0.69921875,
+          "C": 0.21484375,
+          "H": 0.0,
+          "Z": 0.00390625
+        },
+        "s20002/u128/e11001": {
+          "S": 0.6875,
+          "C": 0.23046875,
+          "H": 0.0,
+          "Z": 0.00390625
+        }
+      }
+    }
+  },
+  "recommendation": {
+    "timesteps": 150,
+    "coef_obj_avoidance": 3.0,
+    "lr": 0.001,
+    "cosine_period_updates": 400,
+    "reason": "C12 failed paired independent confirmation; retain baseline hyperparameters on the new task"
+  },
+  "new_task_transfer_confirmed": false
+}

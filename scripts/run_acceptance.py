@@ -227,6 +227,7 @@ def run_pipeline(args: argparse.Namespace, train_args: dict[str, TrainArgValue])
         "train_args": train_args,
         "start_stage": start_stage,
         "fixed_stage": fixed_stage,
+        "continue_final_stage": getattr(args, "continue_final_stage", False),
         "stage_order": list(stages),
         "skipped_stages": list(STAGES[: STAGES.index(start_stage)]),
         "complete_curriculum_passed": False,
@@ -284,7 +285,7 @@ def run_pipeline(args: argparse.Namespace, train_args: dict[str, TrainArgValue])
                     parent_checkpoint=parent_checkpoint,
                     report_episodes=getattr(args, "report_episodes", None),
                     fresh_stage=stage == start_stage and start_stage != STAGES[0],
-                    fixed_stage=fixed_stage,
+                    fixed_stage=fixed_stage or (getattr(args, "continue_final_stage", False) and stage == STAGES[-1]),
                     physics=args.physics_preset,
                     frontend=args.frontend,
                 )
@@ -426,6 +427,7 @@ def main() -> int:
         help="Zhang screening only: start fresh here, then follow the remaining stage order",
     )
     parser.add_argument("--train_seed", type=int, default=0)
+    parser.add_argument("--continue_final_stage", action="store_true", help="Continue final-stage training after 80%")
     parser.add_argument(
         "--fixed_stage", action="store_true", help="Screening only: stay in the start scene after reaching 80%"
     )

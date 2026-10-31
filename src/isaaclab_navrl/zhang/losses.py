@@ -276,6 +276,11 @@ def zhang_transition_costs(history, cfg, velocity_history=None):
     if obstacle_distance.shape != (timesteps, num_envs, 10):
         raise ValueError("obstacle_signed_distance must match the [T, N, 10] obstacle look-ahead samples")
     distance = obstacle_distance - margin
+    avoidance_distance = (
+        torch.stack(history["avoidance_signed_distance"]) - margin
+        if "avoidance_signed_distance" in history
+        else distance
+    )
     # Ten source look-ahead points include both endpoints: dt_sample = policy_dt / 9.
     approach = (-distance.diff(dim=2) * ((distance.shape[2] - 1) / cfg.policy_dt)).clamp_min(1).detach()
     lateral_cost = 0.0
@@ -310,7 +315,7 @@ def zhang_transition_costs(history, cfg, velocity_history=None):
         "velocity_prediction": F.mse_loss(
             torch.stack(history["velocity_prediction"]), torch.stack(history["observed_velocity"]), reduction="none"
         ).mean(dim=-1),
-        "obstacle_avoidance": (approach * (1 - distance[:, :, 1:]).relu().square()).mean(dim=-1)
+        "obstacle_avoidance": (approach * (1 - avoidance_distance[:, :, 1:]).relu().square()).mean(dim=-1)
         + cfg.lateral_avoidance * lateral_cost,
         "collision": (F.softplus(-32 * collision_gap) * approach).mean(dim=-1),
         "acceleration": command.square().sum(dim=-1),

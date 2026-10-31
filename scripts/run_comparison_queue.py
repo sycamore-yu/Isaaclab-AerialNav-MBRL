@@ -66,8 +66,10 @@ def command_for(source, output, plan, run, device, physics=DEFAULT_PHYSICS, fron
     if "report_episodes" in plan:
         command += ["--report_episodes", str(plan["report_episodes"])]
     command += ["--start_stage", run.get("start_stage", plan.get("start_stage", "finetune_s1"))]
-    if plan.get("fixed_stage", True):
+    if run.get("fixed_stage", plan.get("fixed_stage", True)):
         command += ["--fixed_stage"]
+    if plan.get("continue_final_stage", False):
+        command += ["--continue_final_stage"]
     tokens = train_tokens(run)
     if tokens:
         command += ["--train_args", *tokens]
@@ -75,6 +77,8 @@ def command_for(source, output, plan, run, device, physics=DEFAULT_PHYSICS, fron
 
 
 def estimated_mib(run):
+    if "estimated_mib" in run:
+        return run["estimated_mib"]
     if run["method"] == "navrl":
         return 3584
     return 5120 if run.get("train_args", {}).get("algorithm") == "ahac" else 3584
@@ -211,8 +215,9 @@ def launched_zhang_manifest(jobs, plan):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--plan", type=Path,
-        default=Path(__file__).resolve().parents[1] / "configs/experiments/zhang_baseline_fs1_dyn40.json",
+        "--plan",
+        type=Path,
+        default=Path(__file__).resolve().parents[1] / "configs/experiments/zhang_rectangular_gradient_2x2.json",
     )
     parser.add_argument(
         "--output",
@@ -240,14 +245,17 @@ def main():
     plan_bytes = args.plan.read_bytes()
     plan = json.loads(plan_bytes)
     if (
-        plan.get("num_envs") != 256
+        type(plan.get("num_envs")) is not int
+        or plan["num_envs"] < 1
         or plan.get("screening") is not True
         or "max_updates" not in plan
         or plan["max_updates"] is not None
         or args.reserve_mib < 512
         or (args.slots is not None and args.slots < 1)
     ):
-        parser.error("Requires N256 screening, unlimited updates, reserve >= 512 MiB and positive optional slots")
+        parser.error(
+            "Requires positive env count, screening, unlimited updates, reserve >= 512 MiB and positive optional slots"
+        )
 
     protocol = runpy.run_path(str(source / "scripts/run_acceptance.py"))
     if tuple(plan["stage_order"]) != protocol["STAGES"]:
@@ -275,7 +283,7 @@ def main():
             run["start_stage"],
             screening=plan["screening"],
             method=run["method"],
-            fixed_stage=plan.get("fixed_stage", True),
+            fixed_stage=run.get("fixed_stage", plan.get("fixed_stage", True)),
         )
         if run["method"] == "navrl" and run.get("train_args"):
             parser.error("PPO must not receive Zhang train_args")

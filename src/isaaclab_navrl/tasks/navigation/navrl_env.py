@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import numpy as np
 import torch
 from isaaclab.envs import DirectRLEnv
 from isaaclab.utils.math import (
@@ -21,7 +20,7 @@ from .curriculum import TrainingCurriculum, active_obstacle_indices
 from .depth_history import compensated_depth_features, reproject_depth
 from .geometry import TerrainDistance, nearest_obstacle_signed_distance
 from .randomization import PolicyPerturbation
-from .task_logic import DynamicObstacleMotion, goal_frame, navigation_terms
+from .task_logic import DynamicObstacleMotion, goal_frame, navigation_terms, sample_navigation_route
 
 
 class NavRLEnv(DirectRLEnv):
@@ -90,6 +89,7 @@ class NavRLEnv(DirectRLEnv):
 
             self.terrain_distance = CuroboGeometry(self.terrain_distance, self.motion.size)
         self.target_pos = torch.zeros(self.num_envs, 3, device=self.device)
+        self.target_speed = torch.zeros(self.num_envs, 1, device=self.device)
         self.target_dir = torch.zeros_like(self.target_pos)
         self.height_range = torch.zeros(self.num_envs, 2, device=self.device)
         self.previous_velocity = torch.zeros_like(self.target_pos)
@@ -102,7 +102,6 @@ class NavRLEnv(DirectRLEnv):
         self.nonfinite_events = torch.zeros((), dtype=torch.long, device=self.device)
         self.episode_id = torch.full((self.num_envs,), -1, dtype=torch.long, device=self.device)
         self._reset_rng = torch.Generator(device=self.device).manual_seed(cfg.seed)
-        self._side_rng = np.random.RandomState(cfg.seed)
         self._terms = None
         self._stepping = False
 
@@ -120,15 +119,6 @@ class NavRLEnv(DirectRLEnv):
             dim=-1,
         )
 
-    def _sample_border(self, count, height_range=(0.5, 2.5)):
-        masks = self.target_pos.new_tensor(((1, 0, 1), (1, 0, 1), (0, 1, 1), (0, 1, 1)))
-        shifts = self.target_pos.new_tensor(((0, 24, 0), (0, -24, 0), (24, 0, 0), (-24, 0, 0)))
-        sides = self._side_rng.randint(0, 4, count)
-        sample = torch.rand(count, 3, generator=self._reset_rng, device=self.device) * 48 - 24
-        low, high = height_range
-        sample[:, 2] = low + (high - low) * torch.rand(count, generator=self._reset_rng, device=self.device)
-        return sample * masks[sides] + shifts[sides]
-
     def _reset_idx(self, env_ids):
         env_ids = torch.as_tensor(env_ids, device=self.device, dtype=torch.int32)
         if self._stepping:
@@ -143,18 +133,27 @@ class NavRLEnv(DirectRLEnv):
         # No shared-world object or trajectory is reset here.
         super()._reset_idx(env_ids)
         count = len(env_ids)
-        if self.cfg.evaluation:
-            position = self.target_pos.new_zeros(count, 3)
-            position[:, 0] = (env_ids.float() / self.num_envs - 0.5) * 32
-            position[:, 1], position[:, 2] = 24.0, 2.0
-            target = position.clone()
-            target[:, 0] = torch.linspace(-16, 16, self.num_envs, device=self.device)[env_ids]
-            target[:, 1] = -24.0
+        if self.cfg.method == "zhang":
+            speed = self.zhang_parameters["max_speed"][env_ids].clone()
         else:
-            target = self._sample_border(
-                count, self.cfg.height_target_range if self.cfg.method == "zhang" else (0.5, 2.5)
+            speed = 1 + 5 * torch.rand(count, 1, generator=self._reset_rng, device=self.device)
+        self.target_speed[env_ids] = speed
+        position, target = sample_navigation_route(
+            speed, self._reset_rng, self.cfg.height_target_range if self.cfg.method == "zhang" else (0.5, 2.5)
+        )
+        # Keep the uniform speed draw; reject occupied endpoints instead of shortening the route.
+        for _ in range(64):
+            clearance = self.nearest_obstacle_signed_distance(torch.cat((position, target))).reshape(2, count).amin(0)
+            blocked = clearance <= 0.3
+            if not blocked.any():
+                break
+            position[blocked], target[blocked] = sample_navigation_route(
+                speed[blocked],
+                self._reset_rng,
+                self.cfg.height_target_range if self.cfg.method == "zhang" else (0.5, 2.5),
             )
-            position = self._sample_border(count)
+        else:
+            raise RuntimeError("Could not sample collision-free 18v route endpoints after 64 attempts")
         self.target_pos[env_ids] = target
         direction = target - position
         self.target_dir[env_ids] = direction

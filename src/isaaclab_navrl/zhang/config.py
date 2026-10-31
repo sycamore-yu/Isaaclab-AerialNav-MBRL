@@ -26,6 +26,7 @@ class ZhangTrainCfg:
     collision_metric: Literal["sdf"] = "sdf"
     position_integration: Literal["original", "trapezoid"] | None = None
     geometry_backend: Literal["native", "curobo_v2"] = "curobo_v2"
+    avoidance_gradient: Literal["original", "reshaped"] = "original"
     perception: Literal["depth"] = "depth"
     approach_mode: Literal["finite_difference", "relative"] = "finite_difference"
     lateral_avoidance: float = 0.0
@@ -111,6 +112,12 @@ class ZhangTrainCfg:
 
     def validate(self) -> None:
         self.validate_collision_metric()
+        if self.avoidance_gradient not in ("original", "reshaped"):
+            raise ValueError("avoidance_gradient must be original or reshaped")
+        if self.avoidance_gradient == "reshaped" and (
+            self.algorithm != "bptt" or self.approach_mode != "finite_difference"
+        ):
+            raise ValueError("reshaped avoidance requires BPTT and finite_difference approach mode")
         if self.geometry_backend not in ("native", "curobo_v2"):
             raise ValueError("geometry_backend must be native or curobo_v2")
         if self.geometry_backend == "curobo_v2" and (

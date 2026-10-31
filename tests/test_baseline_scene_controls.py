@@ -89,8 +89,9 @@ def test_dynamic_count_survives_curriculum_and_report(stage, count):
     )
     assert curriculum.pop_report()["dynamic_obstacles"] == count
     assert curriculum.state_dict()["stage_config"] == cfg
-    assert STAGE_CONFIG[stage]["dynamic_obstacles"] == 40
-    assert TrainingCurriculum(1, "cpu", stage=stage).active_obstacles == 40
+    expected = 16 if stage == "pretrain_s1" else 32
+    assert STAGE_CONFIG[stage]["dynamic_obstacles"] == expected
+    assert TrainingCurriculum(1, "cpu", stage=stage).active_obstacles == expected
 
 
 def test_speed_control_samples_requested_range_on_partial_reset():

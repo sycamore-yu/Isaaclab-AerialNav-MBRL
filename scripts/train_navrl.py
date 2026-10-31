@@ -93,8 +93,8 @@ def main():
                 and env.curriculum.stage_passed
                 and env.num_envs >= 1024
                 and env.curriculum.min_episodes >= 1024
-                and env.cfg.num_static_obstacles == 400
-                and env.cfg.num_dynamic_obstacles == 100
+                and env.cfg.num_static_obstacles == STAGE_CONFIG["finetune_s2"]["static_obstacles"]
+                and env.cfg.num_dynamic_obstacles == STAGE_CONFIG["finetune_s2"]["dynamic_obstacles"]
                 and env.cfg.sim_to_real.enabled
             )
             result["nonfinite_events"] = int(env.nonfinite_events)

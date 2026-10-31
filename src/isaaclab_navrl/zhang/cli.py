@@ -56,6 +56,7 @@ TRAIN_ARG_TYPES = {
     "collision_metric": str,
     "position_integration": str,
     "geometry_backend": str,
+    "avoidance_gradient": str,
     "approach_mode": str,
     "lateral_avoidance": float,
     "risk_speed_floor": float,

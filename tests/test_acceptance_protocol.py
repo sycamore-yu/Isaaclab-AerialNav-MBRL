@@ -125,7 +125,7 @@ class AcceptanceProtocolTests(unittest.TestCase):
                 )
                 for s in STAGES
             ],
-            [(300, 0, False), (300, 40, False), (400, 120, False), (300, 40, True), (400, 100, True)],
+            [(240, 0, False), (360, 16, False), (480, 32, False), (480, 32, True), (600, 48, True)],
         )
 
     def test_allowed_parameters(self):

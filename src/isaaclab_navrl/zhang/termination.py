@@ -2,6 +2,8 @@
 
 import torch
 
+from isaaclab_navrl.training import MAP_SIZE
+
 
 def termination_mask(terms, *, collision_terminates=True, bounds_terminates=True):
     """Keep invalid states terminal; timeout remains the environment's own flag."""
@@ -38,9 +40,9 @@ def first_events(root_state, target, collision_gap, *, height_bounds_reset=True)
     position = root_state[:, :3]
     return {
         "collision": collision_gap <= 0,
-        "bounds": ((position[:, 2] < 0.2) | (position[:, 2] > 4.0))
-        if height_bounds_reset
-        else torch.zeros_like(collision_gap, dtype=torch.bool),
+        "bounds": (position[:, 0].abs() > MAP_SIZE[0] / 2)
+        | (position[:, 1].abs() > MAP_SIZE[1] / 2)
+        | (((position[:, 2] < 0.2) | (position[:, 2] > 4.0)) & height_bounds_reset),
         "reached": (target - position).norm(dim=-1) < 0.5,
         "invalid": ~torch.isfinite(root_state).all(dim=-1),
     }

@@ -53,7 +53,7 @@ class SharedNavigationSceneCfg(InteractiveSceneCfg):
     class_type = "isaaclab_navrl.tasks.navigation.scene:SharedNavigationScene"
 
     drone = make_drone_cfg("{ENV_REGEX_NS}/Hummingbird")
-    terrain = build_terrain_cfg(num_envs=1024, num_obstacles=350, seed=0)
+    terrain = build_terrain_cfg(num_envs=1024, num_obstacles=STAGE_CONFIG[DEFAULT_STAGE]["static_obstacles"], seed=0)
     ground = AssetBaseCfg(
         prim_path="/World/defaultGroundPlane",
         spawn=sim_utils.GroundPlaneCfg(size=(300.0, 300.0), color=(0.1, 0.1, 0.1)),
@@ -169,16 +169,16 @@ class NavigationEventsCfg:
 @configclass
 class NavRLEnvCfg(DirectRLEnvCfg):
     decimation = 1
-    episode_length_s = 35.2
+    episode_length_s = 40.0
     action_space = 3
     observation_space = 202
     state_space = 0
     seed = 0
-    num_static_obstacles: int = 350
-    num_dynamic_obstacles: int = 60
+    num_static_obstacles: int = STAGE_CONFIG[DEFAULT_STAGE]["static_obstacles"]
+    num_dynamic_obstacles: int = STAGE_CONFIG[DEFAULT_STAGE]["dynamic_obstacles"]
     depth_camera_batch_size: int = 16
     training_curriculum: bool = True
-    training_stage: str | None = None
+    training_stage: str | None = DEFAULT_STAGE
     training_stage_config: dict | None = None
     training_report_episodes: int | None = None
     sim_to_real: SimToRealCfg = SimToRealCfg()
@@ -205,6 +205,9 @@ class NavRLEnvCfg(DirectRLEnvCfg):
 
     def configure_scene(self):
         """Apply task counts after command-line overrides and before launch."""
+        stage = self.training_stage_config or STAGE_CONFIG.get(self.training_stage)
+        if stage is not None:
+            self.episode_length_s = stage["episode_length_s"]
         newton = isinstance(self.sim.physics, NewtonCfg)
         # Newton's global geometry is read by one camera BVH; movement comes
         # from shared GPU tensors. No dynamic rigid body enters any MJWarp world.

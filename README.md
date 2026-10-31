@@ -9,7 +9,7 @@
 | NavRL | `Isaac-NavRL-Hummingbird-Direct-v0` | 官方 RSL-RL PPO、共享编码器、Beta 速度动作 |
 | Zhang | `Isaac-NavRL-Zhang-Hummingbird-Direct-v0` | CNN + GRU192、所选物理后端前向、可微质点模型反向 |
 
-Zhang 新训练的目标速度默认每回合从 **Uniform(1,6) m/s** 独立采样；几何距离、避障损失与几何碰撞事件默认使用 **cuRoboV2**。起点、终点分别在四条地图边界上均匀采样，默认高度为 `[0.5,2.5] m`，并非全地图内部均匀采样。cuRobo 依赖与对照结果见 [几何后端说明](docs/CUROBO_V2_GEOMETRY_20261031.md)。
+Zhang 默认场地为 **X=120 m、Y=40 m**，X 两端各留 6 m 无障碍边界。每回合目标速度为 **Uniform(1,6) m/s**，XY 起终点距离严格为 **18v=18–108 m**，路线相对正／负 X 轴偏转 **Uniform(-8°,8°)**。起终点在可行域内采样且检查球体净空；目标速度不会因拒绝重采样而改变。默认几何后端为 **cuRoboV2**，使用 SDF＋梯形积分、pre_reset 损失。当前推荐起始超参为 **H150、避障权重 3.0、lr=0.001、余弦周期 400 updates**；旧任务 C12 在双种子复验中未通过晋升条件，因此保留基线超参。[新任务与四组对照](docs/RECTANGULAR_GRADIENT_2X2_20261031.md)。
 
 Zhang BPTT 可通过 `--recurrent_model sru_lstm_gated` 选择 SRU-LSTM-Gated，默认仍为 `gru`。
 SRU 沿用 CNN、10 维状态及 6 维输出，完整维护 192 维 `h` 和 192 维 `c`。
@@ -31,24 +31,26 @@ PYTHONPATH=src .venv/bin/python scripts/run_comparison_queue.py \
 
 当前默认采用 20 Hz 同步 SDF+BPTT、完整 2 秒速度窗口、重置前逐步计算损失、高度越界重置，以及 `navrl_range` 高度损失。展开结束后统一反传；SHAC/AHAC 与其他速度监督模式保留原损失计算路径。当前碰撞损失仅使用已有几何 SDF；`variant=dcol` 只保留终端采样时序兼容，DCOL 数学实现位于显式历史对照包。动态障碍前视位置已按查询时刻预测。旧训练已停止并保留检查点。此前 P0/P1 诊断见 [实施报告](docs/P0_P1_20261030.md)。六组固定微调 S1 对照见 [实验说明](docs/TIME_ALIGNED_AVOIDANCE_20261030.md)。
 
-后续默认环境为 `baseline_fs1_dyn40`：固定 `finetune_s1`、300 静态障碍、40 动态障碍、开启扰动，从随机权重启动。默认单组使用 256 环境、seed 0，每份报告至少 1024 个完整回合。达到 80% 后继续训练，以观察成功率保持情况。队列默认按本地时间生成目录名，源码来自指定提交的独立快照：
+默认对照为：原梯度／论文侧向梯度重塑 × 直接 fS1／完整课程，共四组，均从随机权重开始，seed 0。每份报告至少 1024 个自然完成回合，没有训练更新上限；课程在一个完整报告达到 80% 时晋级，fS2 达标后继续训练以观察保持情况。
 
 ```bash
-PYTHONPATH=src .venv/bin/python scripts/run_comparison_queue.py \
-  --commit "$(git rev-parse HEAD)"
+PYTHONPATH=src .venv/bin/python scripts/launch_rectangular_comparison.py \
+  --output "logs/curriculum/$(date +%Y-%m-%d_%H-%M-%S)_rectangular_2x2"
 ```
 
-默认计划为 `configs/experiments/zhang_baseline_fs1_dyn40.json`。六组对照可显式指定 `--plan configs/experiments/zhang_finetune_s1.json`。直接运行 `scripts/train_zhang.py` 省略 `--stage` 时也使用 fS1/40；显式指定阶段时沿用原检查点/`--fresh_stage` 约束。已有冻结实验、checkpoint 和历史结果不随默认值修改。
+启动器先用最重的 fS2／重塑梯度／H150 跑两次更新测量显存，从 N1024 起自动减半，选择能让四组同时运行的共同 N；容量试运行的权重不会用于正式训练。报告窗口固定至少 1024 回合。实际规模、显存峰值、源码提交和失败试运行均保留。TensorBoard 沿用端口 6012 与 `Train/`、`Loss/` 等原有标签。
+
+默认计划为 `configs/experiments/zhang_rectangular_gradient_2x2.json`。单组入口 `scripts/train_zhang.py` 仍默认直接 fS1。已有冻结实验、checkpoint 和历史结果不随默认值修改；旧比较计划保留其显式控制值。
 
 新管线从已提交源码生成独立快照，并在阶段切换及实际导入时核验。队列支持固定 commit 的干净功能分支。正式五阶段依次为预训练 S0、S1、S2 和微调 S1、S2；各阶段自然首次到达率达到 80% 后晋级。
 
-| 阶段 | 静态障碍 | 动态障碍 | 额外扰动 |
-|---|---:|---:|---|
-| 预训练 S0 | 300 | 0 | 关闭 |
-| 预训练 S1 | 300 | 40 | 关闭 |
-| 预训练 S2 | 400 | 120 | 关闭 |
-| 微调 S1 | 300 | 40 | 开启 |
-| 微调 S2 | 400 | 100 | 开启 |
+| 阶段 | 静态障碍 | 密度（个/m²） | 动态障碍 | 回合时限 | 额外扰动 |
+|---|---:|---:|---:|---:|---|
+| 预训练 S0 | 240 | 0.05 | 0 | 30 s | 关闭 |
+| 预训练 S1 | 360 | 0.075 | 16 | 35 s | 关闭 |
+| 预训练 S2 | 480 | 0.1 | 32 | 40 s | 关闭 |
+| 微调 S1 | 480 | 0.1 | 32 | 40 s | 开启 |
+| 微调 S2 | 600 | 0.125 | 48 | 45 s | 开启 |
 
 预训练从随机初始化开始。后续阶段加载本次实验的前序检查点，保留网络和优化器。每阶段重建地图并清空回合历史。正式验收默认使用 1024 个并行环境。每份报告至少包含 1024 个完整回合，无更新次数上限。小规模比较须显式使用 `--screening`，即使五阶段门槛均通过也不标记正式验收。输出目录必须不存在。
 

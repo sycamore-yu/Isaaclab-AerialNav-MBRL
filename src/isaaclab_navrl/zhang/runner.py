@@ -305,6 +305,7 @@ class ZhangTrainer:
                         "loss_timing": payload["train_cfg"].get("loss_timing", "deferred"),
                         "position_integration": payload["train_cfg"].get("position_integration", "original"),
                         "geometry_backend": payload["train_cfg"].get("geometry_backend", "native"),
+                        "avoidance_gradient": payload["train_cfg"].get("avoidance_gradient", "original"),
                     }
                 )
             )
@@ -506,6 +507,8 @@ class ZhangTrainer:
             "algorithm": self.cfg.algorithm,
             "recurrent_model": self.cfg.recurrent_model,
             "collision_metric": self.cfg.collision_metric,
+            "geometry_backend": self.cfg.geometry_backend,
+            "avoidance_gradient": self.cfg.avoidance_gradient,
             "approach_mode": self.cfg.approach_mode,
             "lateral_avoidance": self.cfg.lateral_avoidance,
             "risk_speed_floor": self.cfg.risk_speed_floor,
@@ -515,8 +518,12 @@ class ZhangTrainer:
             "resolved_velocity_loss_mode": self.cfg.resolved_velocity_loss_mode,
             "height_loss_mode": self.cfg.height_loss_mode,
             "height_target_range": list(self.cfg.height_target_range),
-            "static_obstacle_distance": "signed_heightfield_occupancy_exit_proxy",
-            "static_projection": "float64_selected_face_refinement_float32_storage",
+            "static_obstacle_distance": getattr(
+                self.env.terrain_distance, "geometry_mode", "signed_heightfield_occupancy_exit_proxy"
+            ),
+            "static_projection": getattr(
+                self.env.terrain_distance, "projection_precision", "float64_selected_face_refinement_float32_storage"
+            ),
             "optimizer": self.cfg.optimizer,
             "weight_decay": self.cfg.weight_decay,
             "gradient_projection": self.cfg.gradient_projection,
@@ -547,8 +554,8 @@ class ZhangTrainer:
                 and self.env.curriculum.acceptance_passed
                 and self.env.num_envs >= 1024
                 and self.env.curriculum.min_episodes >= 1024
-                and self.env.cfg.num_static_obstacles == 400
-                and self.env.cfg.num_dynamic_obstacles == 100
+                and self.env.cfg.num_static_obstacles == STAGE_CONFIG["finetune_s2"]["static_obstacles"]
+                and self.env.cfg.num_dynamic_obstacles == STAGE_CONFIG["finetune_s2"]["dynamic_obstacles"]
                 and self.env.cfg.sim_to_real.enabled
             ),
             "stage_passed": bool(self.env.curriculum is not None and self.env.curriculum.stage_passed),
@@ -594,8 +601,14 @@ class ZhangTrainer:
                 {
                     "ground_plane_z_m": 0.01,
                     "ground_clearance": "query_height_minus_ground_plane_minus_radius",
-                    "static_geometry": "signed_heightfield_occupancy_exit_proxy",
-                    "static_projection": "float64_selected_face_refinement_float32_storage",
+                    "static_geometry": getattr(
+                        self.env.terrain_distance, "geometry_mode", "signed_heightfield_occupancy_exit_proxy"
+                    ),
+                    "static_projection": getattr(
+                        self.env.terrain_distance,
+                        "projection_precision",
+                        "float64_selected_face_refinement_float32_storage",
+                    ),
                     "applies_to": ["obstacle_avoidance", "collision"],
                     "query_timing": "drone_and_obstacles_at_same_constant_velocity_lookahead_time",
                     "static_penetration": "negative_distance_to_verified_original_mesh_exit",
@@ -703,7 +716,7 @@ class ZhangTrainer:
                     query = state.position[:, None] + state.velocity[:, None] * lookahead
                     from isaaclab_navrl.tasks.navigation.geometry import nearest_obstacle_signed_distance
 
-                    if self.cfg.approach_mode == "relative":
+                    if self.cfg.approach_mode == "relative" or self.cfg.avoidance_gradient == "reshaped":
                         query.requires_grad_(True)
                     # shortcut: constant obstacle velocity within one policy step; turns are not predicted.
                     obstacle_positions = self.env.motion.position + self.env.motion.velocity * lookahead[..., None]
@@ -757,6 +770,17 @@ class ZhangTrainer:
                     command, velocity_prediction = decode_action(output, policy_heading, parameters["thr_est_error"])
                     # Source main_cuda records p + v * sub_div before env.run, including terminating steps.
                     history["obstacle_signed_distance"].append(obstacle_distance)
+                    if self.cfg.avoidance_gradient == "reshaped":
+                        from .gradient_field import reshape_avoidance_distance
+
+                        history["avoidance_signed_distance"].append(
+                            reshape_avoidance_distance(
+                                obstacle_distance,
+                                query,
+                                state.velocity.detach(),
+                                observation["target"] - state.position.detach(),
+                            )
+                        )
                     if self.cfg.variant == "dcol":
                         collision_lookahead = self._collision_gap(
                             query[:, 1:-1],

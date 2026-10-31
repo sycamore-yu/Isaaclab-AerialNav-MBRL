@@ -11,7 +11,15 @@ from isaaclab.app import add_launcher_args, launch_simulation
 
 from isaaclab_navrl.physics import create_navigation_env, parse_physics_args, runtime_metadata, select_physics
 from isaaclab_navrl.source import verify_training_import
-from isaaclab_navrl.training import DEFAULT_STAGE, STAGE_CONFIG, STAGES, graceful_training_stop, write_json
+from isaaclab_navrl.training import (
+    DEFAULT_STAGE,
+    END_CLEARANCE,
+    MAP_SIZE,
+    STAGE_CONFIG,
+    STAGES,
+    graceful_training_stop,
+    write_json,
+)
 from isaaclab_navrl.zhang.cli import add_train_args, parse_train_args
 
 
@@ -158,6 +166,11 @@ def main(*, reference_dcol=False):
             "variant": args.variant,
             "drone_collision_response": args.variant != "continuous",
             "height_target_range": list(cfg.height_target_range),
+            "map_size_xy_m": list(MAP_SIZE),
+            "end_clearance_m": END_CLEARANCE,
+            "route_sampling": "XY_distance=18*target_speed; heading=+/-X +/-8deg; feasible_start_uniform",
+            "episode_length_s": cfg.episode_length_s,
+            "dynamic_speed_range_mps": list(cfg.dynamic_speed_range),
             "target_speed_range": list(cfg.target_speed_range or (1.0, 6.0)),
             "height_target_source": "current_episode_navigation_goal_z",
             "capture_terminal_observation": cfg.capture_terminal_observation,
@@ -213,6 +226,10 @@ def main(*, reference_dcol=False):
                 values = initialize_rollout()
                 receipt = args.log_dir / "initial_rollout.json"
                 if not receipt.exists():
+                    route = env.target_pos[:, :2] - env.root_state()[:, :2]
+                    speed = env.zhang_parameters["max_speed"].flatten()
+                    distance = route.norm(dim=-1)
+                    angle = torch.atan2(route[:, 1].abs(), route[:, 0].abs()) * (180 / torch.pi)
                     world = {
                         "root_state": env.root_state(),
                         "target": env.target_pos,
@@ -231,6 +248,17 @@ def main(*, reference_dcol=False):
                             "fields": hashes,
                             "seed": args.seed,
                             "terrain_seed": args.terrain_seed,
+                            "route_distance_min_m": float(distance.min()),
+                            "route_distance_max_m": float(distance.max()),
+                            "route_duration_max_error_s": float((distance / speed - 18).abs().max()),
+                            "route_heading_max_abs_deg": float(angle.max()),
+                            "route_endpoint_min_clearance_m": float(
+                                env.nearest_obstacle_signed_distance(
+                                    torch.cat((env.root_state()[:, :3], env.target_pos))
+                                ).min()
+                            ),
+                            "target_speed_min_mps": float(speed.min()),
+                            "target_speed_max_mps": float(speed.max()),
                         },
                     )
                 return values

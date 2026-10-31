@@ -239,13 +239,14 @@ class CuroboGeometry:
         if not str(terrain.device).startswith("cuda"):
             raise ValueError("cuRoboV2 experiment requires CUDA")
         self.native = terrain
-        self.device, self.sizes, self.voxel_size = terrain.device, sizes, voxel_size
+        self.device, self.sizes = terrain.device, sizes
         self.origin = [float((terrain.bounds[0][i] + terrain.bounds[1][i]) * 0.5) for i in range(2)] + [2.0]
-        self.shape = tuple(
-            math.ceil(float(terrain.bounds[1][i] - terrain.bounds[0][i] + 8.0) / voxel_size) for i in range(2)
-        ) + (math.ceil(8.0 / voxel_size),)
-        if max(self.shape) > 1024:
-            raise ValueError("cuRobo PBA packed site coordinates support at most 1024 cells per axis")
+        extents = [float(terrain.bounds[1][i] - terrain.bounds[0][i] + 8.0) for i in range(2)] + [8.0]
+        # PBA packs each site coordinate in 10 bits; large maps need a coarser shared grid.
+        while max(math.ceil(extent / voxel_size) for extent in extents) > 1024:
+            voxel_size *= 2
+        self.voxel_size = voxel_size
+        self.shape = tuple(math.ceil(extent / voxel_size) for extent in extents)
         stream = torch_warp_stream(self.device)
         heights = torch.empty(self.shape[:2], device=self.device)
         n = math.prod(self.shape)
