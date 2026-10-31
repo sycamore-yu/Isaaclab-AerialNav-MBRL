@@ -163,3 +163,15 @@ def test_four_cell_factorial_rejects_changed_initial_world(tmp_path, monkeypatch
     (tmp_path / plan["runs"][-1]["name"] / "initial_rollout.json").write_text(json.dumps({"world_sha256": "different"}))
     with pytest.raises(ValueError, match="worlds"):
         driver["verify_factorial"](tmp_path, plan)
+
+
+def test_factorial_progress_names_the_two_actual_factors(tmp_path):
+    root = Path(__file__).resolve().parents[1]
+    analyzer = runpy.run_path(str(root / "scripts/analyze_liu_loss_timing.py"))
+    plan = json.loads((root / "configs/experiments/zhang_collision_integration_512_20261031.json").read_text())
+    (tmp_path / "plan.json").write_text(json.dumps(plan))
+    (tmp_path / "study.json").write_text(json.dumps({"status": "controls", "source_commit": "fixture", "runs": {}}))
+    result = analyzer["summarize"](tmp_path)
+    assert result["title"] == plan["title"] and len(result["rows"]) == 4
+    assert "height reset=True are fixed" in result["limits"]
+    assert "Training reset rules differ" not in result["limits"]

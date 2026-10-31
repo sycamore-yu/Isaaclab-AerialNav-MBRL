@@ -87,12 +87,21 @@ def summarize(root):
             }
         )
     return {
+        "title": plan.get("title", "Loss timing and height reset controls"),
         "status": state["status"],
         "source_commit": state["source_commit"],
         "requested_cells": len(rows),
         "completed_cells": sum(row["status"] == "completed" for row in rows),
         "rows": rows,
-        "limits": f"Single seed, {plan['updates']}-update {plan['stage']} budget, H{plan['timesteps']}; shared GPU; not convergence acceptance. Training reset rules differ; compare held-out evaluations under the common original reset rule. Unreported completed episodes remain visible.",
+        "limits": (
+            f"Single seed, {plan['updates']}-update {plan['stage']} budget, H{plan['timesteps']}; shared GPU; not convergence acceptance. "
+            + (
+                f"Loss timing={plan['loss_timing']} and height reset={plan['height_bounds_reset']} are fixed; only collision metric and position integration differ. "
+                if "runs" in plan
+                else "Training reset rules differ; compare held-out evaluations under the common original reset rule. "
+            )
+            + "Unreported completed episodes remain visible."
+        ),
         "performance_boundary": "update_s after two warmup updates; excludes inter-update checkpoint/report IO; not an isolated speed comparison",
     }
 
@@ -101,7 +110,7 @@ def write_report(root):
     result = summarize(root)
     write_json(root / "comparison.json", result)
     lines = [
-        "# Loss timing and height reset controls",
+        "# " + result["title"],
         "",
         result["limits"],
         "",
