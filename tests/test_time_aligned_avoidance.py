@@ -125,6 +125,7 @@ def test_real_runner_new_modes_keep_terminal_poses_and_reset_graphs(tmp_path, ch
         max_iterations=2,
         critic_iterations=1,
         critic_max_iterations=1,
+        loss_timing="deferred",  # This fixture injects terminal poses after step returns.
         **changes,
     )
     trainer = ZhangTrainer(env, cfg, tmp_path)

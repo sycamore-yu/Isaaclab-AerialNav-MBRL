@@ -32,6 +32,7 @@ from .model import ZhangPolicy, decode_action, policy_state
 from .normalization import PolicyObservationNormalizer
 from .optimization import OptimizerStepMonitor, RecoveryConfig, RecoveryController, make_plateau_scheduler
 from .projection import ActionUpdateProbe, height_priority_gradient
+from .streaming import PreResetLoss
 
 
 def cosine_learning_rate(update, cfg):
@@ -71,6 +72,72 @@ def rollout_diagnostics(history):
 
 
 class ZhangTrainer:
+    def transition_costs(self, history, cfg, velocity_history=None):
+        if cfg.loss_timing == "pre_reset":
+            if self.step_loss.steps != len(history["velocity"]):
+                raise RuntimeError("Expected exactly one pre-reset loss per transition")
+            return self.step_loss.finish()
+        return zhang_transition_costs(history, cfg, velocity_history)
+
+    def begin_rollout_loss(self):
+        self.pre_reset_dcol = None
+        self.step_loss = (
+            PreResetLoss(self.cfg, zhang_transition_costs, self.velocity_history)
+            if self.cfg.loss_timing == "pre_reset"
+            else None
+        )
+
+    def _collision_endpoint(self, predicted_positions, terminal_position, transition):
+        substep = transition["collision_substep"]
+        index = (substep - 1).clamp_min(0)
+        rows = torch.arange(self.env.num_envs, device=self.env.device)
+        collision_position = align_state(predicted_positions[rows, index], transition["collision_position"])
+        collision_position = torch.where(substep[:, None] > 0, collision_position, terminal_position)
+        pose_index = torch.where(substep > 0, index, predicted_positions.shape[1] - 1)
+        return collision_position, transition["dynamic_positions_by_substep"][pose_index]
+
+    def prepare_transition_loss(self, history, state, command, rotation, parameters):
+        if self.step_loss is None:
+            return
+        sample = {name: values[-1] for name, values in history.items() if values}
+
+        def before_reset(transition):
+            with torch.enable_grad():
+                applied = align_state(command, transition["executed_action"])
+                if self.cfg.variant == "dcol":
+                    prediction, positions = policy_transition(
+                        state, applied, rotation, parameters, self.cfg, record_positions=True
+                    )
+                    self.pre_reset_prediction = (prediction, positions)
+                else:
+                    prediction = policy_transition(state, applied, rotation, parameters, self.cfg)
+                    self.pre_reset_prediction = prediction
+                terminal, _ = align_transition(
+                    prediction,
+                    transition["position"],
+                    transition["velocity"],
+                    state.velocity,
+                    transition["terminated"] | transition["timeout"],
+                    transition["position"],
+                    transition["velocity"],
+                    self.cfg.policy_dt,
+                    transition["actuator"],
+                )
+                scored = sample | {"position": terminal.position, "velocity": terminal.velocity}
+                if self.cfg.variant == "dcol":
+                    position, obstacles = self._collision_endpoint(positions, terminal.position, transition)
+                    gap = self._dcol_gap(position, parameters["margin"], obstacles)
+                    self.pre_reset_dcol = (position, obstacles, gap)
+                    scored["dcol_gap"] = torch.cat((sample["dcol_lookahead"], gap[:, None]), dim=1)
+                if self.cfg.failure_terminal_cost:
+                    code = transition["first_event_code"]
+                    scored["failure_terminal"] = transition["terminated"] & (code >= 2) & (code <= 4)
+                self.step_loss.append(scored)
+                if not torch.equal(sample["episode_id"], self.env.episode_id):
+                    raise RuntimeError("Loss was evaluated after episode reset")
+
+        self.env.pre_reset_loss_callback = before_reset
+
     def __init__(self, env, cfg, log_dir):
         cfg.validate()
         if abs(env.physics_dt - cfg.physics_dt) > 1e-8 or abs(env.step_dt - cfg.policy_dt) > 1e-8:
@@ -234,7 +301,11 @@ class ZhangTrainer:
         if payload["environment"].get("observation_contract") != OBSERVATION_CONTRACT:
             raise ValueError("Observation timing changed; resume the old experiment with its frozen source")
         # Version-3 persisted configs predate optional failure-cost and target-rate fields.
-        saved_config = asdict(type(self.cfg)(**payload["train_cfg"]))
+        saved_config = asdict(
+            type(self.cfg)(
+                **(payload["train_cfg"] | {"loss_timing": payload["train_cfg"].get("loss_timing", "deferred")})
+            )
+        )
         allowed_stage_changes = {"lr", "max_iterations", "stop_after_acceptance", "gradient_diagnostic_updates"}
         for name, value in asdict(self.cfg).items():
             if name not in allowed_stage_changes and saved_config[name] != value:
@@ -578,6 +649,7 @@ class ZhangTrainer:
                 )
                 self.last_rollout_steps = rollout_steps
                 history = defaultdict(list)
+                self.begin_rollout_loss()
                 collisions = []
                 value_probes = []
                 terminated_count = torch.zeros((), device=self.env.device, dtype=torch.long)
@@ -686,6 +758,8 @@ class ZhangTrainer:
                             obstacle_positions[:, 1:-1],
                             static_distance=static_distance[:, 1:-1],
                         )
+                    if self.cfg.variant == "dcol":
+                        history["dcol_lookahead"].append(dcol_lookahead)
                     history["margin"].append(parameters["margin"])
                     history["target_velocity"].append(target_velocity)
                     history["height_target"].append(observation["height_target"].detach().clone())
@@ -701,6 +775,7 @@ class ZhangTrainer:
                     applied_command = action_history.push(
                         command, self.env.perturbation.action_buffer.time_lags.clone(), zero_until_ready=True
                     )
+                    self.prepare_transition_loss(history, state, applied_command, rotation, parameters)
                     with torch.no_grad():
                         _, _, terminated, timeout, info = self.env.step(command.detach())
                         # DirectRLEnv reuses these buffers on the next simulation step.
@@ -715,11 +790,19 @@ class ZhangTrainer:
                     )
                     applied_command = align_state(applied_command, transition["executed_action"])
                     if self.cfg.variant == "dcol":
-                        prediction, predicted_positions = policy_transition(
-                            state, applied_command, rotation, parameters, self.cfg, record_positions=True
-                        )
+                        cached = getattr(self, "pre_reset_prediction", None)
+                        if cached is None:
+                            prediction, predicted_positions = policy_transition(
+                                state, applied_command, rotation, parameters, self.cfg, record_positions=True
+                            )
+                        else:
+                            prediction, predicted_positions = cached
+                        self.pre_reset_prediction = None
                     else:
-                        prediction = policy_transition(state, applied_command, rotation, parameters, self.cfg)
+                        prediction = getattr(self, "pre_reset_prediction", None)
+                        if prediction is None:
+                            prediction = policy_transition(state, applied_command, rotation, parameters, self.cfg)
+                        self.pre_reset_prediction = None
                     history["bounds"].append(transition["bounds"])
                     history["done"].append(done.clone())
                     history["collision"].append(transition["collision"])
@@ -752,18 +835,14 @@ class ZhangTrainer:
                         # Use the first collision's actual physical substep, including its
                         # obstacle poses. A later policy-end position can already have passed
                         # the object. Its aligned surrogate graph survives same-step reset.
-                        substep = transition["collision_substep"]
-                        index = (substep - 1).clamp_min(0)
-                        rows = torch.arange(self.env.num_envs, device=self.env.device)
-                        collision_position = align_state(
-                            predicted_positions[rows, index], transition["collision_position"]
-                        )
-                        collision_position = torch.where(
-                            substep[:, None] > 0, collision_position, terminal_state.position
-                        )
-                        pose_index = torch.where(substep > 0, index, predicted_positions.shape[1] - 1)
-                        collision_obstacles = transition["dynamic_positions_by_substep"][pose_index]
-                        terminal_gap = self._dcol_gap(collision_position, parameters["margin"], collision_obstacles)
+                        if self.pre_reset_dcol is None:
+                            collision_position, collision_obstacles = self._collision_endpoint(
+                                predicted_positions, terminal_state.position, transition
+                            )
+                            terminal_gap = self._dcol_gap(collision_position, parameters["margin"], collision_obstacles)
+                        else:
+                            collision_position, collision_obstacles, terminal_gap = self.pre_reset_dcol
+                            self.pre_reset_dcol = None
                         history["dcol_gap"].append(torch.cat((dcol_lookahead, terminal_gap[:, None]), dim=1))
                         if self.horizon_controller is not None:
                             endpoint_clearance = metric_navigation_gap(
@@ -820,7 +899,7 @@ class ZhangTrainer:
                     observation_history.reset(done)
                     observation = next_observation
                     terminated_count += done.sum()
-                losses, self.velocity_history, transition_cost = zhang_transition_costs(
+                losses, self.velocity_history, transition_cost = self.transition_costs(
                     history, self.cfg, self.velocity_history
                 )
                 actor_loss = losses["total"]

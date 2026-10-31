@@ -148,6 +148,7 @@ def main():
             "capture_terminal_observation": cfg.capture_terminal_observation,
             "dynamic_obstacle_collision_response": False,
             "collision_terminates": args.variant != "continuous",
+            "height_bounds_reset": cfg.height_bounds_reset,
             "bounds_terminates": args.variant != "continuous",
             "physics_dt": cfg.sim.dt,
             "policy_dt": cfg.sim.dt * cfg.decimation,

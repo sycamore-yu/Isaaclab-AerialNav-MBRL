@@ -312,6 +312,7 @@ class ZhangNavRLEnvCfg(NavRLEnvCfg):
     num_dynamic_obstacles: int = STAGE_CONFIG[DEFAULT_STAGE]["dynamic_obstacles"]
     training_report_episodes: int | None = 1024
     sim_to_real: SimToRealCfg = SimToRealCfg(enabled=STAGE_CONFIG[DEFAULT_STAGE]["randomization"])
+    height_bounds_reset: bool = True
     variant: str = "dcol"
     timing: str = "unified_20hz"
     capture_terminal_observation: bool = False

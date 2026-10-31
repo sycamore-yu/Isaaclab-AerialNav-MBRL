@@ -574,6 +574,10 @@ class ZhangNavRLEnv(NavRLEnv):
             self.extras["transition"]["dynamic_positions_by_substep"] = self._dynamic_positions_by_substep.clone()
             self.extras["transition"]["dynamic_velocities_by_substep"] = self._dynamic_velocities_by_substep.clone()
         self.extras["transition"]["actuator"] = self.filtered_command.clone()
+        callback = getattr(self, "pre_reset_loss_callback", None)
+        if callback is not None:
+            self.pre_reset_loss_callback = None
+            callback(self.extras["transition"])
         return terminated, timeout
 
     @torch.no_grad()

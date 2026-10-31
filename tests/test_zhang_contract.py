@@ -750,6 +750,12 @@ class AnalyticEnv:
         }
         done = torch.tensor([self.total_steps % 2 == 0, False])
         transition["collision"] = done.clone()
+        transition["terminated"] = done.clone()
+        transition["timeout"] = torch.zeros_like(done)
+        callback = getattr(self, "pre_reset_loss_callback", None)
+        if callback is not None:
+            self.pre_reset_loss_callback = None
+            callback(transition)
         if done[0]:
             self.position[0] = torch.tensor([0.0, 0.0, 2.0])
             self.velocity[0] = 0

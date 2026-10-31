@@ -74,10 +74,15 @@ class ZhangTrainCfg:
     seed: int = 0
     gradient_diagnostic_updates: tuple[int, ...] = ()
     gradient_projection: Literal["none", "height_priority"] = "none"
+    loss_timing: Literal["deferred", "pre_reset"] | None = None
 
     def __post_init__(self):
         if self.velocity_loss_mode is None:
             self.velocity_loss_mode = "per_step" if self.algorithm in ("shac", "ahac") else "full_window"
+        if self.loss_timing is None:
+            self.loss_timing = (
+                "pre_reset" if self.algorithm == "bptt" and self.velocity_loss_mode == "full_window" else "deferred"
+            )
 
     @property
     def resolved_velocity_loss_mode(self) -> Literal["per_step", "window", "truncated_window", "ema"]:
@@ -98,6 +103,12 @@ class ZhangTrainCfg:
         return steps
 
     def validate(self) -> None:
+        if self.loss_timing not in ("deferred", "pre_reset"):
+            raise ValueError("loss_timing must be deferred or pre_reset")
+        if self.loss_timing == "pre_reset" and (
+            self.algorithm != "bptt" or self.resolved_velocity_loss_mode != "window"
+        ):
+            raise ValueError("pre_reset loss timing currently requires BPTT with full_window velocity")
         validate_runtime(self.physics, self.frontend)
         if self.variant not in ZHANG_VARIANTS:
             raise ValueError(f"variant must be one of {ZHANG_VARIANTS}")
