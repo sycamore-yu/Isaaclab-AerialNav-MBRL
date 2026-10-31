@@ -201,19 +201,6 @@ class _BatchedDepthCameraMixin:
         }
         self._data.info = {"policy_depth": {"source_image_shape": self.image_shape}}
         self._compute_intrinsic_matrices()
-        # Preserve pinhole_camera_pattern's arithmetic, but build its constants
-        # once. Intrinsics change only through the per-episode setter below.
-        pattern = self.cfg.pattern_cfg
-        grid = torch.meshgrid(
-            torch.arange(0, pattern.width, dtype=torch.int32, device=self._device),
-            torch.arange(0, pattern.height, dtype=torch.int32, device=self._device),
-            indexing="xy",
-        )
-        pixels = torch.vstack(list(map(torch.ravel, grid))).T
-        pixels = torch.hstack([pixels, torch.ones((len(pixels), 1), device=self._device)])
-        pixels += torch.tensor([[0.5, 0.5, 0]], device=self._device)
-        self._ray_pixels = pixels.T
-        self._ray_axis_sign = torch.tensor([1, -1, -1], device=self._device).unsqueeze(0).unsqueeze(2)
         self._ray_inverse_intrinsics = torch.inverse(self._data.intrinsic_matrices.torch)
         self._shared_local_ray_cache = {}
         self._shared_ray_intrinsics = None
@@ -265,14 +252,21 @@ class _BatchedDepthCameraMixin:
         if count not in self._shared_local_ray_cache:
             # Keep the original matmul batch shape, including a separate tail batch.
             starts, directions = self._compute_local_rays(begin, end)
-            self._shared_local_ray_cache[count] = (starts.contiguous(), directions.contiguous())
+            shared = []
+            for values in (starts, directions):
+                if not torch.equal(values, values[:1].expand_as(values)):
+                    raise ValueError("Identical intrinsics produced nonidentical shared camera rays")
+                # Clone one row so the expanded view owns no N-camera allocation.
+                shared.append(values[:1].clone().expand_as(values))
+            self._shared_local_ray_cache[count] = tuple(shared)
         return self._shared_local_ray_cache[count]
 
     def _compute_local_rays(self, begin, end):
-        pixels = torch.matmul(self._ray_inverse_intrinsics[begin:end], self._ray_pixels)
-        pixels = pixels[:, [2, 0, 1], :] * self._ray_axis_sign
-        directions = (pixels / torch.linalg.norm(pixels, dim=1, keepdim=True)).permute(0, 2, 1)
-        return torch.zeros_like(directions, device=self._device), directions
+        # Use the official pattern, including its pixel centers and frame convention.
+        starts, directions = self.cfg.pattern_cfg.func(
+            self.cfg.pattern_cfg, self._data.intrinsic_matrices.torch[begin:end], self._device
+        )
+        return starts.contiguous(), directions.contiguous()
 
     def set_mount_pitch(self, pitch, env_ids):
         """Apply per-episode source camera pitch around the fixed NavRL mount."""
@@ -333,8 +327,8 @@ class _BatchedDepthCameraMixin:
                         _slice(self._offset_quat_wp, begin, end),
                         _slice(self.drift.warp, begin, end),
                         _slice(self.ray_cast_drift.warp, begin, end),
-                        wp.from_torch(local_starts.contiguous(), dtype=wp.vec3f),
-                        wp.from_torch(local_directions.contiguous(), dtype=wp.vec3f),
+                        wp.from_torch(local_starts, dtype=wp.vec3f),
+                        wp.from_torch(local_directions, dtype=wp.vec3f),
                         int(camera_kernels.ALIGNMENT_BASE),
                     ],
                     outputs=[

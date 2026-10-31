@@ -67,6 +67,11 @@ class NewtonBatchedDepthCamera(_BatchedDepthCameraMixin, LegacyMultiMeshRayCaste
                 raise ValueError("Newton shared dynamic geometry must not register physics sites")
             if self._num_meshes_per_env[target.prim_expr] != 1:
                 raise ValueError(f"Expected one shared mesh per target: {target.prim_expr}")
+        # All queries use row zero. Own one row so the original N-world tables
+        # are released, instead of retaining their allocation through a view.
+        self._mesh_ids_wp = wp.clone(self._mesh_ids_wp[:1])
+        self._mesh_positions_w = wp.clone(self._mesh_positions_w[:1])
+        self._mesh_orientations_w = wp.clone(self._mesh_orientations_w[:1])
         self._shared_mesh_count, self._shared_mesh_offset = 0, 2
         self.mesh_transform_info = {
             "mode": "shared_motion_gpu_poses_without_rigid_bodies",
@@ -75,6 +80,7 @@ class NewtonBatchedDepthCamera(_BatchedDepthCameraMixin, LegacyMultiMeshRayCaste
             "site_indices": [],
             "identity_row_order": True,
             "mapping": [],
+            "mesh_pose_rows": 1,
         }
         self._shared_mesh_tracking_ready = True
 
@@ -85,7 +91,7 @@ class NewtonBatchedDepthCamera(_BatchedDepthCameraMixin, LegacyMultiMeshRayCaste
             return
         wp.launch(
             _set_shared_obstacle_mesh_poses,
-            dim=(self._num_envs, self._shared_active_indices.shape[0]),
+            dim=(1, self._shared_active_indices.shape[0]),
             inputs=[
                 self._shared_motion_positions,
                 self._shared_active_indices,

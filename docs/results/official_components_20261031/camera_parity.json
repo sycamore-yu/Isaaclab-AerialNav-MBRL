@@ -1,0 +1,457 @@
+{
+  "status": "completed",
+  "physics": "newton_mjwarp",
+  "num_envs": 4,
+  "camera_batch_size": 3,
+  "dynamic_obstacles": 60,
+  "full_resolution": [
+    120,
+    160
+  ],
+  "pooled_resolution": [
+    12,
+    16
+  ],
+  "atol": 2e-05,
+  "rtol": 1e-05,
+  "stages": {
+    "initial": {
+      "batch_sizes": [
+        3,
+        1
+      ],
+      "selected_env_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "depth": {
+        "elements": 76800,
+        "max_abs_error": 0.0,
+        "mean_abs_error": 0.0,
+        "mismatches": 0,
+        "examples": []
+      },
+      "pooled": {
+        "elements": 768,
+        "max_abs_error": 0.0,
+        "mean_abs_error": 0.0,
+        "mismatches": 0,
+        "examples": []
+      },
+      "pixel_noise_std": 0.0,
+      "mesh_pose_table": {
+        "position": {
+          "max_abs_error": 0.0,
+          "mismatches": 0,
+          "elements": 186,
+          "atol": 0.0,
+          "rtol": 0.0
+        },
+        "orientation": {
+          "max_abs_error": 0.0,
+          "mismatches": 0,
+          "elements": 248,
+          "atol": 0.0,
+          "rtol": 0.0
+        }
+      }
+    },
+    "roll_pitch_yaw": {
+      "batch_sizes": [
+        3,
+        1
+      ],
+      "selected_env_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "depth": {
+        "elements": 76800,
+        "max_abs_error": 0.0,
+        "mean_abs_error": 0.0,
+        "mismatches": 0,
+        "examples": []
+      },
+      "pooled": {
+        "elements": 768,
+        "max_abs_error": 0.0,
+        "mean_abs_error": 0.0,
+        "mismatches": 0,
+        "examples": []
+      },
+      "pixel_noise_std": 0.0,
+      "mesh_pose_table": {
+        "position": {
+          "max_abs_error": 0.0,
+          "mismatches": 0,
+          "elements": 186,
+          "atol": 0.0,
+          "rtol": 0.0
+        },
+        "orientation": {
+          "max_abs_error": 0.0,
+          "mismatches": 0,
+          "elements": 248,
+          "atol": 0.0,
+          "rtol": 0.0
+        }
+      }
+    },
+    "all_dynamic_bodies_moved": {
+      "batch_sizes": [
+        3,
+        1
+      ],
+      "selected_env_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "depth": {
+        "elements": 76800,
+        "max_abs_error": 0.0,
+        "mean_abs_error": 0.0,
+        "mismatches": 0,
+        "examples": []
+      },
+      "pooled": {
+        "elements": 768,
+        "max_abs_error": 0.0,
+        "mean_abs_error": 0.0,
+        "mismatches": 0,
+        "examples": []
+      },
+      "pixel_noise_std": 0.0,
+      "mesh_pose_table": {
+        "position": {
+          "max_abs_error": 0.0,
+          "mismatches": 0,
+          "elements": 186,
+          "atol": 0.0,
+          "rtol": 0.0
+        },
+        "orientation": {
+          "max_abs_error": 0.0,
+          "mismatches": 0,
+          "elements": 248,
+          "atol": 0.0,
+          "rtol": 0.0
+        }
+      }
+    },
+    "partial_reset": {
+      "batch_sizes": [
+        3,
+        1
+      ],
+      "selected_env_ids": [
+        0,
+        1,
+        3
+      ],
+      "depth": {
+        "elements": 57600,
+        "max_abs_error": 0.0,
+        "mean_abs_error": 0.0,
+        "mismatches": 0,
+        "examples": []
+      },
+      "pooled": {
+        "elements": 768,
+        "max_abs_error": 0.0,
+        "mean_abs_error": 0.0,
+        "mismatches": 0,
+        "examples": []
+      },
+      "pixel_noise_std": 0.0,
+      "mesh_pose_table": {
+        "position": {
+          "max_abs_error": 0.0,
+          "mismatches": 0,
+          "elements": 186,
+          "atol": 0.0,
+          "rtol": 0.0
+        },
+        "orientation": {
+          "max_abs_error": 0.0,
+          "mismatches": 0,
+          "elements": 248,
+          "atol": 0.0,
+          "rtol": 0.0
+        }
+      }
+    },
+    "pixel_noise_before_pool": {
+      "batch_sizes": [
+        3,
+        1
+      ],
+      "selected_env_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "depth": {
+        "elements": 76800,
+        "max_abs_error": 0.0,
+        "mean_abs_error": 0.0,
+        "mismatches": 0,
+        "examples": []
+      },
+      "pooled": {
+        "elements": 768,
+        "max_abs_error": 0.0,
+        "mean_abs_error": 0.0,
+        "mismatches": 0,
+        "examples": []
+      },
+      "pixel_noise_std": 0.02,
+      "mesh_pose_table": {
+        "position": {
+          "max_abs_error": 0.0,
+          "mismatches": 0,
+          "elements": 186,
+          "atol": 0.0,
+          "rtol": 0.0
+        },
+        "orientation": {
+          "max_abs_error": 0.0,
+          "mismatches": 0,
+          "elements": 248,
+          "atol": 0.0,
+          "rtol": 0.0
+        }
+      }
+    },
+    "partial_intrinsics_update": {
+      "batch_sizes": [
+        3,
+        1
+      ],
+      "selected_env_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "depth": {
+        "elements": 76800,
+        "max_abs_error": 0.0,
+        "mean_abs_error": 0.0,
+        "mismatches": 0,
+        "examples": []
+      },
+      "pooled": {
+        "elements": 768,
+        "max_abs_error": 0.0,
+        "mean_abs_error": 0.0,
+        "mismatches": 0,
+        "examples": []
+      },
+      "pixel_noise_std": 0.02,
+      "mesh_pose_table": {
+        "position": {
+          "max_abs_error": 0.0,
+          "mismatches": 0,
+          "elements": 186,
+          "atol": 0.0,
+          "rtol": 0.0
+        },
+        "orientation": {
+          "max_abs_error": 0.0,
+          "mismatches": 0,
+          "elements": 248,
+          "atol": 0.0,
+          "rtol": 0.0
+        }
+      }
+    },
+    "restored_shared_intrinsics": {
+      "batch_sizes": [
+        3,
+        1
+      ],
+      "selected_env_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "depth": {
+        "elements": 76800,
+        "max_abs_error": 0.0,
+        "mean_abs_error": 0.0,
+        "mismatches": 0,
+        "examples": []
+      },
+      "pooled": {
+        "elements": 768,
+        "max_abs_error": 0.0,
+        "mean_abs_error": 0.0,
+        "mismatches": 0,
+        "examples": []
+      },
+      "pixel_noise_std": 0.02,
+      "mesh_pose_table": {
+        "position": {
+          "max_abs_error": 0.0,
+          "mismatches": 0,
+          "elements": 186,
+          "atol": 0.0,
+          "rtol": 0.0
+        },
+        "orientation": {
+          "max_abs_error": 0.0,
+          "mismatches": 0,
+          "elements": 248,
+          "atol": 0.0,
+          "rtol": 0.0
+        }
+      }
+    },
+    "shared_newton_global_motion": {
+      "batch_sizes": [
+        3,
+        1
+      ],
+      "selected_env_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "depth": {
+        "elements": 76800,
+        "max_abs_error": 0.0,
+        "mean_abs_error": 0.0,
+        "mismatches": 0,
+        "examples": []
+      },
+      "pooled": {
+        "elements": 768,
+        "max_abs_error": 0.0,
+        "mean_abs_error": 0.0,
+        "mismatches": 0,
+        "examples": []
+      },
+      "pixel_noise_std": 0.02,
+      "mesh_pose_table": {
+        "position": {
+          "max_abs_error": 0.0,
+          "mismatches": 0,
+          "elements": 186,
+          "atol": 0.0,
+          "rtol": 0.0
+        },
+        "orientation": {
+          "max_abs_error": 0.0,
+          "mismatches": 0,
+          "elements": 248,
+          "atol": 0.0,
+          "rtol": 0.0
+        }
+      }
+    }
+  },
+  "reference_sensor": "isaaclab_newton.sensors.ray_caster.legacy_ray_caster:LegacyMultiMeshRayCasterCamera",
+  "camera_sensor": "isaaclab_navrl.tasks.navigation.newton_sensors:NewtonBatchedDepthCamera",
+  "world_mesh": {
+    "acceleration_structure": "native_local_meshes_with_top_level_aabb_bvh",
+    "source_meshes": 62,
+    "vertices": 161451,
+    "triangles": 324212,
+    "dynamic_meshes": 60,
+    "broad_phase_padding_min_m": 0.001,
+    "broad_phase_padding_relative": 4e-06,
+    "mesh_transform_tracking": {
+      "mode": "shared_motion_gpu_poses_without_rigid_bodies",
+      "body_count": 0,
+      "mesh_order_body_paths": [],
+      "site_indices": [],
+      "identity_row_order": true,
+      "mapping": [],
+      "mesh_pose_rows": 1,
+      "active_obstacles": 60
+    }
+  },
+  "intrinsics": [
+    [
+      [
+        138.5636749267578,
+        0.0,
+        80.125
+      ],
+      [
+        0.0,
+        138.5636749267578,
+        60.125
+      ],
+      [
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    [
+      [
+        138.5636749267578,
+        0.0,
+        80.125
+      ],
+      [
+        0.0,
+        138.5636749267578,
+        60.125
+      ],
+      [
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    [
+      [
+        138.5636749267578,
+        0.0,
+        80.125
+      ],
+      [
+        0.0,
+        138.5636749267578,
+        60.125
+      ],
+      [
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    [
+      [
+        138.5636749267578,
+        0.0,
+        80.125
+      ],
+      [
+        0.0,
+        138.5636749267578,
+        60.125
+      ],
+      [
+        0.0,
+        0.0,
+        1.0
+      ]
+    ]
+  ],
+  "dynamic_obstacles_visible_in_depth": true,
+  "dynamic_obstacles_excluded_from_navrl_lidar": true,
+  "partial_reset_preserves_other_images_and_frames": true,
+  "cached_local_rays_exact": true
+}

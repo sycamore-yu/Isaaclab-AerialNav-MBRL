@@ -1,0 +1,23 @@
+{
+  "physics": "newton_mjwarp",
+  "num_envs": 4,
+  "dynamic_geometry": 8,
+  "stages": {
+    "initial": {
+      "raw_max_abs_error_m": 0.0,
+      "raw_mean_abs_error_m": 0.0,
+      "pixel_count": 76800,
+      "dynamic_mesh_pose_max_error_m": 0.0
+    },
+    "moved_dynamic_obstacle": {
+      "raw_max_abs_error_m": 0.0,
+      "raw_mean_abs_error_m": 0.0,
+      "pixel_count": 76800,
+      "dynamic_mesh_pose_max_error_m": 0.0
+    }
+  },
+  "rigid_obstacle_bodies": 0,
+  "camera_meshes": 10,
+  "changed_depth_after_motion": true,
+  "status": "passed"
+}

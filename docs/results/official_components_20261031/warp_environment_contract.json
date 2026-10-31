@@ -1,0 +1,60 @@
+{
+  "method": "zhang",
+  "variant": "dcol",
+  "physics": "newton_mjwarp",
+  "frontend": "warp",
+  "num_envs": 4,
+  "static_obstacles": 300,
+  "dynamic_obstacles": 8,
+  "seed": 17,
+  "runtime": {
+    "frontend": "warp",
+    "environment_class": "isaaclab_navrl.tasks.navigation.navrl_warp_env.ZhangNavRLWarpEnv"
+  },
+  "checks": {
+    "delays": {
+      "ticks": 1,
+      "verified_samples": 24
+    },
+    "interval_disturbance": {
+      "updated_steps": 6
+    },
+    "partial_reset": {
+      "selected": [
+        1,
+        2
+      ],
+      "shared_world_preserved": true
+    },
+    "timeout_autoreset": "snapshot_and_episode_logs_preserved",
+    "mixed_timeout_and_ui_reset": "each_episode_reset_once_with_original_snapshot_ids",
+    "bounds": {
+      "real_pose_z": 4.6,
+      "terminates": true
+    },
+    "invalid": "detector_injection_terminates_with_finite_simulator_state",
+    "retained_outputs": "policy_and_transition_snapshots_immutable",
+    "reward_copy": "preserved_before_observation_replay"
+  },
+  "policy_steps": 10,
+  "randomized_scale_ranges": {
+    "mass": [
+      0.9015803933143616,
+      1.0803394317626953
+    ],
+    "inertia": [
+      0.9467504620552063,
+      1.0994012355804443
+    ]
+  },
+  "graphs": [
+    "episode_counter",
+    "first_events",
+    "navigation_terms",
+    "reset_flags"
+  ],
+  "controller_graphs": [
+    "control_True_True"
+  ],
+  "status": "passed"
+}
