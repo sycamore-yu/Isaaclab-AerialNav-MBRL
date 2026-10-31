@@ -177,9 +177,12 @@ def training(args, root, baseline):
     helper.NUM_ENVS = args.num_envs
     runs = []
     output = args.output.parent
-    for index, (label, source) in enumerate(
+    sequence = (
         (("baseline", baseline), ("candidate", root), ("candidate", root), ("baseline", baseline))
-    ):
+        if args.sequence == "abba"
+        else (("candidate", root),)
+    )
+    for index, (label, source) in enumerate(sequence):
         run_dir = output / f"train_{index}_{label}"
         run_dir.mkdir(parents=True, exist_ok=False)
         train_dir = run_dir / "training"
@@ -200,7 +203,10 @@ def training(args, root, baseline):
             "gpu_before": helper.gpu_snapshot(),
             "memory_samples_mib": [],
         }
-        print(f"Starting {index + 1}/4: {label}, {args.num_envs} environments, {args.updates} updates", flush=True)
+        print(
+            f"Starting {index + 1}/{len(sequence)}: {label}, {args.num_envs} environments, {args.updates} updates",
+            flush=True,
+        )
         with (run_dir / "console.log").open("w") as log:
             process = subprocess.Popen(command, cwd=source, env=env, stdout=log, stderr=subprocess.STDOUT)
             run["pid"] = process.pid
@@ -241,7 +247,7 @@ def training(args, root, baseline):
         "warmup_updates": args.warmup,
         "baseline": str(baseline),
         "candidate": str(root),
-        "protocol": "ABBA, seed 0, fS1/40, 20 Hz, Newton+Warp, other GPU workloads remain running",
+        "protocol": f"{args.sequence.upper()}, seed 0, fS1/40, 20 Hz, Newton+Warp, other GPU workloads remain running",
     }
 
 
@@ -254,6 +260,7 @@ def main():
     parser.add_argument("--num-envs", type=int, default=256)
     parser.add_argument("--updates", type=int, default=4)
     parser.add_argument("--warmup", type=int, default=1)
+    parser.add_argument("--sequence", choices=("abba", "candidate"), default="abba")
     args = parser.parse_args()
     if args.num_envs < 1 or args.updates <= args.warmup or args.warmup < 0:
         parser.error("Require positive environments and updates > warmup >= 0")
