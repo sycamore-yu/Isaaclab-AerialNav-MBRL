@@ -51,12 +51,21 @@ def tensor_comparison(left, right):
     }
 
 
-def summarize(path):
+def summarize(path, final_candidate=None):
     data = json.loads(path.read_text())
     assert data["complete"] and len(data["runs"]) == 4
+    if final_candidate is not None:
+        final = json.loads(final_candidate.read_text())
+        assert final["complete"] and len(final["runs"]) == 1
+        for key in ("num_envs", "horizon", "warmup_updates"):
+            assert final[key] == data[key], key
+        final["runs"][0]["label"] = "final_candidate"
+        data["runs"].extend(final["runs"])
     warmup = data["warmup_updates"]
     baseline_config = dict(flatten(data["runs"][0]["config.json"]))
     runs, checkpoints, groups = [], [], {"baseline": [], "candidate": []}
+    if final_candidate is not None:
+        groups["final_candidate"] = []
     for index, run in enumerate(data["runs"]):
         result, updates = run["training_result.json"], run["updates"]
         assert run["returncode"] == 0 and result["status"] == "completed"
@@ -88,7 +97,10 @@ def summarize(path):
         )
         checkpoints.append(torch.load(Path(result["checkpoint"]), map_location="cpu", weights_only=False))
     comparisons = []
-    for left, right in ((0, 1), (0, 2), (0, 3), (1, 2), (3, 1), (3, 2)):
+    pairs = [(0, 1), (0, 2), (0, 3), (1, 2), (3, 1), (3, 2)]
+    if final_candidate is not None:
+        pairs.extend([(0, 4), (3, 4)])
+    for left, right in pairs:
         a, b = checkpoints[left], checkpoints[right]
         comparisons.append(
             {
@@ -104,6 +116,8 @@ def summarize(path):
         )
     return {
         "protocol": data["protocol"],
+        "final_candidate_included": final_candidate is not None,
+        "nominal_throughput_scope": "initial ABBA only",
         "warmup_updates_per_run": warmup,
         "total_training_environment_steps": sum(
             run["training_result.json"]["environment_steps"] for run in data["runs"]
@@ -130,8 +144,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("input", type=Path)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--final-candidate", type=Path)
     args = parser.parse_args()
-    report = summarize(args.input)
+    report = summarize(args.input, args.final_candidate)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2, allow_nan=False) + "\n")
     print(json.dumps(report, indent=2))

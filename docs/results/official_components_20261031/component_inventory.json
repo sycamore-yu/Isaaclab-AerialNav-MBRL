@@ -1,0 +1,538 @@
+[
+  {
+    "file": "src/isaaclab_navrl/__init__.py",
+    "lines": 1,
+    "symbols": []
+  },
+  {
+    "file": "src/isaaclab_navrl/agents/__init__.py",
+    "lines": 1,
+    "symbols": []
+  },
+  {
+    "file": "src/isaaclab_navrl/agents/checkpoint_conversion.py",
+    "lines": 71,
+    "symbols": [
+      "convert_original_state_dict"
+    ]
+  },
+  {
+    "file": "src/isaaclab_navrl/agents/continuous_runner.py",
+    "lines": 42,
+    "symbols": [
+      "ContinuousLogger",
+      "ContinuousNavRLRunner"
+    ]
+  },
+  {
+    "file": "src/isaaclab_navrl/agents/inference.py",
+    "lines": 35,
+    "symbols": [
+      "load_navrl_policy"
+    ]
+  },
+  {
+    "file": "src/isaaclab_navrl/agents/models.py",
+    "lines": 155,
+    "symbols": [
+      "_mlp",
+      "NavRLEncoder",
+      "BetaHeads",
+      "NavRLActor",
+      "NavRLCritic",
+      "NavRLExport"
+    ]
+  },
+  {
+    "file": "src/isaaclab_navrl/agents/rsl_rl_cfg.py",
+    "lines": 46,
+    "symbols": [
+      "NavRLModelCfg",
+      "NavRLPpoRunnerCfg"
+    ]
+  },
+  {
+    "file": "src/isaaclab_navrl/control.py",
+    "lines": 252,
+    "symbols": [
+      "rotor_allocation",
+      "make_drone_cfg",
+      "RotorGroup",
+      "_rotation_matrix_wxyz",
+      "_rotate_inverse_wxyz",
+      "_normalize",
+      "LeeRotorController"
+    ]
+  },
+  {
+    "file": "src/isaaclab_navrl/evaluation.py",
+    "lines": 76,
+    "symbols": [
+      "first_outcome",
+      "EpisodeEvaluation"
+    ]
+  },
+  {
+    "file": "src/isaaclab_navrl/physics.py",
+    "lines": 105,
+    "symbols": [
+      "validate_runtime",
+      "parse_physics_args",
+      "select_physics",
+      "runtime_metadata",
+      "create_navigation_env"
+    ]
+  },
+  {
+    "file": "src/isaaclab_navrl/source.py",
+    "lines": 61,
+    "symbols": [
+      "freeze_source",
+      "verify_source",
+      "verify_training_import"
+    ]
+  },
+  {
+    "file": "src/isaaclab_navrl/tasks/__init__.py",
+    "lines": 3,
+    "symbols": []
+  },
+  {
+    "file": "src/isaaclab_navrl/tasks/navigation/__init__.py",
+    "lines": 1,
+    "symbols": []
+  },
+  {
+    "file": "src/isaaclab_navrl/tasks/navigation/config/__init__.py",
+    "lines": 1,
+    "symbols": []
+  },
+  {
+    "file": "src/isaaclab_navrl/tasks/navigation/config/hummingbird/__init__.py",
+    "lines": 24,
+    "symbols": []
+  },
+  {
+    "file": "src/isaaclab_navrl/tasks/navigation/config/hummingbird/env_cfg.py",
+    "lines": 351,
+    "symbols": [
+      "NavigationPhysicsCfg",
+      "SharedNavigationSceneCfg",
+      "make_dynamic_cfg",
+      "make_shared_dynamic_geometry",
+      "NavigationEventsCfg",
+      "NavRLEnvCfg",
+      "ZhangEventsCfg",
+      "ZhangNavRLEnvCfg"
+    ]
+  },
+  {
+    "file": "src/isaaclab_navrl/tasks/navigation/curriculum.py",
+    "lines": 159,
+    "symbols": [
+      "active_obstacle_indices",
+      "TrainingCurriculum"
+    ]
+  },
+  {
+    "file": "src/isaaclab_navrl/tasks/navigation/depth_camera.py",
+    "lines": 114,
+    "symbols": [
+      "BatchedDepthCamera"
+    ]
+  },
+  {
+    "file": "src/isaaclab_navrl/tasks/navigation/depth_camera_cfg.py",
+    "lines": 13,
+    "symbols": [
+      "BatchedDepthCameraCfg"
+    ]
+  },
+  {
+    "file": "src/isaaclab_navrl/tasks/navigation/depth_history.py",
+    "lines": 78,
+    "symbols": [
+      "reproject_depth",
+      "compensated_depth_features",
+      "depth_motion_events",
+      "depth_event_observation"
+    ]
+  },
+  {
+    "file": "src/isaaclab_navrl/tasks/navigation/depth_processing.py",
+    "lines": 12,
+    "symbols": [
+      "depth_features"
+    ]
+  },
+  {
+    "file": "src/isaaclab_navrl/tasks/navigation/geometry.py",
+    "lines": 631,
+    "symbols": [
+      "_closest_mesh_point",
+      "_height_hit",
+      "_inside_height_field",
+      "_exit_direction_valid",
+      "_surface_escape_normal",
+      "_as_vec3d",
+      "_as_vec3f",
+      "_closest_edge_point_double",
+      "_closest_triangle_point_double",
+      "_closest_triangle_point",
+      "_closest_edge_point",
+      "_refine_nearby_surface",
+      "_signed_mesh_query",
+      "TerrainSignedQuery",
+      "TerrainDistance",
+      "_closest_dynamic_surface",
+      "escape_abs",
+      "escape_norm_xy",
+      "primitive_signed_distance",
+      "dynamic_signed_distance",
+      "nearest_obstacle_signed_distance",
+      "nearest_obstacle_vector"
+    ]
+  },
+  {
+    "file": "src/isaaclab_navrl/tasks/navigation/lidar.py",
+    "lines": 9,
+    "symbols": [
+      "NavRLRayCaster"
+    ]
+  },
+  {
+    "file": "src/isaaclab_navrl/tasks/navigation/lidar_kernels.py",
+    "lines": 17,
+    "symbols": [
+      "rotate_directions_with_yaw"
+    ]
+  },
+  {
+    "file": "src/isaaclab_navrl/tasks/navigation/navrl_env.py",
+    "lines": 601,
+    "symbols": [
+      "NavRLEnv",
+      "ZhangNavRLEnv"
+    ]
+  },
+  {
+    "file": "src/isaaclab_navrl/tasks/navigation/navrl_warp_env.py",
+    "lines": 309,
+    "symbols": [
+      "_on_warp_stream",
+      "_increment_episode",
+      "_combine_resets",
+      "SharedNavigationWarpScene",
+      "_GraphedWarpController",
+      "_NavigationWarpLoop",
+      "_WarpNavigation",
+      "NavRLWarpEnv",
+      "ZhangNavRLWarpEnv"
+    ]
+  },
+  {
+    "file": "src/isaaclab_navrl/tasks/navigation/newton_sensors.py",
+    "lines": 109,
+    "symbols": [
+      "_set_shared_obstacle_mesh_poses",
+      "NewtonNavRLRayCaster",
+      "NewtonBatchedDepthCamera"
+    ]
+  },
+  {
+    "file": "src/isaaclab_navrl/tasks/navigation/randomization.py",
+    "lines": 209,
+    "symbols": [
+      "SimToRealCfg",
+      "PolicyPerturbation",
+      "DifferentiableDelay",
+      "capture_nominal_dynamics",
+      "reset_sim_to_real"
+    ]
+  },
+  {
+    "file": "src/isaaclab_navrl/tasks/navigation/scene.py",
+    "lines": 10,
+    "symbols": [
+      "SharedNavigationScene"
+    ]
+  },
+  {
+    "file": "src/isaaclab_navrl/tasks/navigation/sensor_mixins.py",
+    "lines": 404,
+    "symbols": [
+      "_slice",
+      "_update_mesh_bounds",
+      "_raycast_shared_meshes",
+      "_BatchedDepthCameraMixin",
+      "_NavRLRayCasterMixin"
+    ]
+  },
+  {
+    "file": "src/isaaclab_navrl/tasks/navigation/task_logic.py",
+    "lines": 160,
+    "symbols": [
+      "goal_frame",
+      "obstacle_categories",
+      "dynamic_layout",
+      "DynamicObstacleMotion",
+      "navigation_terms"
+    ]
+  },
+  {
+    "file": "src/isaaclab_navrl/tasks/navigation/warp_task_kernels.py",
+    "lines": 486,
+    "symbols": [
+      "_at_least",
+      "_at_most",
+      "_goal_frame",
+      "goal_frame_kernel",
+      "navigation_terms_kernel",
+      "first_events_kernel",
+      "termination_mask_kernel",
+      "latch_first_event_kernel",
+      "reset_first_event_kernel",
+      "_check_tensor",
+      "WarpNavigationTerms",
+      "WarpFirstEvents"
+    ]
+  },
+  {
+    "file": "src/isaaclab_navrl/terrain.py",
+    "lines": 139,
+    "symbols": [
+      "obstacle_height_field",
+      "discrete_obstacles_height_field",
+      "discrete_obstacles_terrain",
+      "NavRLObstaclesTerrainCfg",
+      "build_terrain_cfg"
+    ]
+  },
+  {
+    "file": "src/isaaclab_navrl/training.py",
+    "lines": 124,
+    "symbols": [
+      "tensorboard_directory",
+      "write_training_scalars",
+      "graceful_training_stop",
+      "write_json",
+      "record_curriculum"
+    ]
+  },
+  {
+    "file": "src/isaaclab_navrl/warp_control.py",
+    "lines": 297,
+    "symbols": [
+      "_lee_rotor_step",
+      "_reset_rotors",
+      "WarpLeeRotorController"
+    ]
+  },
+  {
+    "file": "src/isaaclab_navrl/warp_utils.py",
+    "lines": 26,
+    "symbols": [
+      "torch_warp_stream"
+    ]
+  },
+  {
+    "file": "src/isaaclab_navrl/zhang/__init__.py",
+    "lines": 1,
+    "symbols": []
+  },
+  {
+    "file": "src/isaaclab_navrl/zhang/actor_critic.py",
+    "lines": 588,
+    "symbols": [
+      "_check_trajectory",
+      "_check_discount",
+      "td_lambda_cost_targets",
+      "short_horizon_cost_objective",
+      "AHACSettings",
+      "AdaptiveHorizonController",
+      "critic_split_indices",
+      "ActorCriticSettings",
+      "CostValueNetwork",
+      "CostActorCritic"
+    ]
+  },
+  {
+    "file": "src/isaaclab_navrl/zhang/cli.py",
+    "lines": 191,
+    "symbols": [
+      "parse_binary_flag",
+      "parse_gradient_diagnostic_updates",
+      "parse_train_args",
+      "add_train_args"
+    ]
+  },
+  {
+    "file": "src/isaaclab_navrl/zhang/config.py",
+    "lines": 213,
+    "symbols": [
+      "ZhangTrainCfg"
+    ]
+  },
+  {
+    "file": "src/isaaclab_navrl/zhang/controller.py",
+    "lines": 103,
+    "symbols": [
+      "GraphedLeeRotorController"
+    ]
+  },
+  {
+    "file": "src/isaaclab_navrl/zhang/critic_state.py",
+    "lines": 92,
+    "symbols": [
+      "CriticHistory",
+      "_delay_features",
+      "critic_observation"
+    ]
+  },
+  {
+    "file": "src/isaaclab_navrl/zhang/dcol.py",
+    "lines": 248,
+    "symbols": [
+      "_scalar_like",
+      "_radius_like",
+      "_scale_from_coordinates",
+      "sphere_sphere_alpha",
+      "sphere_box_alpha",
+      "sphere_cylinder_alpha",
+      "_dynamic_pair_alpha",
+      "dynamic_min_alpha",
+      "hybrid_collision_gap",
+      "height_bounded_gap",
+      "metric_navigation_gap"
+    ]
+  },
+  {
+    "file": "src/isaaclab_navrl/zhang/diagnostics.py",
+    "lines": 351,
+    "symbols": [
+      "_cosine",
+      "_select_columns",
+      "GradientDiagnostic",
+      "critic_vertical_probe",
+      "collision_records",
+      "compare_dynamic_metrics"
+    ]
+  },
+  {
+    "file": "src/isaaclab_navrl/zhang/dynamics.py",
+    "lines": 115,
+    "symbols": [
+      "gradient_decay",
+      "align_state",
+      "PointMassState",
+      "_disturbance",
+      "disturbance_acceleration",
+      "point_mass_step",
+      "policy_transition",
+      "align_transition"
+    ]
+  },
+  {
+    "file": "src/isaaclab_navrl/zhang/events.py",
+    "lines": 99,
+    "symbols": [
+      "randomize_zhang_parameters",
+      "update_zhang_disturbance"
+    ]
+  },
+  {
+    "file": "src/isaaclab_navrl/zhang/inference.py",
+    "lines": 61,
+    "symbols": [
+      "ZhangInference",
+      "load_zhang_policy"
+    ]
+  },
+  {
+    "file": "src/isaaclab_navrl/zhang/losses.py",
+    "lines": 349,
+    "symbols": [
+      "VelocityEMA",
+      "relative_avoidance",
+      "risk_speed_scale",
+      "masked_mean",
+      "_velocity_window_samples",
+      "velocity_window_loss",
+      "velocity_step_loss",
+      "_truncated_terminal_samples",
+      "height_boundary_loss",
+      "height_target_loss",
+      "navrl_height_loss",
+      "zhang_transition_costs"
+    ]
+  },
+  {
+    "file": "src/isaaclab_navrl/zhang/model.py",
+    "lines": 104,
+    "symbols": [
+      "ZhangPolicy",
+      "quaternion_matrix",
+      "policy_state",
+      "decode_action"
+    ]
+  },
+  {
+    "file": "src/isaaclab_navrl/zhang/normalization.py",
+    "lines": 140,
+    "symbols": [
+      "MomentSnapshot",
+      "ObservationSnapshot",
+      "_RunningMoments",
+      "PolicyObservationNormalizer"
+    ]
+  },
+  {
+    "file": "src/isaaclab_navrl/zhang/optimization.py",
+    "lines": 395,
+    "symbols": [
+      "OptimizerStepMonitor",
+      "make_plateau_scheduler",
+      "RecoveryConfig",
+      "RecoveryDecision",
+      "RecoveryController"
+    ]
+  },
+  {
+    "file": "src/isaaclab_navrl/zhang/projection.py",
+    "lines": 310,
+    "symbols": [
+      "height_priority_gradient",
+      "_named_parameters",
+      "_flat_parameters",
+      "_synchronize",
+      "_command_delta",
+      "ActionUpdateProbe"
+    ]
+  },
+  {
+    "file": "src/isaaclab_navrl/zhang/runner.py",
+    "lines": 1091,
+    "symbols": [
+      "cosine_learning_rate",
+      "rollout_diagnostics",
+      "ZhangTrainer"
+    ]
+  },
+  {
+    "file": "src/isaaclab_navrl/zhang/sru.py",
+    "lines": 32,
+    "symbols": [
+      "LSTMSRUGateCell"
+    ]
+  },
+  {
+    "file": "src/isaaclab_navrl/zhang/termination.py",
+    "lines": 44,
+    "symbols": [
+      "termination_mask",
+      "latch_first_event",
+      "reset_first_event",
+      "first_events"
+    ]
+  }
+]

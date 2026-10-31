@@ -127,6 +127,7 @@ TensorBoard 使用统一的 `Train/success_rate`、`Train/episodes` 等标签。
 - [NavRL 迁移决策](docs/migration/NAVRL_ISAACLAB_3_MIGRATION.md)
 - [PhysX / Newton 后端适配](docs/migration/NEWTON_BACKEND_20261030.md)
 - [Newton 共享几何和 Warp 性能报告](docs/migration/NEWTON_SHARED_GEOMETRY_PERFORMANCE_20261030.md)
+- [官方组件逐项审计与 demo 实验](docs/migration/OFFICIAL_COMPONENTS_AUDIT_20261031.md)
 - [Zhang 迁移决策](docs/migration/ZHANG_MIGRATION_DECISIONS_1_4.md)
 - [实现与验证状态](docs/IMPLEMENTATION_STATUS.md)
 - [SHAC/AHAC 适配与边界](docs/migration/SHAC_AHAC_ADAPTATION.md)
