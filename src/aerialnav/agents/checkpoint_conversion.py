@@ -1,4 +1,4 @@
-"""One-time conversion of original Navigation TensorDict checkpoints."""
+"""Convert upstream TensorDict PPO checkpoints into the public runner format."""
 
 from __future__ import annotations
 
@@ -62,7 +62,7 @@ def convert_original_state_dict(original: dict[str, torch.Tensor]) -> dict:
         iter=0,
         infos={
             "fresh": False,
-            "converted_from_original_aerialnav": True,
+            "converted_from_upstream": True,
             "optimizer_reset": True,
             "value_normalization_folded_into_head": True,
             "formal_acceptance_training_eligible": False,

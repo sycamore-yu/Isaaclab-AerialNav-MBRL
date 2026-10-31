@@ -1,6 +1,7 @@
-"""The original Navigation shared encoder, adapted to RSL-RL 5.5.1 models.
+"""PPO shared encoder adapted to the RSL-RL 5.5.1 interface.
 
-Network structure is derived from Zhefan-Xu/Navigation (MIT; see LICENSE-Navigation).
+Network structure is derived from upstream MIT-licensed code.
+See THIRD_PARTY_NOTICES.md for the original project and copyright attribution.
 PPO, rollout storage, distributions, and checkpoint management remain upstream.
 """
 

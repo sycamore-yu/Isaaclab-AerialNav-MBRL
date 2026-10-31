@@ -49,3 +49,24 @@ def test_speed_report_uses_process_wall_clock_and_completed_episodes(tmp_path):
     assert result["time_to_threshold"]["80%"]["process_elapsed_s"] == 40
     assert result["best"]["success_rate"] == .89
     assert result["best"]["average_environment_steps_per_s"] == 1920.0
+
+
+def test_release_audit_detects_legacy_names_in_publishing_docs(tmp_path):
+    from scripts.audit_release import audit
+
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    publishing = docs / "publishing.md"
+    old_repo = "isaaclab" + "-" + "".join(("nav", "rl"))
+    publishing.write_text(f"git fetch /path/to/private/{old_repo}\n")
+    findings = audit(tmp_path)
+    assert any("docs/publishing.md" in item for item in findings)
+
+    publishing.write_text("Use this private host: /home/" + "localuser" + "/private/repo\n")
+    findings = audit(tmp_path)
+    assert any("machine-specific path" in item for item in findings)
+
+    publishing.unlink()
+    upstream = "Nav" + "RL"
+    (tmp_path / "THIRD_PARTY_NOTICES.md").write_text(f"Original {upstream} project attribution\n")
+    assert audit(tmp_path) == []

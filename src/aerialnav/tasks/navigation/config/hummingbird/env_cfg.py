@@ -237,7 +237,7 @@ class NavigationEnvCfg(DirectRLEnvCfg):
                 setattr(self.scene, name, asset_cfg)
         self.scene.lidar.update_period = self.sim.dt * self.decimation
 
-        # Navigation ros1/map_manager/cfg/dynamic_map_param.yaml and quadcopter.urdf.
+        # Mesh selection follows the upstream obstacle-map and quadcopter configuration.
         target = MultiMeshRayCasterCfg.RaycastTargetCfg
         meshes = [
             target(prim_expr="/World/ground", is_shared=True, track_mesh_transforms=False),
@@ -275,7 +275,7 @@ class NavigationEnvCfg(DirectRLEnvCfg):
                 pos=(0.09, 0.0, 0.095), rot=(0.0, 0.0, 0.0, 1.0), convention="world"
             ),
             pattern_cfg=patterns.PinholeCameraPatternCfg.from_intrinsic_matrix(
-                # Scale the Navigation calibration with the image to preserve its field of view.
+                # Scale the upstream camera intrinsics to preserve the original field of view.
                 [554.254691191187 / 4, 0.0, 320.5 / 4, 0.0, 554.254691191187 / 4, 240.5 / 4, 0.0, 0.0, 1.0],
                 width=160,
                 height=120,

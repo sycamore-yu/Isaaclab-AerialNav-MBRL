@@ -25,7 +25,7 @@ The separately initialized **public repository** is `aerialnav-static`, with `ma
 3. In the **independent public repository**, fetch **only** the release branch from the local development repository:
 
    ```bash
-   git fetch --no-tags /path/to/private/isaaclab-navrl \
+   git fetch --no-tags /path/to/development/repository \
      refs/heads/release/static-v0.1
    git merge --ff-only FETCH_HEAD
    ```

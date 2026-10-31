@@ -1,4 +1,4 @@
-"""Official RSL-RL PPO settings for the Navigation migration baseline."""
+"""RSL-RL PPO configuration for the optional aerial navigation baseline."""
 
 from isaaclab.utils import configclass
 from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlPpoAlgorithmCfg

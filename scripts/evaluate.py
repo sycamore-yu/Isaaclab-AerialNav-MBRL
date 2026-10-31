@@ -55,9 +55,9 @@ def main():
         env = create_navigation_env(task, cfg, args)
         try:
             if args.method == "ppo":
-                from aerialnav.agents.inference import load_aerialnav_policy
+                from aerialnav.agents.inference import load_ppo_policy
 
-                policy = load_aerialnav_policy(env, args.checkpoint)
+                policy = load_ppo_policy(env, args.checkpoint)
             else:
                 from aerialnav.diffnav.inference import load_diffnav_policy
 

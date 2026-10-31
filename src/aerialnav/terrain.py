@@ -1,7 +1,7 @@
 # Copyright (c) 2022-2024, The ORBIT Project Developers.
 # All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
-"""Navigation's custom height-field sampler, hosted by Isaac Lab 3.0 terrain classes."""
+"""Height-field obstacle sampler adapted from upstream code for Isaac Lab 3.0."""
 
 from __future__ import annotations
 

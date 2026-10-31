@@ -34,7 +34,7 @@ def test_original_observation_and_reward_on_the_same_states():
         if isinstance(node, ast.FunctionDef) and node.name == "vec_to_new_frame"
     )
     namespace = {"torch": torch, "einops": einops, "TensorDict": TensorDict}
-    exec(compile(ast.Module(body=[helper, compute], type_ignores=[]), "upstream_aerialnav", "exec"), namespace)
+    exec(compile(ast.Module(body=[helper, compute], type_ignores=[]), "upstream_ppo_observation", "exec"), namespace)
 
     torch.manual_seed(71)
     count = 32

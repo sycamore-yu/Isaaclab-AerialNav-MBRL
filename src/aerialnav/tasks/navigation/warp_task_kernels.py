@@ -264,7 +264,7 @@ def _check_tensor(name: str, value: torch.Tensor, shape: tuple[int, ...], dtype:
 
 
 class WarpNavigationTerms:
-    """Bind fixed inputs and allocate the original Navigation term dictionary once.
+    """Bind fixed inputs and allocate the upstream observation term dictionary once.
 
     ``selected_indices`` and ``selected_distance_xy`` are the original Torch
     ``distances_xy.topk(min(5, obstacle_count), largest=False)`` outputs. The

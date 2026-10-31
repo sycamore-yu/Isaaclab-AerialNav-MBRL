@@ -1,4 +1,4 @@
-"""Compare converted weights with the original released Navigation policy."""
+"""Compare converted PPO weights against the upstream released policy."""
 
 from __future__ import annotations
 
@@ -21,9 +21,11 @@ from aerialnav.agents.models import NavigationActor, NavigationCritic
 
 def test_released_checkpoint_conversion_preserves_actions_and_denormalized_values():
     source = UPSTREAM_NAVIGATION
-    checkpoint = source / "ros1/navigation_runner/scripts/ckpts/aerialnav_checkpoint.pt"
-    if not checkpoint.exists():
-        pytest.skip("The released upstream checkpoint is not present")
+    checkpoint_dir = source / "ros1/navigation_runner/scripts/ckpts"
+    candidates = sorted(checkpoint_dir.glob("*_checkpoint.pt"))
+    if len(candidates) != 1:
+        pytest.skip("Exactly one upstream released PPO checkpoint is required for parity")
+    checkpoint = candidates[0]
 
     def source_ast(name):
         text = subprocess.check_output(

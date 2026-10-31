@@ -17,7 +17,7 @@ def main() -> None:
     torch.manual_seed(20261028)
     raw = torch.randn(32, 2, 3)
 
-    # Original Navigation uses IndependentBeta(1 + softplus(raw) + 1e-6)
+    # Upstream PPO uses IndependentBeta(1 + softplus(raw) + 1e-6)
     # and applies a subsequent affine [0,1] -> [-2,2] velocity mapping.
     old_alpha = 1.0 + F.softplus(raw[:, 0]) + 1e-6
     old_beta = 1.0 + F.softplus(raw[:, 1]) + 1e-6

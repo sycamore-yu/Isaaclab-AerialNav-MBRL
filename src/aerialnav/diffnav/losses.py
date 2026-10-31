@@ -177,7 +177,7 @@ def height_target_loss(position, height_target, mode="target_exp", *, reduction=
 
 
 def aerialnav_height_loss(position, height_range):
-    """Original Navigation C1 height penalty, with a fixed 0.2 m episode-band margin."""
+    """Upstream C1 height penalty with a fixed 0.2 m episode-band margin."""
     if height_range.shape != (*position.shape[:-1], 2):
         raise ValueError("height_range must match position's leading dimensions with two episode endpoints")
     low, high = height_range.detach().unbind(-1)

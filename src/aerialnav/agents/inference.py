@@ -1,4 +1,4 @@
-"""Load a Navigation checkpoint through the official RSL-RL runner."""
+"""Load a PPO checkpoint through the RSL-RL runner."""
 
 from importlib.metadata import version
 from pathlib import Path
@@ -11,7 +11,7 @@ from rsl_rl.runners import OnPolicyRunner
 from .rsl_rl_cfg import NavigationPpoRunnerCfg
 
 
-def load_aerialnav_policy(env, checkpoint: str | Path):
+def load_ppo_policy(env, checkpoint: str | Path):
     """Return a deterministic callable accepting the raw env observation dict.
 
     The official wrapper resets the environment during construction. The caller

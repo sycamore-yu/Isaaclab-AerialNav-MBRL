@@ -1,4 +1,4 @@
-"""Original Navigation Lee/RotorGroup equations at the Isaac Lab XYZW boundary.
+"""Adapted Lee/RotorGroup control at the Isaac Lab XYZW boundary.
 
 Adapted from OmniDrones, copyright (c) 2023 Botian Xu, Tsinghua University.
 See LICENSE-OmniDrones (MIT).

@@ -401,7 +401,7 @@ def test_original_network_matches_published_model():
     source = Path(reference_root) / "model.py"
     if not source.exists():
         pytest.skip("Original read-only source checkout is not mounted")
-    spec = importlib.util.spec_from_file_location("diffphysdrone_reference_model", source)
+    spec = importlib.util.spec_from_file_location("upstream_policy_reference_model", source)
     reference_module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(reference_module)
     reference = reference_module.Model(10, 6)

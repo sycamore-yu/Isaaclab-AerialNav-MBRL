@@ -25,7 +25,7 @@ from .task_logic import DynamicObstacleMotion, goal_frame, navigation_terms
 
 
 class NavigationEnv(DirectRLEnv):
-    """The original Navigation observation/reward task on Isaac Lab 3.0."""
+    """PPO navigation observation and reward task on Isaac Lab 3.0."""
 
     def __init__(self, cfg, render_mode=None, **kwargs):
         # Direct gym.make callers use the same task default as the public CLI.

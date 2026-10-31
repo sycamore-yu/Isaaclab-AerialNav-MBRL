@@ -521,7 +521,7 @@ class TerrainDistance:
 
 
 def _closest_dynamic_surface(point, dynamic_position, dynamic_size):
-    """The original Navigation dynamic surface projection, with detached selection."""
+    """Upstream dynamic surface projection with detached face selection."""
     delta = point[:, None] - dynamic_position[None]
     extent = dynamic_size[None] * 0.5
     box = delta.clamp(-extent, extent)
