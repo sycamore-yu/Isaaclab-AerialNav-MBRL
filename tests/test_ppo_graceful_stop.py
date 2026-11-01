@@ -29,7 +29,7 @@ def load_trainer():
 
 trainer = load_trainer()
 STAGES = {
-    "pretrain_s0": {"static_obstacles": 300, "dynamic_obstacles": 0, "randomization": False},
+    "pretrain_s0": {"static_obstacles": 240, "dynamic_obstacles": 0, "randomization": False},
     "pretrain_s1": {"static_obstacles": 300, "dynamic_obstacles": 60, "randomization": False},
 }
 
@@ -230,8 +230,11 @@ class Harness:
             return contextlib.nullcontext()
 
         def create_isaaclab_env(task, cfg, args, *, convert_marl_to_single_agent):
-            assert task == "Isaac-AerialNav-Static-PPO-v0"
+            assert task == "Isaac-AerialNav-PPO-v0"
             assert cfg is self.cfg and self.selected_physics == physics
+            assert cfg.training_stage_config["static_obstacles"] == cfg.num_static_obstacles == 300
+            assert cfg.training_stage_config["dynamic_obstacles"] == cfg.num_dynamic_obstacles == 0
+            assert cfg.training_stage_config["randomization"] is cfg.sim_to_real.enabled is False
             assert args.physics_preset == physics and args.frontend == frontend
             assert convert_marl_to_single_agent is False
             self.factory_calls += 1

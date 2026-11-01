@@ -185,7 +185,7 @@ class DiffNavTrainCfg:
         if not math.isfinite(self.critic_target_tau) or not 0 < self.critic_target_tau <= 1:
             raise ValueError("critic_target_tau must be in (0, 1]")
         if self.algorithm != "bptt" and self.variant != "terminal":
-            raise ValueError("The SHAC/AHAC comparisons require the dcol configuration")
+            raise ValueError("The SHAC/AHAC comparisons require the terminal configuration")
         if self.lr_schedule not in ("cosine", "plateau", "constant"):
             raise ValueError("lr_schedule must be cosine, plateau, or constant")
         if any(type(value) is not bool for value in (self.observation_normalization, self.recovery_enabled)):

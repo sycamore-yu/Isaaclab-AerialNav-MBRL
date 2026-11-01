@@ -129,6 +129,7 @@ def main():
         cfg.seed = args.seed
         cfg.terrain_seed = args.terrain_seed
         cfg.training_stage = args.stage
+        cfg.training_stage_config = stage_config
         cfg.training_report_episodes = args.report_episodes
         cfg.training_curriculum = True
         cfg.num_static_obstacles = stage_config["static_obstacles"]

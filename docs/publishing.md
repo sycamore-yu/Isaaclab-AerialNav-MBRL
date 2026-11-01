@@ -59,4 +59,4 @@ The placeholders above are not literal filesystem paths or URLs.
 
 ## Status
 
-The branch now carries the selected dynamic direct-navigation baseline. The simulator smoke check is awaiting explicit NVIDIA Omniverse EULA acceptance. Source, geometry, metadata and packaging checks are recorded in `docs/release_checklist.md`. No remote GitHub publication has been performed.
+The branch now carries the selected dynamic direct-navigation baseline. The user-authorized N4 simulator smoke passed: two training updates and four packaged-checkpoint inference episodes. A full held-out evaluation remains outstanding. Source, geometry, metadata and packaging checks are recorded in `docs/release_checklist.md`. No remote GitHub publication has been performed.

@@ -1,0 +1,56 @@
+{
+  "source_commit": "07f8a7ba327ba4ede5561d87a14b441748536863",
+  "weights_commit": "9e6159b22dd5c9c79770d4a78ff2b1afc6756f24",
+  "scope": "N4 simulator smoke, not held-out performance acceptance",
+  "runtime": {
+    "physics": "newton_mjwarp",
+    "frontend": "warp",
+    "geometry_backend": "curobo_v2",
+    "collision_metric": "sdf"
+  },
+  "training": {
+    "num_envs": 4,
+    "completed_updates": 2,
+    "environment_steps": 1200,
+    "nonfinite_grad_events": 0,
+    "nonfinite_events": 0,
+    "grad_norms": [
+      1.5171476602554321,
+      2.6688449382781982
+    ],
+    "position_integration": "trapezoid",
+    "loss_timing": "pre_reset",
+    "velocity_window_s": 2.0
+  },
+  "inference": {
+    "checkpoint": "weights/baseline_direct.pt",
+    "seed": 10000,
+    "terrain_seed": 10000,
+    "stage": "finetune_s1",
+    "randomization": true,
+    "episodes": 4,
+    "counts": {
+      "success": 2,
+      "collision": 0,
+      "timeout": 2,
+      "bounds": 0,
+      "invalid": 0
+    },
+    "arrival_wait_s": 10.0,
+    "episode_end_contract": "diffaero_arrival_wait_final_goal_v2"
+  },
+  "local_evidence": [
+    "runs/release_checks/train/training_result.json",
+    "runs/release_checks/train/updates.jsonl",
+    "runs/release_checks/inference.json"
+  ],
+  "held_out_evaluation_verified": false,
+  "clean_environment_install_verified": false,
+  "remote_publication_performed": false,
+  "regression": {
+    "passed": 410,
+    "skipped": 10,
+    "subtests_passed": 85,
+    "config_checks_after_message_cleanup": 16
+  }
+}
