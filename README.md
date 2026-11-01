@@ -4,6 +4,15 @@ Depth-based quadrotor navigation with differentiable training in Isaac Lab 3.
 
 The baseline uses a CNN–GRU policy, Newton + Warp simulation, and SDF collision losses backed by cuRoboV2. Training gradients pass through a point-mass surrogate, not through the Newton solver.
 
+## Flight demos
+
+| Static obstacles | Moving obstacles |
+| --- | --- |
+| [![Static flight](docs/media/static-flight.gif)](docs/media/static-flight.mp4) | [![Dynamic flight](docs/media/dynamic-flight.gif)](docs/media/dynamic-flight.mp4) |
+| [Full video · 1×](docs/media/static-flight.mp4) | [Full video · 1×](docs/media/dynamic-flight.mp4) |
+
+Successful flights with the packaged GRU policy. Cyan marks the flown path; green marks the goal.
+
 ## Installation
 
 Linux, an NVIDIA GPU, and Python 3.12 are required. From the repository root:
@@ -40,6 +49,8 @@ The default task has a 120 × 40 m world, 480 static and 32 dynamic obstacles, r
 Success requires ending within 0.5 m of the goal without failure. Arrival-triggered reset waits until more than 10 seconds after first entry and the drone is currently inside the goal region. Earlier failures and the episode time limit still end the episode.
 
 For a short training check, add `--max_iterations 2`. See [training](docs/training.md) and [evaluation](docs/evaluation.md) for configuration and checkpoint export.
+
+GRU is the default. For optional SRU-LSTM-Gated BPTT training, add `--recurrent_model sru_lstm_gated`; start from fresh weights rather than a GRU checkpoint.
 
 ## Acknowledgements
 

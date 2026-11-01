@@ -12,6 +12,8 @@ The separately initialized **public repository** is `aerialnav-static`, with `ma
 
 ## Update workflow
 
+For the first push, create an **empty** GitHub repository without an initial README, license or `.gitignore`. Authenticate on this machine using `gh auth login` (or your configured SSH key). Keep credentials out of chat. Supply the repository URL and explicitly authorize pushing the standalone repository's `main` branch.
+
 1. Develop public changes on the `release/static-v0.1` worktree. Do not merge development `main` into the release branch. Review all imported changes and commit them with publishable attribution.
 2. Run the public-source audit and targeted regression checks:
 
@@ -39,7 +41,7 @@ The separately initialized **public repository** is `aerialnav-static`, with `ma
    python scripts/audit_release.py
    ```
 
-5. **Only after a human reviews the public content and the simulator / held-out tests are complete**, add the intended GitHub remote to the standalone repository and push `main` explicitly.
+5. After reviewing the public content and recorded validation status, add the intended GitHub remote to the standalone repository and push `main` explicitly.
 
    ```bash
    git remote add origin <user-provided-github-repository-url>
@@ -55,7 +57,7 @@ The placeholders above are not literal filesystem paths or URLs.
 - Do not copy `.git` from the development repository into the standalone public repository.
 - Keep the public branch history independent. An explicit one-branch fetch followed by `git merge --ff-only` is the supported update path.
 - Upstream code attribution and third-party licensing notices must remain intact; old internal task or personally named identifiers must not be restored.
-- Do not claim that a training success rate is a held-out evaluation rate. A public release still requires a successful simulator smoke test and independent evaluation of the exported checkpoint.
+- Keep simulator smoke results, selected flight demos, training success rates and held-out evaluation rates distinct. The research baseline can be published with its recorded limitations; advertised held-out performance requires independent evaluation of the exported checkpoint.
 
 ## Status
 

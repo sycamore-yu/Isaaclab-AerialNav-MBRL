@@ -7,12 +7,14 @@ The selected profile is [baseline_direct](../configs/baseline_direct.json): dyna
 | Public API and default configuration | `aerialnav` / `diffnav`; `variant=terminal`; baseline-profile contract test |
 | Baseline checkpoint | `weights/baseline_direct.pt`, update 2129; exact CPU outputs and recurrent state at batches 1, 4 and 17 |
 | Legacy checkpoint | `weights/best_static_s0.pt` remains readable; its benchmark is historical |
+| Optional SRU | BPTT backend, checkpoint/state lifecycle and pinned upstream numerical parity: 10 checks pass; GRU remains the default |
 | Source and metadata privacy | Full source/docs scan, decoded USD metadata, and both checkpoint metadata scans pass |
 | Regression | 410 passed, 10 skipped, 85 subtests; skipped tests require optional upstream sources |
 | Public export boundary | 10 targeted checks pass, including rejection of unrecognised configuration metadata |
 | Geometry and packaging | cuRobo geometry checks pass; locked dependency resolution, wheel build/import and packaged asset/notices verified |
 | Simulator smoke | User-authorized EULA acceptance; N4 Newton/Warp training completed 2 updates, no nonfinite states/gradients; packaged baseline inference completed 4 episodes (2 success, 2 timeout) |
 | Held-out navigation result | Not established for the exported baseline checkpoint; no performance rate advertised |
+| Flight demos | Static and moving-obstacle successful rollouts with the packaged checkpoint, real-time MP4 and GIF previews; [recording details](data/flight_demos.json) |
 | Remote publication | Not performed |
 
 The old Static Gym IDs belonged to the static-only draft. Current task IDs are `Isaac-AerialNav-Depth-v0` and `Isaac-AerialNav-PPO-v0`. File-based training/evaluation/export entrypoints remain available. The optional PPO training entrypoint keeps its static profile; it is not a matched dynamic-task comparison.

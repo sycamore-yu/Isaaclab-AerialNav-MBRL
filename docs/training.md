@@ -12,6 +12,21 @@ PYTHONPATH=src .venv/bin/python scripts/train_diffnav.py \
 
 Fresh direct training uses AdamW, learning rate 0.001, weight decay 0.01, cosine period 400 updates, and gradient clipping at 5. Loss weights are velocity 1, velocity prediction 2, avoidance 3, collision 7.5, acceleration 0.01, jerk 0.001, and goal-height band 1.
 
+## Choose GRU or SRU
+
+The default `--recurrent_model gru` is the published baseline. To train the optional SRU-LSTM-Gated backend from scratch:
+
+```bash
+PYTHONPATH=src .venv/bin/python scripts/train_diffnav.py \
+  --log_dir runs/sru --stage finetune_s1 --fresh_stage \
+  --num_envs 512 --seed 0 --terrain_seed 0 \
+  --recurrent_model sru_lstm_gated
+```
+
+SRU supports BPTT only; SHAC/AHAC are rejected before launch. Its recurrent state packs both hidden and cell states (384 values versus GRU's 192). The checkpoint records the backend and inference selects it automatically. GRU and SRU weights cannot be interchanged; the packaged baseline weights are GRU. Upstream attribution is in `LICENSE-SRU` and the third-party notices.
+
+## Reports and continuation
+
 Each report contains at least 1024 naturally completed episodes, including failures. `training_statistics.jsonl` holds the report denominators; `updates.jsonl` records motion, losses and optimizer diagnostics. TensorBoard events are written beneath the run directory.
 
 Interruptions save `checkpoint_stopped.pt` at a complete update boundary. Continue into a **new** output directory:

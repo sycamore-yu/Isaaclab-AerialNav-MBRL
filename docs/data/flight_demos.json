@@ -1,0 +1,65 @@
+{
+  "source_commit": "99e3d4d",
+  "selection": "Selected successful demonstration episodes; not aggregate evaluation results",
+  "clip": "Flight through first arrival plus a short hold; success checked at full episode completion",
+  "clips": [
+    {
+      "scene": "static",
+      "video": "docs/media/static-flight.mp4",
+      "preview": "docs/media/static-flight.gif",
+      "checkpoint": "weights/baseline_direct.pt",
+      "checkpoint_training_update": 2129,
+      "seed": 10023,
+      "terrain_seed": 10023,
+      "batch_size": 12,
+      "selected_episode": 8,
+      "static_obstacles": 240,
+      "dynamic_obstacles": 0,
+      "randomization": false,
+      "target_speed_range_mps": [
+        4,
+        6
+      ],
+      "episode_outcome": "success",
+      "first_arrival_s": 23.350000381469727,
+      "completed_episode_s": 30.0,
+      "clip_frames": 497,
+      "video_fps": 20,
+      "clip_duration_s": 24.85,
+      "preview_start_s": 8,
+      "preview_duration_s": 4.0,
+      "playback_speed": 1,
+      "speed_overlay": false,
+      "local_recording": "runs/readme_demos/static_record/result.json"
+    },
+    {
+      "scene": "dynamic",
+      "video": "docs/media/dynamic-flight.mp4",
+      "preview": "docs/media/dynamic-flight.gif",
+      "checkpoint": "weights/baseline_direct.pt",
+      "checkpoint_training_update": 2129,
+      "seed": 10023,
+      "terrain_seed": 10023,
+      "batch_size": 12,
+      "selected_episode": 3,
+      "static_obstacles": 480,
+      "dynamic_obstacles": 32,
+      "randomization": true,
+      "target_speed_range_mps": [
+        4,
+        6
+      ],
+      "episode_outcome": "success",
+      "first_arrival_s": 23.69999885559082,
+      "completed_episode_s": 33.70000076293945,
+      "clip_frames": 503,
+      "video_fps": 20,
+      "clip_duration_s": 25.15,
+      "preview_start_s": 8,
+      "preview_duration_s": 4.0,
+      "playback_speed": 1,
+      "speed_overlay": false,
+      "local_recording": "runs/readme_demos/dynamic_record/result.json"
+    }
+  ]
+}

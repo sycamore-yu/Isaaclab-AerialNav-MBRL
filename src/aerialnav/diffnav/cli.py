@@ -159,7 +159,7 @@ def parse_train_args(tokens: list[str]) -> dict[str, TrainArgValue]:
         if values.get("recurrent_model", "gru") == "sru_lstm_gated":
             raise ValueError("SRU-LSTM-Gated currently requires --algorithm bptt; SHAC/AHAC are not supported")
         if values.get("variant", "terminal") != "terminal":
-            raise ValueError("SHAC/AHAC comparisons require --variant dcol")
+            raise ValueError("SHAC/AHAC comparisons require --variant terminal")
         if values.get("gradient_projection", "none") != "none":
             raise ValueError("Height-priority projection requires --algorithm bptt")
     if values.get("timesteps", 150) < 2:
