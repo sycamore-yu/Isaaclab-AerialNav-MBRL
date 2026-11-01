@@ -14,6 +14,7 @@ from isaaclab_navrl.source import verify_training_import
 from isaaclab_navrl.training import (
     DEFAULT_STAGE,
     END_CLEARANCE,
+    EPISODE_END_CONTRACT,
     MAP_SIZE,
     STAGE_CONFIG,
     STAGES,
@@ -34,7 +35,9 @@ def main(*, reference_dcol=False):
     parser.add_argument("--max_iterations", type=int, default=None, help="Optional smoke-run limit; default unlimited")
     parser.add_argument("--stop_after_acceptance", action="store_true", help="Finish when this stage reaches 80%")
     parser.add_argument("--stage", choices=STAGES, help="Default: fresh finetune_s1 (fS1/40)")
-    parser.add_argument("--checkpoint", type=Path, help="Previous stage checkpoint from this experiment")
+    checkpoints = parser.add_mutually_exclusive_group()
+    checkpoints.add_argument("--checkpoint", type=Path, help="Previous stage checkpoint from this experiment")
+    checkpoints.add_argument("--resume_checkpoint", type=Path, help="Continue saved learning state in the same stage")
     parser.add_argument(
         "--fresh_stage",
         action="store_true",
@@ -48,7 +51,7 @@ def main(*, reference_dcol=False):
     args = parse_physics_args(parser)
     if args.stage is None:
         args.stage = DEFAULT_STAGE
-        args.fresh_stage = args.fresh_stage or args.checkpoint is None
+        args.fresh_stage = args.fresh_stage or (args.checkpoint is None and args.resume_checkpoint is None)
     overrides = {
         key: getattr(args, key)
         for key in ("num_dynamic_obstacles", "target_speed_min", "target_speed_max")
@@ -70,12 +73,24 @@ def main(*, reference_dcol=False):
         parser.error("--critic_value_transform softplus requires --algorithm shac or ahac")
     if args.stage == "pretrain_s0" and args.checkpoint is not None:
         parser.error("Pretraining S0 must start from random initialization")
-    if args.fresh_stage and (args.stage == "pretrain_s0" or args.checkpoint is not None):
+    if args.fresh_stage and (
+        args.stage == "pretrain_s0" or args.checkpoint is not None or args.resume_checkpoint is not None
+    ):
         parser.error("--fresh_stage requires a later stage without --checkpoint")
-    if args.stage != "pretrain_s0" and args.checkpoint is None and args.max_iterations is None and not args.fresh_stage:
+    if (
+        args.stage != "pretrain_s0"
+        and args.checkpoint is None
+        and args.resume_checkpoint is None
+        and args.max_iterations is None
+        and not args.fresh_stage
+    ):
         parser.error("Later stages require the previous checkpoint or explicit --fresh_stage comparison")
     if args.log_dir.exists() and any(args.log_dir.iterdir()):
         parser.error("Each training stage requires a new or empty --log_dir")
+    if args.resume_checkpoint is not None and args.lr is None:
+        import torch
+
+        args.lr = torch.load(args.resume_checkpoint, map_location="cpu", weights_only=True)["train_cfg"]["lr"]
     args.lr = (
         args.lr
         if args.lr is not None
@@ -195,9 +210,13 @@ def main(*, reference_dcol=False):
             },
             "sim_to_real": asdict(cfg.sim_to_real),
             "observation_contract": OBSERVATION_CONTRACT,
+            "episode_end_contract": EPISODE_END_CONTRACT,
+            "wait_before_truncate_s": cfg.wait_before_truncate,
         },
-        "parent_checkpoint": str(args.checkpoint.resolve()) if args.checkpoint else None,
-        "fresh": args.checkpoint is None,
+        "parent_checkpoint": str((args.checkpoint or args.resume_checkpoint).resolve())
+        if args.checkpoint or args.resume_checkpoint
+        else None,
+        "fresh": args.checkpoint is None and args.resume_checkpoint is None,
         "direct_stage_start": args.fresh_stage,
         "independent_evaluation": False,
     }
@@ -268,6 +287,8 @@ def main(*, reference_dcol=False):
             with graceful_training_stop(trainer):
                 if args.checkpoint is not None:
                     trainer.load_stage_checkpoint(args.checkpoint)
+                elif args.resume_checkpoint is not None:
+                    trainer.load_stage_checkpoint(args.resume_checkpoint, resume=True)
                 initial_hash = hashlib.sha256()
                 for name, parameter in trainer.model.state_dict().items():
                     initial_hash.update(name.encode())
@@ -278,7 +299,7 @@ def main(*, reference_dcol=False):
                         "model_sha256": initial_hash.hexdigest(),
                         "policy_class": type(trainer.model).__name__,
                         "perception": train_cfg.perception,
-                        "fresh": args.checkpoint is None,
+                        "fresh": args.checkpoint is None and args.resume_checkpoint is None,
                         "seed": args.seed,
                     },
                 )

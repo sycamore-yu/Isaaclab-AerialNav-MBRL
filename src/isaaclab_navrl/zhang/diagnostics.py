@@ -265,7 +265,10 @@ def collision_records(env, transition):
     """
     from isaaclab_navrl.tasks.navigation.geometry import primitive_signed_distance
 
-    selected = ((transition["collision_substep"] > 0) & (transition["first_event_code"] == 2)).nonzero().flatten()
+    collision_outcome = transition["first_event_code"] == 2
+    if "terminal_event_code" in transition:
+        collision_outcome |= transition["terminal_event_code"] == 2
+    selected = ((transition["collision_substep"] > 0) & collision_outcome).nonzero().flatten()
     records = []
     for row in selected.tolist():
         position = transition["collision_position"][row].detach().requires_grad_(True)

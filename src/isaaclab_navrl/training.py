@@ -10,6 +10,7 @@ STAGES = ("pretrain_s0", "pretrain_s1", "pretrain_s2", "finetune_s1", "finetune_
 MAP_SIZE = (120.0, 40.0)  # X, Y metres.
 END_CLEARANCE = 6.0
 DEFAULT_STAGE = "finetune_s1"
+EPISODE_END_CONTRACT = "arrival_wait_final_goal_v1"
 STAGE_CONFIG = {
     "pretrain_s0": {"static_obstacles": 240, "dynamic_obstacles": 0, "randomization": False, "episode_length_s": 30.0},
     "pretrain_s1": {"static_obstacles": 360, "dynamic_obstacles": 16, "randomization": False, "episode_length_s": 35.0},

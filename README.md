@@ -33,6 +33,8 @@ PYTHONPATH=src .venv/bin/python scripts/run_comparison_queue.py \
 
 默认对照为：原梯度／论文侧向梯度重塑 × 直接 fS1／完整课程，共四组，均从随机权重开始，seed 0。每份报告至少 1024 个自然完成回合，没有训练更新上限；课程在一个完整报告达到 80% 时晋级，fS2 达标后继续训练以观察保持情况。
 
+训练与评测默认在首次进入目标 0.5 m 区域后记录 `arrived/arrive_time`，等待 `wait_before_truncate=5 s`，等待到期或原回合条件触发后重置；成功要求回合结束时仍在目标区且未发生失败。离开或重新进入不重启首次到达计时。旧记录保留，新机制继续训练使用独立目录与 `--resume_checkpoint`，详见[训练课程](docs/TRAINING_CURRICULUM.md)。
+
 ```bash
 PYTHONPATH=src .venv/bin/python scripts/launch_rectangular_comparison.py \
   --output "logs/curriculum/$(date +%Y-%m-%d_%H-%M-%S)_rectangular_2x2"
@@ -42,7 +44,7 @@ PYTHONPATH=src .venv/bin/python scripts/launch_rectangular_comparison.py \
 
 默认计划为 `configs/experiments/zhang_rectangular_gradient_2x2.json`。单组入口 `scripts/train_zhang.py` 仍默认直接 fS1。已有冻结实验、checkpoint 和历史结果不随默认值修改；旧比较计划保留其显式控制值。
 
-新管线从已提交源码生成独立快照，并在阶段切换及实际导入时核验。队列支持固定 commit 的干净功能分支。正式五阶段依次为预训练 S0、S1、S2 和微调 S1、S2；各阶段自然首次到达率达到 80% 后晋级。
+新管线从已提交源码生成独立快照，并在阶段切换及实际导入时核验。队列支持固定 commit 的干净功能分支。正式五阶段依次为预训练 S0、S1、S2 和微调 S1、S2；各阶段完整回合成功率达到 80% 后晋级。
 
 | 阶段 | 静态障碍 | 密度（个/m²） | 动态障碍 | 回合时限 | 额外扰动 |
 |---|---:|---:|---:|---:|---|

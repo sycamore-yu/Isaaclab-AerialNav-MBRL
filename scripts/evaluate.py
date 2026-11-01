@@ -1,4 +1,4 @@
-"""Evaluate first arrival on one independently launched NavRL difficulty."""
+"""Evaluate completed episodes on one independently launched NavRL difficulty."""
 
 from __future__ import annotations
 
@@ -39,6 +39,7 @@ def main():
     import isaaclab_navrl.tasks  # noqa: F401
     from isaaclab_navrl.evaluation import EpisodeEvaluation
     from isaaclab_navrl.tasks.navigation.config.hummingbird.env_cfg import NavRLEnvCfg, ZhangNavRLEnvCfg
+    from isaaclab_navrl.training import EPISODE_END_CONTRACT
 
     cfg = (ZhangNavRLEnvCfg if args.method == "zhang" else NavRLEnvCfg)()
     if args.geometry_backend is not None:
@@ -101,6 +102,8 @@ def main():
                 "episode_timeout_s": cfg.episode_length_s,
                 "stage": args.stage,
                 "randomization": cfg.sim_to_real.enabled,
+                "episode_end_contract": EPISODE_END_CONTRACT,
+                "wait_before_truncate_s": cfg.wait_before_truncate,
                 "height_bounds_reset": getattr(cfg, "height_bounds_reset", True),
                 **(
                     {

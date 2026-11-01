@@ -14,7 +14,14 @@ from isaaclab.utils.math import (
 from isaaclab_tasks.utils.hydra import resolve_presets
 
 from isaaclab_navrl.control import LeeRotorController
-from isaaclab_navrl.zhang.termination import latch_first_event, reset_first_event, termination_mask
+from isaaclab_navrl.zhang.termination import (
+    arrival_wait_timeout,
+    latch_first_event,
+    record_arrival,
+    reset_first_event,
+    terminal_outcomes,
+    termination_mask,
+)
 
 from .curriculum import TrainingCurriculum, active_obstacle_indices
 from .depth_history import compensated_depth_features, reproject_depth
@@ -98,6 +105,9 @@ class NavRLEnv(DirectRLEnv):
         self.previous_actions = torch.zeros_like(self.command)
         self.action_difference = torch.zeros(self.num_envs, device=self.device)
         self.first_reach_step = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
+        self.arrived = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+        self.arrive_time = torch.zeros(self.num_envs, device=self.device)
+        self._episode_failure = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
         self.episode_return = torch.zeros(self.num_envs, device=self.device)
         self.nonfinite_events = torch.zeros((), dtype=torch.long, device=self.device)
         self.episode_id = torch.full((self.num_envs,), -1, dtype=torch.long, device=self.device)
@@ -173,6 +183,9 @@ class NavRLEnv(DirectRLEnv):
         self.command[env_ids] = 0
         self.previous_actions[env_ids] = 0
         self.first_reach_step[env_ids] = 0
+        self.arrived[env_ids] = False
+        self.arrive_time[env_ids] = 0
+        self._episode_failure[env_ids] = 0
         self.episode_return[env_ids] = 0
         self.episode_id[env_ids] += 1
         self._terms = None
@@ -297,7 +310,12 @@ class NavRLEnv(DirectRLEnv):
         terms = self._finish_policy_terms(self._compute_terms())
         self.nonfinite_events += terms["invalid"].sum()
         terminated = self._termination_mask(terms)
-        timed_out = self.episode_length_buf >= self.max_episode_length
+        elapsed_s = self.episode_length_buf.float() * self.step_dt
+        record_arrival(self.arrived, self.arrive_time, terms["reached"], elapsed_s)
+        wait_expired = arrival_wait_timeout(self.arrived, self.arrive_time, elapsed_s, self.cfg.wait_before_truncate)
+        episode_timeout = self.episode_length_buf >= self.max_episode_length
+        timed_out = episode_timeout | wait_expired
+        outcome = terminal_outcomes(terms, terminated | timed_out, self._episode_failure)
         first = self._first_arrival_mask(terms, terminated)
         self.first_reach_step[first] = self.episode_length_buf[first]
         state = self.root_state()
@@ -319,6 +337,11 @@ class NavRLEnv(DirectRLEnv):
             "invalid": terms["invalid"].clone(),
             "timeout": timed_out.clone(),
             "terminated": terminated.clone(),
+            "arrived": self.arrived.clone(),
+            "arrive_time": self.arrive_time.clone(),
+            "arrival_wait_timeout": wait_expired.clone(),
+            "episode_timeout": episode_timeout.clone(),
+            "terminal_event_code": outcome.clone(),
             "executed_action": self.executed_actions.clone(),
             "action_delay_steps": self.executed_action_lags.clone(),
         }
@@ -547,6 +570,7 @@ class ZhangNavRLEnv(NavRLEnv):
         # A 10 Hz policy can cross the collision band between observations.
         # Use the same sphere clearance at every completed PhysX step.
         elapsed_s = self._policy_start_time + self._physical_substep * self.physics_dt
+        record_arrival(self.arrived, self.arrive_time, terms["reached"], elapsed_s)
         latch_first_event(self._event_code, self._event_time, terms, elapsed_s)
         # Keep this policy step's first collision even if the episode's first
         # outcome was already a success. Capture before the aggregate is set.

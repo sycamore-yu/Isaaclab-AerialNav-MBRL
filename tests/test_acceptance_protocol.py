@@ -128,6 +128,59 @@ class AcceptanceProtocolTests(unittest.TestCase):
             [(240, 0, False), (360, 16, False), (480, 32, False), (480, 32, True), (600, 48, True)],
         )
 
+    def test_same_stage_resume_keeps_lr_and_has_checkpoint_lineage(self):
+        checkpoint = Path("/runs/original/checkpoint_stopped.pt")
+        command = self.command(
+            stage="finetune_s1", parent_checkpoint=checkpoint, resume_checkpoint=checkpoint, train_args={"lr": 0.001}
+        )
+        self.assertIn("--resume_checkpoint", command)
+        self.assertNotIn("--checkpoint", command)
+        self.assertNotIn("--fresh_stage", command)
+        self.assertEqual(command[command.index("--lr") + 1], "0.001")
+        value = report_fixture("finetune_s1", checkpoint)
+        errors = validate_stage_result(
+            value,
+            method="zhang",
+            stage="finetune_s1",
+            num_envs=1024,
+            parent_checkpoint=checkpoint,
+            screening=True,
+            fresh_start_stage="finetune_s1",
+            resumed_start=True,
+        )
+        self.assertEqual(errors, [])
+
+    def test_pipeline_resumes_first_stage_without_random_initialization(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            checkpoint = Path(temporary) / "checkpoint_stopped.pt"
+            checkpoint.write_bytes(b"Synthetic protocol fixture")
+            output = Path(temporary) / "continued"
+            args = pipeline_args(
+                method="zhang",
+                output=str(output),
+                num_envs=512,
+                screening=True,
+                start_stage="finetune_s1",
+                fixed_stage=True,
+                resume_checkpoint=checkpoint,
+            )
+
+            def unit_process(command, **kwargs):
+                self.assertIn("--resume_checkpoint", command)
+                self.assertNotIn("--fresh_stage", command)
+                self.assertNotIn("--checkpoint", command)
+                log_dir = Path(command[command.index("--log_dir") + 1])
+                value = report_fixture("finetune_s1", checkpoint, num_envs=512)
+                (log_dir / "training_result.json").write_text(json.dumps(value))
+                (log_dir / "checkpoint_stage.pt").write_bytes(b"Synthetic protocol fixture")
+                return subprocess.CompletedProcess(command, 0)
+
+            with patch.object(protocol.subprocess, "run", side_effect=unit_process), patch("builtins.print"):
+                self.assertEqual(run_pipeline(args, {"lr": 0.001}), 0)
+            result = json.loads((output / "training_result.json").read_text())
+            self.assertEqual(result["resume_checkpoint"], str(checkpoint))
+            self.assertFalse(result["complete_curriculum_passed"])
+
     def test_allowed_parameters(self):
         self.assertEqual(
             parse_train_args(["--timesteps", "150", "--lr=0.001", "--coef_d_jerk", "0"]),

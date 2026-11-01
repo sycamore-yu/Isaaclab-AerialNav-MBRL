@@ -50,6 +50,7 @@ def build_command(
     fixed_stage: bool = False,
     physics: str = DEFAULT_PHYSICS,
     frontend: str | None = None,
+    resume_checkpoint: Path | None = None,
 ) -> list[str]:
     if frontend is None:
         frontend = "torch" if physics == "isaacsim_physx" else DEFAULT_FRONTEND
@@ -75,7 +76,9 @@ def build_command(
     ]
     if not fixed_stage:
         command += ["--stop_after_acceptance"]
-    if parent_checkpoint is not None:
+    if resume_checkpoint is not None:
+        command += ["--resume_checkpoint", str(resume_checkpoint)]
+    elif parent_checkpoint is not None:
         command += ["--checkpoint", str(parent_checkpoint)]
     elif fresh_stage:
         command += ["--fresh_stage"]
@@ -83,13 +86,13 @@ def build_command(
         command += ["--report_episodes", str(report_episodes)]
     if method == "zhang":
         for key, value in train_args.items():
-            if key != "lr" or not stage.startswith("finetune_") or fresh_stage:
+            if key != "lr" or not stage.startswith("finetune_") or fresh_stage or resume_checkpoint is not None:
                 if isinstance(value, bool):
                     formatted = str(int(value))
                 else:
                     formatted = ",".join(str(update) for update in value) if isinstance(value, tuple) else str(value)
                 command += [f"--{key}", formatted]
-    if stage.startswith("finetune_") and not fresh_stage:
+    if stage.startswith("finetune_") and not fresh_stage and resume_checkpoint is None:
         command += ["--lr", str(finetune_lr)]
     return command
 
@@ -109,6 +112,7 @@ def validate_stage_result(
     screening: bool = False,
     fresh_start_stage: str = "pretrain_s0",
     num_dynamic_obstacles: int | None = None,
+    resumed_start: bool = False,
 ) -> list[str]:
     """Validate one real training report against the fixed acceptance protocol."""
     errors = []
@@ -160,7 +164,7 @@ def validate_stage_result(
         "direct stage starts are Zhang screening comparisons only",
     )
     expect(
-        (stage == fresh_start_stage) is (parent_checkpoint is None),
+        (stage == fresh_start_stage and not resumed_start) is (parent_checkpoint is None),
         "training must start fresh only at its declared start stage and inherit every later stage",
     )
     expect(
@@ -207,6 +211,7 @@ def run_pipeline(args: argparse.Namespace, train_args: dict[str, TrainArgValue])
     screening = getattr(args, "screening", False)
     start_stage = getattr(args, "start_stage", STAGES[0])
     fixed_stage = getattr(args, "fixed_stage", False)
+    resume_checkpoint = getattr(args, "resume_checkpoint", None)
     stages = selected_stages(start_stage, screening=screening, method=args.method, fixed_stage=fixed_stage)
     output = Path(args.output).expanduser().resolve()
     output.mkdir(parents=True, exist_ok=False)
@@ -226,6 +231,7 @@ def run_pipeline(args: argparse.Namespace, train_args: dict[str, TrainArgValue])
         "finetune_lr": args.finetune_lr,
         "train_args": train_args,
         "start_stage": start_stage,
+        "resume_checkpoint": str(resume_checkpoint) if resume_checkpoint else None,
         "fixed_stage": fixed_stage,
         "continue_final_stage": getattr(args, "continue_final_stage", False),
         "stage_order": list(stages),
@@ -262,10 +268,12 @@ def run_pipeline(args: argparse.Namespace, train_args: dict[str, TrainArgValue])
         )
         write_json(summary_path, summary)
         for method in methods:
-            environment["NAVRL_TENSORBOARD_DIR"] = str(output / method / "tensorboard")
+            environment["NAVRL_TENSORBOARD_DIR"] = os.environ.get(
+                "NAVRL_TENSORBOARD_DIR", str(output / method / "tensorboard")
+            )
             current_method = {"status": "running", "acceptance_passed": False, "stages": []}
             summary["methods"][method] = current_method
-            parent_checkpoint = None
+            parent_checkpoint = resume_checkpoint
             for stage in stages:
                 verify_source(scripts_dir.parent, source_identity["commit"])
                 current_stage = None
@@ -284,10 +292,11 @@ def run_pipeline(args: argparse.Namespace, train_args: dict[str, TrainArgValue])
                     train_args=train_args,
                     parent_checkpoint=parent_checkpoint,
                     report_episodes=getattr(args, "report_episodes", None),
-                    fresh_stage=stage == start_stage and start_stage != STAGES[0],
+                    fresh_stage=stage == start_stage and start_stage != STAGES[0] and resume_checkpoint is None,
                     fixed_stage=fixed_stage or (getattr(args, "continue_final_stage", False) and stage == STAGES[-1]),
                     physics=args.physics_preset,
                     frontend=args.frontend,
+                    resume_checkpoint=resume_checkpoint if stage == start_stage else None,
                 )
                 current_stage = {
                     "stage": stage,
@@ -375,6 +384,7 @@ def run_pipeline(args: argparse.Namespace, train_args: dict[str, TrainArgValue])
                         screening=screening,
                         fresh_start_stage=start_stage,
                         num_dynamic_obstacles=train_args.get("num_dynamic_obstacles"),
+                        resumed_start=resume_checkpoint is not None and stage == start_stage,
                     )
                 checkpoint = log_dir / "checkpoint_stage.pt"
                 if not checkpoint.is_file():
@@ -427,6 +437,7 @@ def main() -> int:
         help="Zhang screening only: start fresh here, then follow the remaining stage order",
     )
     parser.add_argument("--train_seed", type=int, default=0)
+    parser.add_argument("--resume_checkpoint", type=Path, help="Zhang checkpoint from the same start stage")
     parser.add_argument("--continue_final_stage", action="store_true", help="Continue final-stage training after 80%")
     parser.add_argument(
         "--fixed_stage", action="store_true", help="Screening only: stay in the start scene after reaching 80%"
@@ -441,6 +452,10 @@ def main() -> int:
         parser.error(str(exc))
     if args.num_envs < 1:
         parser.error("--num_envs must be positive")
+    if args.resume_checkpoint is not None:
+        if args.method != "zhang" or not args.resume_checkpoint.is_file():
+            parser.error("--resume_checkpoint requires --method zhang and an existing checkpoint")
+        args.resume_checkpoint = args.resume_checkpoint.resolve()
     if args.num_envs < 1024 and not args.screening:
         parser.error("formal acceptance requires --num_envs >= 1024")
     if args.report_episodes is not None and args.report_episodes < (1 if args.screening else 1024):

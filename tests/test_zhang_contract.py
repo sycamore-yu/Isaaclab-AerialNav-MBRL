@@ -902,6 +902,46 @@ def test_stage_handoff_rejects_changed_rollout_length(tmp_path):
         second.load_stage_checkpoint(tmp_path / "first" / "checkpoint_final.pt")
 
 
+def test_same_stage_resume_preserves_learning_state_and_cumulative_counts(tmp_path):
+    env = AnalyticEnv()
+    env.cfg.training_stage = "finetune_s1"
+    cfg = ZhangTrainCfg(
+        physics_dt=0.01, policy_dt=0.1, variant="step", timesteps=4, max_iterations=2, velocity_window_s=0.2
+    )
+    first = ZhangTrainer(env, cfg, tmp_path / "first")
+    first.run()
+    first.lr_scale, first.lr_cap = 0.5, 0.0007
+    checkpoint = tmp_path / "first" / "checkpoint_stopped.pt"
+    first._checkpoint(checkpoint)
+    saved = torch.load(checkpoint, map_location="cpu", weights_only=True)
+    # Version-3 checkpoints before this change have no explicit end contract.
+    del saved["environment"]["episode_end_contract"]
+    torch.save(saved, checkpoint)
+    resumed_env = AnalyticEnv()
+    resumed_env.cfg.training_stage = "finetune_s1"
+    second = ZhangTrainer(resumed_env, cfg, tmp_path / "continued")
+    second.load_stage_checkpoint(checkpoint, resume=True)
+    assert second.completed_updates == second.stage_updates == second.schedule_updates == 2
+    assert second.environment_steps == 2 * cfg.timesteps * env.num_envs
+    assert second.lr_scale == 0.5 and second.lr_cap == 0.0007
+    for name, value in second.model.state_dict().items():
+        torch.testing.assert_close(value, saved["model_state_dict"][name], rtol=0, atol=0)
+    assert all(int(value["step"]) == 2 for value in second.optimizer.state.values())
+    receipt = json.loads((tmp_path / "continued" / "continuation.json").read_text())
+    assert receipt["previous_episode_end_contract"] == "arrival_latched_until_failure_or_timeout_v0"
+    assert receipt["episode_end_contract"] == "arrival_wait_final_goal_v1"
+    result = second.run()
+    assert result["completed_updates"] == result["stage_updates"] == second.schedule_updates == 4
+    assert result["environment_steps"] == 4 * cfg.timesteps * env.num_envs
+    assert all(int(value["step"]) == 4 for value in second.optimizer.state.values())
+    assert result["parent_checkpoint"] == str(checkpoint.resolve()) and result["fresh"] is False
+    incompatible = AnalyticEnv()
+    incompatible.cfg.training_stage = "pretrain_s1"
+    other = ZhangTrainer(incompatible, cfg, tmp_path / "wrong_stage")
+    with pytest.raises(ValueError, match="matching environment"):
+        other.load_stage_checkpoint(checkpoint, resume=True)
+
+
 def test_stage_handoff_rejects_another_comparison_variant(tmp_path):
     env = AnalyticEnv()
     env.cfg.training_stage = "pretrain_s1"

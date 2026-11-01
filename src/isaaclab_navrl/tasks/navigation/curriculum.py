@@ -23,9 +23,9 @@ def active_obstacle_indices(count: int, capacity: int) -> list[int]:
 class TrainingCurriculum:
     """Aggregate completed episodes at the upstream EpisodeStats reporting cadence.
 
-    Arrival does not reset the original task. Its first safe outcome is latched
-    until natural termination, so a quick success cannot be counted ahead of
-    unfinished failures. Stage changes discard unfinished episodes explicitly.
+    Current episodes score goal occupancy at completion after an arrival wait.
+    Historical first-event transitions remain readable. Unfinished episodes
+    never contribute to a report.
     """
 
     stages = (60, 80, 100, 120)
@@ -63,7 +63,10 @@ class TrainingCurriculum:
 
     @torch.no_grad()
     def observe(self, transition: dict) -> None:
-        if "first_event_code" in transition:
+        if "terminal_event_code" in transition:
+            code = transition["terminal_event_code"].long()
+            event_time = transition["arrive_time"]
+        elif "first_event_code" in transition:
             code = transition["first_event_code"].long()
             event_time = transition["first_event_time_s"]
         else:

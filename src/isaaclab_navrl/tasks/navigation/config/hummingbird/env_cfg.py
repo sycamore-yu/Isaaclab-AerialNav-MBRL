@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 import isaaclab.sim as sim_utils
 from isaaclab.assets import AssetBaseCfg, RigidObjectCfg, RigidObjectCollectionCfg
 from isaaclab.envs import DirectRLEnvCfg
@@ -181,6 +183,7 @@ class NavRLEnvCfg(DirectRLEnvCfg):
     training_stage: str | None = DEFAULT_STAGE
     training_stage_config: dict | None = None
     training_report_episodes: int | None = None
+    wait_before_truncate: float = 5.0
     sim_to_real: SimToRealCfg = SimToRealCfg()
     events = NavigationEventsCfg()
     terrain_seed: int = 0
@@ -205,6 +208,8 @@ class NavRLEnvCfg(DirectRLEnvCfg):
 
     def configure_scene(self):
         """Apply task counts after command-line overrides and before launch."""
+        if not math.isfinite(self.wait_before_truncate) or self.wait_before_truncate < 0:
+            raise ValueError("wait_before_truncate must be finite and nonnegative")
         stage = self.training_stage_config or STAGE_CONFIG.get(self.training_stage)
         if stage is not None:
             self.episode_length_s = stage["episode_length_s"]

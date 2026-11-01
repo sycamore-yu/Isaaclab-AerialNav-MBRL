@@ -15,6 +15,7 @@ from isaaclab_navrl.physics import runtime_metadata
 from isaaclab_navrl.tasks.navigation.depth_history import OBSERVATION_CONTRACT
 from isaaclab_navrl.tasks.navigation.randomization import DifferentiableDelay
 from isaaclab_navrl.training import (
+    EPISODE_END_CONTRACT,
     STAGE_CONFIG,
     record_curriculum,
     tensorboard_directory,
@@ -130,7 +131,7 @@ class ZhangTrainer:
                     self.pre_reset_collision = (position, obstacles, gap)
                     scored["collision_gap"] = torch.cat((sample["collision_lookahead"], gap[:, None]), dim=1)
                 if self.cfg.failure_terminal_cost:
-                    code = transition["first_event_code"]
+                    code = transition.get("terminal_event_code", transition["first_event_code"])
                     scored["failure_terminal"] = transition["terminated"] & (code >= 2) & (code <= 4)
                 self.step_loss.append(scored)
                 if not torch.equal(sample["episode_id"], self.env.episode_id):
@@ -289,8 +290,8 @@ class ZhangTrainer:
             - radius
         )
 
-    def load_stage_checkpoint(self, path):
-        """Continue the same experiment after rebuilding its stage-specific terrain."""
+    def load_stage_checkpoint(self, path, *, resume=False):
+        """Load the preceding stage or explicitly resume saved same-stage learning state."""
         payload = torch.load(path, map_location=self.env.device, weights_only=True)
         if payload["format_version"] != 3 or payload["method"] != "zhang":
             raise ValueError("Stage transitions require this experiment's Zhang checkpoint")
@@ -311,15 +312,35 @@ class ZhangTrainer:
             )
         )
         allowed_stage_changes = {"lr", "max_iterations", "stop_after_acceptance", "gradient_diagnostic_updates"}
+        if resume:
+            allowed_stage_changes.remove("lr")
         for name, value in asdict(self.cfg).items():
             if name not in allowed_stage_changes and saved_config[name] != value:
                 raise ValueError(f"Stage transitions cannot change {name}")
         stages = list(STAGE_CONFIG)
         index = stages.index(self.env.cfg.training_stage)
-        if index == 0 or payload["environment"]["training_stage"] != stages[index - 1]:
-            raise ValueError("The checkpoint must come from the immediately preceding training stage")
-        if self.cfg.max_iterations is None and not payload["curriculum"]["stage_passed"]:
-            raise ValueError("Formal training requires a checkpoint that passed the preceding stage")
+        if resume:
+            saved_env = payload["environment"]
+            expected = {
+                "training_stage": self.env.cfg.training_stage,
+                "static_obstacles": self.env.cfg.num_static_obstacles,
+                "dynamic_obstacles": self.env.cfg.num_dynamic_obstacles,
+                "seed": self.env.cfg.seed,
+                "terrain_seed": self.env.cfg.terrain_seed,
+                "sim_to_real": asdict(self.env.cfg.sim_to_real),
+                "target_speed_range": getattr(self.env.cfg, "target_speed_range", None),
+            }
+            if "wait_before_truncate_s" in saved_env:
+                expected["wait_before_truncate_s"] = getattr(self.env.cfg, "wait_before_truncate", 5.0)
+            if payload["num_envs"] != self.env.num_envs or any(
+                saved_env[key] != value for key, value in expected.items()
+            ):
+                raise ValueError("Same-stage continuation requires matching environment, seed and num_envs")
+        else:
+            if index == 0 or payload["environment"]["training_stage"] != stages[index - 1]:
+                raise ValueError("The checkpoint must come from the immediately preceding training stage")
+            if self.cfg.max_iterations is None and not payload["curriculum"]["stage_passed"]:
+                raise ValueError("Formal training requires a checkpoint that passed the preceding stage")
         self.model.load_state_dict(payload["model_state_dict"], strict=True)
         self.optimizer.load_state_dict(payload["optimizer_state_dict"])
         self.normalizer.load_state_dict(payload["normalizer_state_dict"], strict=True)
@@ -330,12 +351,14 @@ class ZhangTrainer:
         self.environment_steps = payload["environment_steps"]
         self.elapsed_s = payload["elapsed_s"]
         self.nonfinite_grad_events = payload["nonfinite_grad_events"]
-        self.schedule_updates = 0 if self.env.cfg.training_stage == "finetune_s1" else payload["schedule_updates"]
+        self.schedule_updates = (
+            payload["schedule_updates"] if resume or self.env.cfg.training_stage != "finetune_s1" else 0
+        )
         self.lr_scale = payload["lr_scale"]
         self.lr_cap = payload["lr_cap"]
         # A harder stage has a different report distribution. Start a fresh
         # Plateau/recovery report history; retain model/optimizer/normalization.
-        if self.env.cfg.training_stage == "finetune_s1" or self.cfg.lr != payload["train_cfg"]["lr"]:
+        if not resume and (self.env.cfg.training_stage == "finetune_s1" or self.cfg.lr != payload["train_cfg"]["lr"]):
             self.lr_scale, self.lr_cap = 1.0, self.cfg.lr
             for group in self.optimizer.param_groups:
                 group["lr"] = self.cfg.lr
@@ -343,6 +366,36 @@ class ZhangTrainer:
         torch.set_rng_state(payload["torch_rng_state"].cpu())
         if "cuda_rng_state" in payload and torch.device(self.env.device).type == "cuda":
             torch.cuda.set_rng_state(payload["cuda_rng_state"].cpu(), self.env.device)
+        if resume:
+            self.stage_updates = payload["stage_updates"]
+            if self.scheduler is not None:
+                self.scheduler.load_state_dict(payload["scheduler_state_dict"])
+            self.log_dir.mkdir(parents=True, exist_ok=True)
+            write_json(
+                self.log_dir / "continuation.json",
+                {
+                    "checkpoint": self.parent_checkpoint,
+                    "completed_updates": self.completed_updates,
+                    "stage_updates": self.stage_updates,
+                    "schedule_updates": self.schedule_updates,
+                    "environment_steps": self.environment_steps,
+                    "previous_episode_end_contract": payload["environment"].get(
+                        "episode_end_contract", "arrival_latched_until_failure_or_timeout_v0"
+                    ),
+                    "episode_end_contract": EPISODE_END_CONTRACT,
+                    "wait_before_truncate_s": getattr(self.env.cfg, "wait_before_truncate", 5.0),
+                    "restored": [
+                        "model",
+                        "optimizer",
+                        "normalizer",
+                        "scheduler",
+                        "torch_cpu_cuda_rng",
+                        "LR",
+                        "counters",
+                    ],
+                    "reset": ["environment", "recurrent_state", "report_window", "best_reports", "recovery_reports"],
+                },
+            )
 
     def _checkpoint(self, path):
         payload = {
@@ -391,6 +444,8 @@ class ZhangTrainer:
                 "variant": self.cfg.variant,
                 "sim_to_real": asdict(self.env.cfg.sim_to_real),
                 "observation_contract": OBSERVATION_CONTRACT,
+                "episode_end_contract": EPISODE_END_CONTRACT,
+                "wait_before_truncate_s": getattr(self.env.cfg, "wait_before_truncate", 5.0),
             },
             "torch_rng_state": torch.get_rng_state(),
             "curriculum": self.env.curriculum.state_dict() if self.env.curriculum is not None else None,
@@ -501,6 +556,8 @@ class ZhangTrainer:
     def _result(self, status, checkpoint=None, error=None):
         result = {
             "method": "zhang",
+            "episode_end_contract": EPISODE_END_CONTRACT,
+            "wait_before_truncate_s": getattr(self.env.cfg, "wait_before_truncate", 5.0),
             "physics": self.cfg.physics,
             **runtime_metadata(self.env),
             "variant": self.cfg.variant,
@@ -595,6 +652,7 @@ class ZhangTrainer:
             )
         lookahead = torch.linspace(0, self.cfg.policy_dt, 10, device=self.env.device)[None, :, None]
         writer = SummaryWriter(str(tensorboard_directory(self.log_dir)))
+        writer.add_text("Protocol/episode_end_contract", EPISODE_END_CONTRACT, self.completed_updates)
         if self.cfg.variant == "continuous":
             write_json(
                 self.log_dir / "continuous_geometry.json",
@@ -645,6 +703,7 @@ class ZhangTrainer:
         started = time.perf_counter()
         previous_elapsed_s = self.elapsed_s
         initial_updates = self.completed_updates
+        initial_stage_updates = self.stage_updates
         self._result("running")
         try:
             updates = count() if self.cfg.max_iterations is None else range(self.cfg.max_iterations)
@@ -837,7 +896,7 @@ class ZhangTrainer:
                     history["done"].append(done.clone())
                     history["collision"].append(transition["collision"])
                     if self.cfg.failure_terminal_cost:
-                        code = transition["first_event_code"]
+                        code = transition.get("terminal_event_code", transition["first_event_code"])
                         history["failure_terminal"].append(terminated & (code >= 2) & (code <= 4))
                     if self.cfg.resolved_velocity_loss_mode == "truncated_window":
                         history["timeout"].append(transition["timeout"])
@@ -1091,8 +1150,8 @@ class ZhangTrainer:
                             model_velocity_error=rollout_metrics["surrogate_velocity_error_mps"],
                         )
                     )
-                self.stage_updates = update + 1
-                self.completed_updates = initial_updates + self.stage_updates
+                self.stage_updates = initial_stage_updates + update + 1
+                self.completed_updates = initial_updates + update + 1
                 self.environment_steps += rollout_steps * self.env.num_envs
                 self.schedule_updates += 1
                 self.elapsed_s = previous_elapsed_s + time.perf_counter() - started
