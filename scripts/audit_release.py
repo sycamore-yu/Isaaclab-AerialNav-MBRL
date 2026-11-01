@@ -10,15 +10,13 @@ from pathlib import Path
 def audit(root: Path, *, weights=False) -> list[str]:
     """Report internal naming and workstation-path leaks, preserving proper upstream credits."""
     root = root.resolve()
-    scanned_dirs = ("src", "scripts", "configs", "tests", "docs", ".github")
+    scanned_dirs = ("src", "scripts", "configs", "tests", "docs", "licenses", ".github")
     scanned_root_files = (
         "README.md",
         "THIRD_PARTY_NOTICES.md",
-        "CHANGELOG.md",
         ".gitignore",
         "pyproject.toml",
         "uv.lock",
-        "CITATION.cff",
     )
     text_extensions = {".py", ".json", ".md", ".yaml", ".yml", ".toml", ".cff", ".usd", ".txt"}
     obsolete_identifier = re.compile(r"(?i:isaaclab[-_]navrl|zhang|\bliu(?:[_-]|\b)|diffphysdrone)")
@@ -38,6 +36,7 @@ def audit(root: Path, *, weights=False) -> list[str]:
             continue  # Do not match regex definitions against themselves.
         relative = path.relative_to(root)
         name = relative.as_posix()
+        license_text = relative.parts[0] == "licenses" and path.suffix == ".txt"
         if obsolete_identifier.search(name):
             findings.append(f"{name}: obsolete file name")
         try:
@@ -55,14 +54,16 @@ def audit(root: Path, *, weights=False) -> list[str]:
                 continue
         for number, line in enumerate(lines, start=1):
             markers = []
-            if obsolete_identifier.search(line) and name != "THIRD_PARTY_NOTICES.md":
+            if obsolete_identifier.search(line) and name != "THIRD_PARTY_NOTICES.md" and not license_text:
                 markers.append("obsolete project or personal identifier")
             # The origin of third-party components is a factual attribution,
             # not an internal method/package identifier.
-            allowed_credit = name == "THIRD_PARTY_NOTICES.md" or (
-                name == "README.md" and "original NavRL teams" in line and "third-party" in line
+            allowed_credit = (
+                license_text
+                or name == "THIRD_PARTY_NOTICES.md"
+                or (name == "README.md" and "original NavRL teams" in line and "third-party" in line)
             )
-            if legacy_project.search(line) and not allowed_credit:
+            if legacy_project.search(line.replace("licenses/NavRL.txt", "")) and not allowed_credit:
                 markers.append("unexpected upstream project name outside notices")
             if workstation_path.search(line):
                 markers.append("machine-specific path")

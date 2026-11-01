@@ -2,7 +2,7 @@
 
 Depth-based quadrotor navigation with differentiable training in Isaac Lab 3.
 
-The baseline uses a CNN–GRU policy, Newton + Warp simulation, and SDF collision losses backed by cuRoboV2. Training gradients pass through a point-mass surrogate, not through the Newton solver.
+The baseline uses a CNN–GRU policy, Newton + Warp simulation, and SDF collision losses backed by cuRoboV2. Training gradients pass through a point-mass surrogate.
 
 ## Flight demos
 
@@ -35,7 +35,7 @@ PYTHONPATH=src .venv/bin/python scripts/evaluate.py \
   --output runs/evaluation.json
 ```
 
-Results include success, collision, bounds, and timeout for every initial episode. Change both seeds to test another map. The checkpoint is a training baseline; held-out performance is reported separately.
+Results include success, collision, bounds, invalid state and timeout for every initial episode. Change both seeds to test another map.
 
 ## Train the Policy
 

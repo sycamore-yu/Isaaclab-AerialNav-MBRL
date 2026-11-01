@@ -1,5 +1,5 @@
 # Copyright (c) 2025 Fan Yang, Robotic Systems Lab, ETH Zurich
-# Licensed under the MIT License (see LICENSE-SRU).
+# Licensed under the MIT License (see licenses/SRU.txt).
 """SRU-LSTM-Gated cell from leggedrobotics/sru-pytorch-spatial-learning.
 
 Source: network/lstm_sru_gate.py at d537910684d5c73af2acd43db6c8b001b593fbc0.

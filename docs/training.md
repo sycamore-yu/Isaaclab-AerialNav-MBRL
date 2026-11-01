@@ -8,7 +8,7 @@ PYTHONPATH=src .venv/bin/python scripts/train_diffnav.py \
   --num_envs 512 --seed 0 --terrain_seed 0
 ```
 
-`configs/baseline_direct.json` records the selected baseline. Defaults are Newton/Warp, cuRobo SDF, trapezoidal surrogate integration, pre-reset losses, CNN/GRU192, H150 at 20 Hz, a full 2-second velocity window, and original avoidance gradients. The goal-speed reference decreases linearly near the goal. No FMM, global teacher, smooth goal profile, or gradient projection is enabled.
+`configs/baseline_direct.json` records the selected baseline. Defaults are Newton/Warp, cuRobo SDF, trapezoidal surrogate integration, pre-reset losses, CNN/GRU192, H150 at 20 Hz, a full 2-second velocity window, and original avoidance gradients. The goal-speed reference decreases linearly near the goal.
 
 Fresh direct training uses AdamW, learning rate 0.001, weight decay 0.01, cosine period 400 updates, and gradient clipping at 5. Loss weights are velocity 1, velocity prediction 2, avoidance 3, collision 7.5, acceleration 0.01, jerk 0.001, and goal-height band 1.
 
@@ -23,7 +23,7 @@ PYTHONPATH=src .venv/bin/python scripts/train_diffnav.py \
   --recurrent_model sru_lstm_gated
 ```
 
-SRU supports BPTT only; SHAC/AHAC are rejected before launch. Its recurrent state packs both hidden and cell states (384 values versus GRU's 192). The checkpoint records the backend and inference selects it automatically. GRU and SRU weights cannot be interchanged; the packaged baseline weights are GRU. Upstream attribution is in `LICENSE-SRU` and the third-party notices.
+SRU supports BPTT only; SHAC/AHAC are rejected before launch. Its recurrent state packs both hidden and cell states (384 values versus GRU's 192). The checkpoint records the backend for automatic inference loading. Start SRU from fresh weights; the packaged baseline is GRU.
 
 ## Reports and continuation
 

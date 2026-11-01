@@ -1,7 +1,7 @@
 """Adapted Lee/RotorGroup control at the Isaac Lab XYZW boundary.
 
 Adapted from OmniDrones, copyright (c) 2023 Botian Xu, Tsinghua University.
-See LICENSE-OmniDrones (MIT).
+See licenses/OmniDrones.txt (MIT).
 """
 
 from __future__ import annotations

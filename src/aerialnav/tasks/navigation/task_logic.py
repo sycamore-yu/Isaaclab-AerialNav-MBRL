@@ -1,6 +1,6 @@
 """Navigation observation, reward and shared-obstacle rules, independent of Kit.
 
-Adapted from Zhefan-Xu/Navigation, commit 3725bcc (MIT). World coordinates are
+Adapted from the upstream navigation task, commit 3725bcc (MIT; see licenses/NavRL.txt). World coordinates are
 intentional: cloned drones share one map and never offset it by env_origins.
 """
 

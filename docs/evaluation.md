@@ -7,10 +7,16 @@ PYTHONPATH=src .venv/bin/python scripts/evaluate.py \
   --output runs/evaluation.json
 ```
 
-A stage selects its obstacle counts, timeout and randomization. `finetune_s1` matches the baseline's 480 static/32 dynamic randomized task. `pretrain_s1` uses 360/16 without randomization; these are different difficulty levels. Every initial episode receives one final outcome, and reset episodes do not enter the denominator.
+A stage selects obstacle counts, timeout and randomization. `finetune_s1` uses 480 static and 32 dynamic obstacles with randomized dynamics. `pretrain_s1` uses 360 static and 16 dynamic obstacles without randomization.
 
-The arrival radius is 0.5 m. First entry latches a timestamp; leaving or re-entering does not restart it. After strictly more than 10 seconds, current goal occupancy triggers truncation. Collision, bounds, invalid state or the original time limit can end the episode sooner. Success requires final goal occupancy without failure. First arrival is recorded separately, not scored as final success.
+## Episode outcomes
 
-Report all failure classes and the denominator, with the stage, seeds, speed range, geometry backend and checkpoint configuration. Do not compare these results with the previous draft's first-arrival/static training rate.
+First entry within 0.5 m of the goal records the arrival time. Leaving or re-entering keeps that timestamp. After strictly more than 10 seconds, current goal occupancy triggers reset. Collision, bounds, invalid state and the stage time limit also end episodes. Success requires final goal occupancy without failure.
 
-For an environment-only check, use `scripts/smoke.py`. A short run verifies loading/reset/stepping, not navigation performance. Historical `weights/best_static_s0.pt` remains readable but is not the new dynamic baseline.
+The output contains one result per initial episode and a summary of success, collision, bounds, invalid state and timeout. Record the checkpoint, stage, seeds and speed range alongside comparisons. Use different terrain seeds for independent maps.
+
+## Packaged policy
+
+`weights/baseline_direct.pt` is the GRU direct-training checkpoint at update 2129. Its configuration is in [baseline metadata](data/baseline_checkpoint.json). The [README flight demos](../README.md#flight-demos) show selected successful episodes. Run the evaluation above to obtain aggregate results.
+
+`weights/best_static_s0.pt` is the earlier static-policy checkpoint. It remains readable for existing workflows. Use `scripts/smoke.py` to check environment loading, reset and stepping.

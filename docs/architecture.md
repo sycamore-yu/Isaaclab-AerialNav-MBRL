@@ -1,13 +1,18 @@
-# Baseline architecture
+# Architecture
 
-DiffNav consumes a 1 × 12 × 16 depth feature map and a 10-dimensional state vector. A CNN and a 192-dimensional GRU produce six outputs: acceleration and auxiliary velocity prediction. Policy inputs contain neither a global time field nor a planner command.
+The depth policy consumes a 1 × 12 × 16 feature map and a 10-dimensional state vector. A CNN and GRU192 produce acceleration commands and an auxiliary velocity prediction. Optional SRU-LSTM-Gated uses the same observations and output head.
 
-Newton + Warp supplies forward trajectories. A differentiable point-mass surrogate supplies training derivatives. Its trapezoidal position update creates a direct action-to-position derivative; the Newton solver itself is not differentiated.
+## Training path
 
-SDF denotes the signed distance consumed by avoidance and collision losses. cuRoboV2 computes those distances from a shared known-occupancy ESDF and all active dynamic shapes. These are different layers, not duplicate avoidance objectives. The original soft avoidance and collision penalties remain distinct.
+1. Newton + Warp generates physical trajectories, sensor observations and episode outcomes.
+2. A differentiable point-mass surrogate carries training derivatives through each rollout. Position uses trapezoidal integration.
+3. cuRobo supplies signed obstacle distances and spatial gradients from the static ESDF and all active dynamic shapes.
+4. BPTT optimizes the 2-second velocity window, velocity prediction, avoidance, collision, acceleration, jerk and height-band losses.
 
-`variant=terminal` names the first-collision-substep terminal sampling protocol. Mathematical DCOL is not used by the public trainer. Historical functions remain under `aerialnav.reference`; the previous `aerialnav.diffnav.dcol` import is a compatibility re-export. Old inference weights with the former sampling label remain readable.
+`aerialnav.diffnav` owns the policy, surrogate, losses and trainer. `aerialnav.tasks.navigation` owns the physical task, sensors, randomization and episode resets. `aerialnav.evaluation` records one outcome per initial episode.
 
-The public task IDs are `Isaac-AerialNav-Depth-v0` and `Isaac-AerialNav-PPO-v0`. The latter retains the optional legacy static PPO entrypoint, with a different observation/action contract; it is not a matched dynamic-task control. The selected baseline is depth/CNN/GRU/BPTT; alternate actor-critic, recurrent, and gradient options are not selected defaults.
+## Runtime choices
 
-The earlier static-only draft and `weights/best_static_s0.pt` are legacy artifacts. Its historical training metrics do not describe the new rectangular task or the final-state success protocol.
+The default is Newton/Warp with cuRobo SDF geometry. PhysX/Torch and native geometry are explicit alternatives. Task IDs are `Isaac-AerialNav-Depth-v0` for DiffNav and `Isaac-AerialNav-PPO-v0` for the optional static PPO baseline.
+
+`variant=terminal` selects first-collision-substep sampling. Historical mathematical DCOL utilities live in `aerialnav.reference`. The inference loader accepts both packaged GRU checkpoints and selects the recurrent backend recorded in newer checkpoints.

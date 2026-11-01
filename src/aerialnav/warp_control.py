@@ -3,7 +3,7 @@
 The fused kernel consumes XYZW root states and the same per-environment motor
 parameters as ``LeeRotorController``. Input and output storage stays fixed across
 steps and resets. Public simulator writes remain outside CUDA graph capture.
-Equations adapted from OmniDrones; see LICENSE-OmniDrones.
+Equations adapted from OmniDrones; see licenses/OmniDrones.txt.
 """
 
 from __future__ import annotations

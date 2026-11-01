@@ -1,9 +1,10 @@
-"""Analytic return/gradient and independent value-learning contracts."""
+"""Actor-critic targets, recurrent value state and failure costs."""
 
 import copy
 
 import pytest
 import torch
+from test_diffnav_contract import loss_history
 from torch import nn
 
 from aerialnav.diffnav.actor_critic import (
@@ -15,6 +16,12 @@ from aerialnav.diffnav.actor_critic import (
     short_horizon_cost_objective,
     td_lambda_cost_targets,
 )
+from aerialnav.diffnav.cli import parse_train_args
+from aerialnav.diffnav.config import DiffNavTrainCfg
+from aerialnav.diffnav.critic_state import CriticHistory, critic_observation
+from aerialnav.diffnav.dynamics import PointMassState
+from aerialnav.diffnav.losses import diffnav_transition_costs, height_boundary_loss
+from aerialnav.tasks.navigation.randomization import DifferentiableDelay
 
 
 @pytest.fixture(autouse=True)
@@ -477,3 +484,95 @@ def test_invalid_trajectory_shapes_and_value_settings_fail_clearly():
             ActorCriticSettings(**changes).validate()
     with pytest.raises(ValueError, match="value_transform"):
         CostValueNetwork(2, (4,), value_transform="relu")
+
+
+def test_window_reset_cuts_only_affected_environment_and_rollout_detach_cuts_old_graph():
+    velocity = torch.ones(2, 3, requires_grad=True)
+    history = CriticHistory(3, velocity)
+    history.push(velocity, torch.ones_like(velocity), torch.tensor([True, False]))
+    history.features().sum().backward()
+    assert not velocity.grad[0].any() and velocity.grad[1].abs().sum() > 0
+    history.detach()
+    next_velocity = torch.ones(2, 3, requires_grad=True)
+    history.push(next_velocity, torch.ones_like(next_velocity), torch.zeros(2, dtype=torch.bool))
+    old_gradient = velocity.grad.clone()
+    history.features().sum().backward()
+    torch.testing.assert_close(velocity.grad, old_gradient, rtol=0, atol=0)
+    assert next_velocity.grad.abs().sum() > 0
+
+
+def test_value_state_retains_position_hidden_and_pending_action_but_not_sensor_target_gradients():
+    position = torch.ones(2, 3, requires_grad=True)
+    hidden = torch.ones(2, 192, requires_grad=True)
+    pending = torch.ones(2, 3, requires_grad=True)
+    zero = torch.zeros_like(position)
+    state = PointMassState(position, zero, zero, zero)
+    depth = torch.ones(2, 1, 12, 16, requires_grad=True)
+    target = torch.full((2, 3), 3.0, requires_grad=True)
+    observation = {
+        "target": target,
+        "depth_features": depth,
+        "quaternion": torch.tensor([[0.0, 0.0, 0.0, 1.0]]).repeat(2, 1),
+        "input_delay_steps": torch.zeros(2, dtype=torch.long),
+    }
+    action_delay, observation_delay = DifferentiableDelay(2), DifferentiableDelay(5)
+    action_delay.push(pending, torch.zeros(2, dtype=torch.long))
+    features = critic_observation(
+        state,
+        observation,
+        hidden,
+        zero,
+        {"margin": torch.full((2,), 0.3)},
+        CriticHistory(20, position),
+        action_delay,
+        observation_delay,
+        torch.zeros(2),
+        400,
+        torch.zeros(2, dtype=torch.long),
+    )
+    features.sum().backward()
+    assert position.grad.abs().sum() > 0 and hidden.grad.abs().sum() > 0 and pending.grad.abs().sum() > 0
+    assert depth.grad is None and target.grad is None
+
+
+def test_terminal_failure_cost_is_shared_by_actor_and_td_without_bootstrapping_failure():
+    cfg = DiffNavTrainCfg(algorithm="shac", height_loss_mode="boundary_huber", failure_terminal_cost=300)
+    velocity = torch.zeros(2, 3, 3, requires_grad=True)
+    history = loss_history(velocity)
+    history["collision_gap"] = [torch.ones(3, 9), torch.ones(3, 9)]
+    # Failure, success and timeout are different event outcomes.
+    failed = torch.tensor([[True, False, False], [False, False, False]])
+    history["failure_terminal"] = list(failed)
+    baseline = copy.copy(cfg)
+    baseline.failure_terminal_cost = 0
+    _, _, old_cost = diffnav_transition_costs(history, baseline)
+    losses, _, cost = diffnav_transition_costs(history, cfg)
+    torch.testing.assert_close(cost - old_cost, 300 * failed.float())
+    assert losses["failure_terminal"] == 50
+    done = torch.tensor([[True, True, True], [False, False, False]])
+    next_values = torch.tensor([[0.0, 0.0, 100.0], [100.0, 100.0, 100.0]])
+    targets = td_lambda_cost_targets(cost, next_values, done)
+    assert targets[0, 0] == cost[0, 0]
+    assert targets[0, 2] == cost[0, 2] + 99
+    objective = short_horizon_cost_objective(cost, next_values, done)
+    original = short_horizon_cost_objective(old_cost, next_values, done)
+    assert float((objective["objective"] - original["objective"]).detach()) == pytest.approx(50)
+    torch.testing.assert_close(
+        torch.autograd.grad(cost.sum(), velocity, retain_graph=True)[0],
+        torch.autograd.grad(old_cost.sum(), velocity)[0],
+    )
+    upper = torch.tensor([[0.0, 0.0, 3.9]], requires_grad=True)
+    assert torch.autograd.grad(height_boundary_loss(upper), upper)[0][0, 2] > 0
+
+
+def test_failure_cost_boundary_validation_and_shared_cli():
+    values = parse_train_args(["--algorithm", "shac", "--failure_terminal_cost", "300", "--critic_target_tau", ".005"])
+    DiffNavTrainCfg(**values).validate()
+    for value in (-1, float("nan"), float("inf")):
+        with pytest.raises(ValueError, match="failure_terminal_cost"):
+            DiffNavTrainCfg(algorithm="shac", failure_terminal_cost=value).validate()
+    with pytest.raises(ValueError, match="requires SHAC"):
+        parse_train_args(["--failure_terminal_cost", "1"])
+    for value in (0, 1.1):
+        with pytest.raises(ValueError):
+            parse_train_args(["--algorithm", "shac", "--critic_target_tau", str(value)])

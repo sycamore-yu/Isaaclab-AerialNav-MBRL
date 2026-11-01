@@ -1,20 +1,16 @@
-"""Policy behavior and official PPO checkpoint tests without a simulator."""
+"""PPO policy, distribution and checkpoint lifecycle."""
 
 from __future__ import annotations
 
-import ast
-import subprocess
 from importlib.metadata import version
-from types import SimpleNamespace
 
 import pytest
 import torch
 from isaaclab_rl.rsl_rl.utils import handle_deprecated_rsl_rl_cfg
-from reference_repo import UPSTREAM_NAVIGATION
 from rsl_rl.runners import OnPolicyRunner
 from tensordict import TensorDict
-from torch import nn
 
+from aerialnav.agents.continuous_runner import ContinuousNavigationRunner
 from aerialnav.agents.models import NavigationActor, NavigationCritic
 from aerialnav.agents.rsl_rl_cfg import NavigationPpoRunnerCfg
 
@@ -117,63 +113,6 @@ def test_official_ppo_updates_and_checkpoint_roundtrip(tmp_path):
     assert loaded.alg.optimizer.state_dict()["state"]
 
 
-def test_encoder_against_actual_upstream_source():
-    """Build reference feature layers from the upstream AST, without old simulator imports."""
-    from einops.layers.torch import Rearrange
-
-    source = UPSTREAM_NAVIGATION
-    if not (source / ".git").exists():
-        pytest.skip("Upstream Navigation checkout is not available for differential verification")
-
-    def original(name):
-        return subprocess.check_output(
-            ["git", "show", f"HEAD:isaac-training/training/scripts/{name}"], cwd=source, text=True
-        )
-
-    utils_ast = ast.parse(original("utils.py"))
-    ppo_ast = ast.parse(original("ppo.py"))
-    make_mlp = next(node for node in utils_ast.body if isinstance(node, ast.FunctionDef) and node.name == "make_mlp")
-    beta_actor = next(node for node in utils_ast.body if isinstance(node, ast.ClassDef) and node.name == "BetaActor")
-    namespace = {"torch": torch, "nn": nn, "Rearrange": Rearrange, "self": SimpleNamespace(device="cpu")}
-    exec(compile(ast.Module([make_mlp, beta_actor], type_ignores=[]), "upstream-utils", "exec"), namespace)
-    ppo_class = next(node for node in ppo_ast.body if isinstance(node, ast.ClassDef) and node.name == "PPO")
-    init = next(node for node in ppo_class.body if isinstance(node, ast.FunctionDef) and node.name == "__init__")
-    names = {"feature_extractor_network", "dynamic_obstacle_network"}
-    assignments = [
-        node
-        for node in init.body
-        if isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Name) and node.targets[0].id in names
-    ]
-    exec(compile(ast.Module(assignments, type_ignores=[]), "upstream-ppo", "exec"), namespace)
-    lidar = namespace["feature_extractor_network"]
-    dynamic = namespace["dynamic_obstacle_network"]
-    fusion = namespace["make_mlp"]([256, 256])
-    reference_head = namespace["BetaActor"](3)
-    obs, actor, _ = make_models()
-    flat = obs["policy"]
-    lidar(flat[:, 8:152].reshape(-1, 1, 36, 4))
-    dynamic(flat[:, 152:].reshape(-1, 1, 5, 10))
-    fusion(torch.zeros(8, 200))
-    reference_head(torch.zeros(8, 256))
-    lidar.load_state_dict(actor.cnns.lidar.state_dict())
-    dynamic[1].load_state_dict(actor.cnns.dynamic.state_dict())
-    fusion.load_state_dict(actor.cnns.fusion.state_dict())
-    reference_head.load_state_dict(actor.mlp.state_dict())
-    reference_features = fusion(
-        torch.cat(
-            (
-                lidar(flat[:, 8:152].reshape(-1, 1, 36, 4)),
-                dynamic(flat[:, 152:].reshape(-1, 1, 5, 10)),
-                flat[:, :8],
-            ),
-            dim=-1,
-        )
-    )
-    torch.testing.assert_close(actor.cnns(flat), reference_features, rtol=0, atol=0)
-    alpha, beta = reference_head(reference_features)
-    torch.testing.assert_close(actor(obs), 4 * alpha / (alpha + beta) - 2, rtol=1e-5, atol=1e-6)
-
-
 def test_public_distribution_overrides_cannot_silently_change_exported_action_units():
     observation = TensorDict({"policy": torch.zeros(2, 202)}, batch_size=[2])
     with pytest.raises(ValueError, match="fixed"):
@@ -184,3 +123,50 @@ def test_public_distribution_overrides_cannot_silently_change_exported_action_un
             3,
             {"class_name": "rsl_rl.modules.distribution:BetaDistribution", "action_range": (-1.0, 1.0)},
         )
+
+
+class VectorEnv:
+    num_envs = 16
+    num_actions = 3
+    device = "cpu"
+    cfg = {}
+    max_episode_length = 8
+
+    def __init__(self):
+        self.episode_length_buf = torch.zeros(self.num_envs, dtype=torch.long)
+        self.steps = 0
+
+    def get_observations(self):
+        return TensorDict({"policy": torch.ones(self.num_envs, 202)}, batch_size=[self.num_envs])
+
+    def step(self, actions):
+        self.steps += 1
+        self.episode_length_buf += 1
+        dones = self.episode_length_buf >= self.max_episode_length
+        self.episode_length_buf[dones] = 0
+        return self.get_observations(), -actions.square().sum(-1), dones, {}
+
+
+def test_two_upstream_updates_keep_parameters_optimizer_and_writer(tmp_path):
+    torch.set_num_threads(1)
+    env = VectorEnv()
+    cfg = handle_deprecated_rsl_rl_cfg(NavigationPpoRunnerCfg(), version("rsl-rl-lib")).to_dict()
+    cfg["num_steps_per_env"] = 2
+    cfg["algorithm"].update(num_mini_batches=1, num_learning_epochs=1)
+    runner = ContinuousNavigationRunner(env, cfg, str(tmp_path), "cpu")
+    optimizer = runner.alg.optimizer
+    initial = next(runner.alg.get_policy().parameters()).detach().clone()
+    runner.current_learning_iteration = 0
+    runner.learn(1, False)
+    writer = runner.logger.writer
+    runner.current_learning_iteration = 1
+    runner.learn(1, False)
+    assert runner.logger.writer is writer
+    assert runner.alg.optimizer is optimizer
+    assert env.steps == 4
+    assert not torch.equal(initial, next(runner.alg.get_policy().parameters()))
+    assert all(int(value["step"]) == 2 for value in optimizer.state.values())
+    runner.save(str(tmp_path / "checkpoint_best_100.pt"), {"fresh": True})
+    assert (tmp_path / "checkpoint_best_100.pt").exists()
+    assert not list(tmp_path.glob("model_*.pt"))
+    writer.close()

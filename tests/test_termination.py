@@ -1,9 +1,17 @@
-"""DiffAero arrival wait gates on current goal occupancy and the first entry time."""
+"""Arrival waiting, failure priority and episode termination."""
 
 import pytest
 import torch
 
-from aerialnav.diffnav.termination import arrival_wait_timeout, record_arrival, terminal_outcomes, termination_mask
+from aerialnav.diffnav.termination import (
+    arrival_wait_timeout,
+    first_events,
+    latch_first_event,
+    record_arrival,
+    reset_first_event,
+    terminal_outcomes,
+    termination_mask,
+)
 from aerialnav.evaluation import EpisodeEvaluation
 from aerialnav.tasks.navigation.curriculum import TrainingCurriculum
 
@@ -135,3 +143,111 @@ def test_wait_default_and_validation():
         cfg.wait_before_truncate = invalid
         with pytest.raises(ValueError, match="wait_before_truncate"):
             cfg.configure_scene()
+
+
+def test_clearance_boundary_and_continuous_first_failure():
+    state = torch.zeros(5, 13)
+    state[:, 2] = 2
+    target = state[:, :3].clone()
+    target[:, 0] = 10
+    target[3] = state[3, :3]
+    state[4, 8] = float("nan")
+    gaps = torch.tensor([-1.0, 0.0, 1e-6, -0.2, 1.0])
+    terms = first_events(state, target, gaps)
+    assert terms["collision"].tolist() == [True, True, False, True, False]
+    assert termination_mask(terms).tolist() == [True, True, False, True, True]
+    assert termination_mask(terms, collision_terminates=False, bounds_terminates=False).tolist() == [False] * 4 + [True]
+    code, time = torch.zeros(5, dtype=torch.int8), torch.zeros(5)
+    latch_first_event(code, time, terms, torch.ones(5))
+    assert code.tolist() == [2, 2, 0, 2, 4]
+    latch_first_event(code, time, first_events(state, state[:, :3], torch.ones(5)), torch.full((5,), 2.0))
+    assert code.tolist() == [2, 2, 1, 2, 4]
+
+
+def event_terms(count, **events):
+    terms = {key: torch.zeros(count, dtype=torch.bool) for key in ("reached", "collision", "bounds", "invalid")}
+    for key, indices in events.items():
+        terms[key][indices] = True
+    return terms
+
+
+def test_collision_and_bounds_can_continue_but_invalid_always_terminates():
+    terms = event_terms(5, collision=[0, 3], bounds=[1, 3], invalid=[2], reached=[4])
+    original = {name: value.clone() for name, value in terms.items()}
+    torch.testing.assert_close(termination_mask(terms), torch.tensor([True, True, True, True, False]))
+    torch.testing.assert_close(
+        termination_mask(terms, collision_terminates=False), torch.tensor([False, True, True, True, False])
+    )
+    torch.testing.assert_close(
+        termination_mask(terms, bounds_terminates=False), torch.tensor([True, False, True, True, False])
+    )
+    torch.testing.assert_close(
+        termination_mask(terms, collision_terminates=False, bounds_terminates=False),
+        torch.tensor([False, False, True, False, False]),
+    )
+    for name, value in terms.items():
+        torch.testing.assert_close(value, original[name])
+
+
+@pytest.mark.parametrize(("event", "expected"), [("collision", 2), ("bounds", 3)])
+def test_failure_then_recovery_and_arrival_remains_first_failure(event, expected):
+    code, elapsed = torch.zeros(1, dtype=torch.int8), torch.zeros(1)
+    latch_first_event(code, elapsed, event_terms(1, **{event: [0]}), torch.tensor([1.25]))
+    latch_first_event(code, elapsed, event_terms(1), torch.tensor([1.5]))
+    latch_first_event(code, elapsed, event_terms(1, reached=[0]), torch.tensor([2.5]))
+    torch.testing.assert_close(code, torch.tensor([expected], dtype=torch.int8))
+    torch.testing.assert_close(elapsed, torch.tensor([1.25]), rtol=0, atol=0)
+
+
+@pytest.mark.parametrize("event", ["collision", "bounds"])
+def test_arrival_then_failure_remains_first_arrival(event):
+    code, elapsed = torch.zeros(1, dtype=torch.int8), torch.zeros(1)
+    latch_first_event(code, elapsed, event_terms(1, reached=[0]), torch.tensor([1.25]))
+    latch_first_event(code, elapsed, event_terms(1, **{event: [0]}), torch.tensor([2.5]))
+    torch.testing.assert_close(code, torch.tensor([1], dtype=torch.int8))
+    torch.testing.assert_close(elapsed, torch.tensor([1.25]), rtol=0, atol=0)
+
+
+def test_same_substep_keeps_original_event_priority():
+    code, elapsed = torch.zeros(4, dtype=torch.int8), torch.zeros(4)
+    terms = event_terms(4, reached=[0, 1, 2, 3], collision=[1, 2, 3], bounds=[0, 2, 3], invalid=[3])
+    latch_first_event(code, elapsed, terms, torch.full((4,), 1.5))
+    torch.testing.assert_close(code, torch.tensor([3, 2, 2, 4], dtype=torch.int8))
+
+
+def test_partial_reset_clears_only_selected_episode_outcomes():
+    code = torch.tensor([2, 1, 4], dtype=torch.int8)
+    elapsed = torch.tensor([1.0, 2.0, 3.0])
+    reset_first_event(code, elapsed, torch.tensor([0, 2]))
+    torch.testing.assert_close(code, torch.tensor([0, 1, 0], dtype=torch.int8))
+    torch.testing.assert_close(elapsed, torch.tensor([0.0, 2.0, 0.0]), rtol=0, atol=0)
+    latch_first_event(code, elapsed, event_terms(3, reached=[0, 1, 2]), torch.full((3,), 4.0))
+    torch.testing.assert_close(code, torch.tensor([1, 1, 1], dtype=torch.int8))
+    torch.testing.assert_close(elapsed, torch.tensor([4.0, 2.0, 4.0]), rtol=0, atol=0)
+
+
+@pytest.mark.parametrize("event", ["collision", "bounds"])
+def test_continuous_failure_is_counted_only_at_natural_timeout(event):
+    curriculum = TrainingCurriculum(1, "cpu", stage="pretrain_s0")
+    code, elapsed = torch.zeros(1, dtype=torch.int8), torch.zeros(1)
+    terms_sequence = (event_terms(1, **{event: [0]}), event_terms(1), event_terms(1, reached=[0]), event_terms(1))
+    for step, terms in enumerate(terms_sequence, 1):
+        latch_first_event(code, elapsed, terms, torch.tensor([step * 0.1]))
+        curriculum.observe(
+            {
+                "first_event_code": code.clone(),
+                "first_event_time_s": elapsed.clone(),
+                "terminated": termination_mask(terms, collision_terminates=False, bounds_terminates=False),
+                "timeout": torch.tensor([step == 4]),
+                "episode_return": torch.zeros(1),
+                "step": torch.tensor([step]),
+            }
+        )
+        if step < 4:
+            assert curriculum.pop_report(update=1) is None
+    report = curriculum.pop_report(update=1)
+    assert report["episodes"] == 1 and report["counts"][event] == 1
+    assert report["success_rate"] == 0.0
+    assert report[f"{event}_rate"] == 1.0
+    assert report["timeout_rate"] == 0.0
+    assert curriculum.pop_report(update=1) is None

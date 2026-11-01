@@ -1,4 +1,4 @@
-"""Independent checkpoint loading for the shared first-event evaluator."""
+"""Checkpoint loading and recurrent policy inference."""
 
 import torch
 
@@ -20,18 +20,15 @@ class DiffNavInference:
             and payload.get("environment", {}).get("observation_contract") != OBSERVATION_CONTRACT
         ):
             raise ValueError("Observation timing changed; evaluate the old delayed-input policy with its frozen source")
-        self.training_collision_metric = payload["train_cfg"].get("collision_metric", "dcol")
-        self.training_geometry_backend = payload["train_cfg"].get("geometry_backend", "native")
-        self.cfg = DiffNavTrainCfg(
-            **(
-                payload["train_cfg"]
-                | {
-                    "collision_metric": "sdf",
-                    "position_integration": payload["train_cfg"].get("position_integration", "original"),
-                    "geometry_backend": self.training_geometry_backend,
-                }
-            )
-        )
+        training = payload["train_cfg"]
+        self.training_collision_metric = training.get("collision_metric", "dcol")
+        self.training_geometry_backend = training.get("geometry_backend", "native")
+        runtime = training | {
+            "collision_metric": "sdf",
+            "position_integration": training.get("position_integration", "original"),
+            "geometry_backend": self.training_geometry_backend,
+        }
+        self.cfg = DiffNavTrainCfg(**runtime)
         self.cfg.validate()
         self.env = env
         self.model = DiffNavPolicy(self.cfg.recurrent_model).to(env.device).eval()

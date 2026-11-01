@@ -105,3 +105,29 @@ def test_export_rejects_unrecognised_configuration_metadata(tmp_path):
     torch.save(source, path)
     with pytest.raises(ValueError, match="Unsupported public training configuration"):
         export_weights(path, tmp_path / "export.pt")
+
+
+def test_license_layout_is_packaged_and_keeps_credits_separate_from_code(tmp_path):
+    import tomllib
+    from pathlib import Path
+
+    from scripts.audit_release import audit
+
+    root = Path(__file__).resolve().parents[1]
+    config = tomllib.loads((root / "pyproject.toml").read_text())
+    included = {path for pattern in config["project"]["license-files"] for path in root.glob(pattern)}
+    assert root / "LICENSE" in included
+    assert set((root / "licenses").glob("*.txt")) <= included
+    assert len(list((root / "licenses").glob("*.txt"))) == 4
+
+    name = "Nav" + "RL"
+    licenses = tmp_path / "licenses"
+    licenses.mkdir()
+    (licenses / f"{name}.txt").write_text(f"{name} MIT license\n")
+    source = tmp_path / "src"
+    source.mkdir()
+    path = source / "policy.py"
+    path.write_text(f"# See licenses/{name}.txt\n")
+    assert audit(tmp_path) == []
+    path.write_text(f"class {name}Policy: pass\n")
+    assert any("unexpected upstream project name" in item for item in audit(tmp_path))

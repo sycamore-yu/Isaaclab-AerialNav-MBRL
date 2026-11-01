@@ -18,7 +18,7 @@ def test_legacy_sampling_label_is_canonicalized_without_enabling_dcol():
     cfg.validate()
     assert cfg.variant == "terminal" and cfg.collision_metric == "sdf"
     assert cfg.position_integration == "trapezoid" and cfg.loss_timing == "pre_reset"
-    with pytest.raises(ValueError, match="SDF|SDF|sdf"):
+    with pytest.raises(ValueError, match="SDF|sdf"):
         DiffNavTrainCfg(collision_metric="dcol").validate()
 
 
