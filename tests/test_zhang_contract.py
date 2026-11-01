@@ -905,6 +905,7 @@ def test_stage_handoff_rejects_changed_rollout_length(tmp_path):
 def test_same_stage_resume_preserves_learning_state_and_cumulative_counts(tmp_path):
     env = AnalyticEnv()
     env.cfg.training_stage = "finetune_s1"
+    env.cfg.wait_before_truncate = 5.0
     cfg = ZhangTrainCfg(
         physics_dt=0.01, policy_dt=0.1, variant="step", timesteps=4, max_iterations=2, velocity_window_s=0.2
     )
@@ -919,6 +920,7 @@ def test_same_stage_resume_preserves_learning_state_and_cumulative_counts(tmp_pa
     torch.save(saved, checkpoint)
     resumed_env = AnalyticEnv()
     resumed_env.cfg.training_stage = "finetune_s1"
+    resumed_env.cfg.wait_before_truncate = 10.0
     second = ZhangTrainer(resumed_env, cfg, tmp_path / "continued")
     second.load_stage_checkpoint(checkpoint, resume=True)
     assert second.completed_updates == second.stage_updates == second.schedule_updates == 2
@@ -930,6 +932,8 @@ def test_same_stage_resume_preserves_learning_state_and_cumulative_counts(tmp_pa
     receipt = json.loads((tmp_path / "continued" / "continuation.json").read_text())
     assert receipt["previous_episode_end_contract"] == "arrival_latched_until_failure_or_timeout_v0"
     assert receipt["episode_end_contract"] == "diffaero_arrival_wait_final_goal_v2"
+    assert receipt["previous_wait_before_truncate_s"] == 5.0
+    assert receipt["wait_before_truncate_s"] == 10.0
     result = second.run()
     assert result["completed_updates"] == result["stage_updates"] == second.schedule_updates == 4
     assert result["environment_steps"] == 4 * cfg.timesteps * env.num_envs
