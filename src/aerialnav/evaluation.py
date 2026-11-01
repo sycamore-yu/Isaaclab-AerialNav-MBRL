@@ -41,6 +41,9 @@ class EpisodeEvaluation:
         if "arrived" in transition:
             arrivals = transition["arrived"].detach().cpu().tolist()
             arrival_times = transition["arrive_time"].detach().cpu().tolist()
+        first_codes = transition.get("first_event_code")
+        if first_codes is not None:
+            first_codes = first_codes.detach().cpu().tolist()
         for index, row in enumerate(self.rows):
             if row is not None:
                 continue
@@ -64,6 +67,8 @@ class EpisodeEvaluation:
                     self.rows[index].update(
                         arrived=arrivals[index], arrive_time=arrival_times[index] if arrivals[index] else None
                     )
+                if first_codes is not None:
+                    self.rows[index]["first_event_code"] = first_codes[index]
 
     @property
     def complete(self):

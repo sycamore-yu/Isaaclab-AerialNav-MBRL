@@ -17,6 +17,8 @@ First entry within 0.5 m of the goal records the arrival time. Leaving or re-ent
 
 The output contains one result per initial episode and a summary of success, collision, bounds, invalid state and timeout. Record the checkpoint, stage, seeds and speed range alongside comparisons. Use different terrain seeds for independent maps.
 
+Episode rows also retain `first_event_code` when provided by the environment. Code 1 identifies a safe arrival before any failure under the historical first-event rule; `outcome` and the summary continue to use the final result. Comparing both on the same trajectories separates first arrival from final-goal retention.
+
 ## Packaged policy
 
 `weights/baseline_direct.pt` is the GRU direct-training checkpoint at update 2129. Its configuration is in [baseline metadata](data/baseline_checkpoint.json). The [README flight demos](../README.md#flight-demos) show selected successful episodes. Run the evaluation above to obtain aggregate results.
