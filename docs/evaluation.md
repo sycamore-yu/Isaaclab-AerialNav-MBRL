@@ -9,6 +9,8 @@ PYTHONPATH=src .venv/bin/python scripts/evaluate.py \
 
 A stage selects obstacle counts, timeout and randomization. `finetune_s1` uses 480 static and 32 dynamic obstacles with randomized dynamics. `pretrain_s1` uses 360 static and 16 dynamic obstacles without randomization.
 
+For pretraining difficulty comparisons, select `pretrain_s0`, `pretrain_s1`, or `pretrain_s2`: respectively 240/0, 360/16, and 480/32 static/dynamic obstacles, all without perturbations.
+
 ## Episode outcomes
 
 First entry within 0.5 m of the goal records the arrival time. Leaving or re-entering keeps that timestamp. After strictly more than 10 seconds, current goal occupancy triggers reset. Collision, bounds, invalid state and the stage time limit also end episodes. Success requires final goal occupancy without failure.
