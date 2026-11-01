@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import numpy as np
 import torch
 from isaaclab.envs import DirectRLEnv
 from isaaclab.utils.math import (
@@ -15,17 +14,24 @@ from isaaclab.utils.math import (
 from isaaclab_tasks.utils.hydra import resolve_presets
 
 from aerialnav.control import LeeRotorController
-from aerialnav.diffnav.termination import latch_first_event, reset_first_event, termination_mask
+from aerialnav.diffnav.termination import (
+    arrival_wait_timeout,
+    latch_first_event,
+    record_arrival,
+    reset_first_event,
+    terminal_outcomes,
+    termination_mask,
+)
 
 from .curriculum import TrainingCurriculum, active_obstacle_indices
 from .depth_history import compensated_depth_features, reproject_depth
 from .geometry import TerrainDistance, nearest_obstacle_signed_distance
 from .randomization import PolicyPerturbation
-from .task_logic import DynamicObstacleMotion, goal_frame, navigation_terms
+from .task_logic import DynamicObstacleMotion, goal_frame, navigation_terms, sample_navigation_route
 
 
 class NavigationEnv(DirectRLEnv):
-    """PPO navigation observation and reward task on Isaac Lab 3.0."""
+    """The original Navigation observation/reward task on Isaac Lab 3.0."""
 
     def __init__(self, cfg, render_mode=None, **kwargs):
         # Direct gym.make callers use the same task default as the public CLI.
@@ -85,7 +91,12 @@ class NavigationEnv(DirectRLEnv):
             self.set_active_obstacles(cfg.num_dynamic_obstacles)
         elif self.drone.__backend_name__ == "newton":
             self.set_active_obstacles(cfg.num_dynamic_obstacles)
+        if getattr(cfg, "geometry_backend", "native") == "curobo_v2":
+            from aerialnav.reference.curobo_geometry import CuroboGeometry
+
+            self.terrain_distance = CuroboGeometry(self.terrain_distance, self.motion.size)
         self.target_pos = torch.zeros(self.num_envs, 3, device=self.device)
+        self.target_speed = torch.zeros(self.num_envs, 1, device=self.device)
         self.target_dir = torch.zeros_like(self.target_pos)
         self.height_range = torch.zeros(self.num_envs, 2, device=self.device)
         self.previous_velocity = torch.zeros_like(self.target_pos)
@@ -94,11 +105,13 @@ class NavigationEnv(DirectRLEnv):
         self.previous_actions = torch.zeros_like(self.command)
         self.action_difference = torch.zeros(self.num_envs, device=self.device)
         self.first_reach_step = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
+        self.arrived = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+        self.arrive_time = torch.zeros(self.num_envs, device=self.device)
+        self._episode_failure = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
         self.episode_return = torch.zeros(self.num_envs, device=self.device)
         self.nonfinite_events = torch.zeros((), dtype=torch.long, device=self.device)
         self.episode_id = torch.full((self.num_envs,), -1, dtype=torch.long, device=self.device)
         self._reset_rng = torch.Generator(device=self.device).manual_seed(cfg.seed)
-        self._side_rng = np.random.RandomState(cfg.seed)
         self._terms = None
         self._stepping = False
 
@@ -116,15 +129,6 @@ class NavigationEnv(DirectRLEnv):
             dim=-1,
         )
 
-    def _sample_border(self, count, height_range=(0.5, 2.5)):
-        masks = self.target_pos.new_tensor(((1, 0, 1), (1, 0, 1), (0, 1, 1), (0, 1, 1)))
-        shifts = self.target_pos.new_tensor(((0, 24, 0), (0, -24, 0), (24, 0, 0), (-24, 0, 0)))
-        sides = self._side_rng.randint(0, 4, count)
-        sample = torch.rand(count, 3, generator=self._reset_rng, device=self.device) * 48 - 24
-        low, high = height_range
-        sample[:, 2] = low + (high - low) * torch.rand(count, generator=self._reset_rng, device=self.device)
-        return sample * masks[sides] + shifts[sides]
-
     def _reset_idx(self, env_ids):
         env_ids = torch.as_tensor(env_ids, device=self.device, dtype=torch.int32)
         if self._stepping:
@@ -139,18 +143,27 @@ class NavigationEnv(DirectRLEnv):
         # No shared-world object or trajectory is reset here.
         super()._reset_idx(env_ids)
         count = len(env_ids)
-        if self.cfg.evaluation:
-            position = self.target_pos.new_zeros(count, 3)
-            position[:, 0] = (env_ids.float() / self.num_envs - 0.5) * 32
-            position[:, 1], position[:, 2] = 24.0, 2.0
-            target = position.clone()
-            target[:, 0] = torch.linspace(-16, 16, self.num_envs, device=self.device)[env_ids]
-            target[:, 1] = -24.0
+        if self.cfg.method == "diffnav":
+            speed = self.diffnav_parameters["max_speed"][env_ids].clone()
         else:
-            target = self._sample_border(
-                count, self.cfg.height_target_range if self.cfg.method == "diffnav" else (0.5, 2.5)
+            speed = 1 + 5 * torch.rand(count, 1, generator=self._reset_rng, device=self.device)
+        self.target_speed[env_ids] = speed
+        position, target = sample_navigation_route(
+            speed, self._reset_rng, self.cfg.height_target_range if self.cfg.method == "diffnav" else (0.5, 2.5)
+        )
+        # Keep the uniform speed draw; reject occupied endpoints instead of shortening the route.
+        for _ in range(64):
+            clearance = self.nearest_obstacle_signed_distance(torch.cat((position, target))).reshape(2, count).amin(0)
+            blocked = clearance <= 0.3
+            if not blocked.any():
+                break
+            position[blocked], target[blocked] = sample_navigation_route(
+                speed[blocked],
+                self._reset_rng,
+                self.cfg.height_target_range if self.cfg.method == "diffnav" else (0.5, 2.5),
             )
-            position = self._sample_border(count)
+        else:
+            raise RuntimeError("Could not sample collision-free 18v route endpoints after 64 attempts")
         self.target_pos[env_ids] = target
         direction = target - position
         self.target_dir[env_ids] = direction
@@ -170,6 +183,9 @@ class NavigationEnv(DirectRLEnv):
         self.command[env_ids] = 0
         self.previous_actions[env_ids] = 0
         self.first_reach_step[env_ids] = 0
+        self.arrived[env_ids] = False
+        self.arrive_time[env_ids] = 0
+        self._episode_failure[env_ids] = 0
         self.episode_return[env_ids] = 0
         self.episode_id[env_ids] += 1
         self._terms = None
@@ -251,7 +267,11 @@ class NavigationEnv(DirectRLEnv):
 
     def nearest_obstacle_signed_distance(self, query):
         return nearest_obstacle_signed_distance(
-            query, self.terrain_distance.signed_distance(query), self.motion.position, self.motion.size
+            query,
+            self.terrain_distance.signed_distance(query),
+            self.motion.position,
+            self.motion.size,
+            dynamic_backend=getattr(self.terrain_distance, "dynamic_signed_distance", None),
         )
 
     def _compute_first_events(self):
@@ -259,7 +279,12 @@ class NavigationEnv(DirectRLEnv):
 
         state = self.root_state()
         radius = 0.3  # Shared task sphere; training safety margins are separate.
-        return first_events(state, self.target_pos, self.nearest_obstacle_signed_distance(state[:, :3]) - radius)
+        return first_events(
+            state,
+            self.target_pos,
+            self.nearest_obstacle_signed_distance(state[:, :3]) - radius,
+            height_bounds_reset=getattr(self.cfg, "height_bounds_reset", True),
+        )
 
     def _compute_terms(self):
         state = self.root_state()
@@ -285,7 +310,14 @@ class NavigationEnv(DirectRLEnv):
         terms = self._finish_policy_terms(self._compute_terms())
         self.nonfinite_events += terms["invalid"].sum()
         terminated = self._termination_mask(terms)
-        timed_out = self.episode_length_buf >= self.max_episode_length
+        elapsed_s = self.episode_length_buf.float() * self.step_dt
+        record_arrival(self.arrived, self.arrive_time, terms["reached"], elapsed_s)
+        wait_expired = arrival_wait_timeout(
+            terms["reached"], self.arrive_time, elapsed_s, self.cfg.wait_before_truncate
+        )
+        episode_timeout = self.episode_length_buf >= self.max_episode_length
+        timed_out = episode_timeout | wait_expired
+        outcome = terminal_outcomes(terms, terminated | timed_out, self._episode_failure)
         first = self._first_arrival_mask(terms, terminated)
         self.first_reach_step[first] = self.episode_length_buf[first]
         state = self.root_state()
@@ -307,6 +339,11 @@ class NavigationEnv(DirectRLEnv):
             "invalid": terms["invalid"].clone(),
             "timeout": timed_out.clone(),
             "terminated": terminated.clone(),
+            "arrived": self.arrived.clone(),
+            "arrive_time": self.arrive_time.clone(),
+            "arrival_wait_timeout": wait_expired.clone(),
+            "episode_timeout": episode_timeout.clone(),
+            "terminal_event_code": outcome.clone(),
             "executed_action": self.executed_actions.clone(),
             "action_delay_steps": self.executed_action_lags.clone(),
         }
@@ -445,11 +482,11 @@ class DiffNavEnv(NavigationEnv):
         self._collision_substep = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
         self._dynamic_positions_by_substep = (
             self.motion.position.new_zeros((self.cfg.decimation, *self.motion.position.shape))
-            if self.cfg.variant == "dcol"
+            if self.cfg.variant == "terminal"
             else None
         )
         self._dynamic_velocities_by_substep = (
-            torch.zeros_like(self._dynamic_positions_by_substep) if self.cfg.variant == "dcol" else None
+            torch.zeros_like(self._dynamic_positions_by_substep) if self.cfg.variant == "terminal" else None
         )
         self._substep_bounds = torch.zeros_like(self._substep_collision)
         self._substep_invalid = torch.zeros_like(self._substep_collision)
@@ -524,7 +561,7 @@ class DiffNavEnv(NavigationEnv):
         self._collision_substep.zero_()
         self._substep_bounds.zero_()
         self._substep_invalid.zero_()
-        if self.cfg.variant == "dcol":
+        if self.cfg.variant == "terminal":
             shape = (self.cfg.decimation, *self.motion.position.shape)
             if self._dynamic_positions_by_substep.shape != shape:
                 # The legacy curriculum can change the shared obstacle count.
@@ -535,6 +572,7 @@ class DiffNavEnv(NavigationEnv):
         # A 10 Hz policy can cross the collision band between observations.
         # Use the same sphere clearance at every completed PhysX step.
         elapsed_s = self._policy_start_time + self._physical_substep * self.physics_dt
+        record_arrival(self.arrived, self.arrive_time, terms["reached"], elapsed_s)
         latch_first_event(self._event_code, self._event_time, terms, elapsed_s)
         # Keep this policy step's first collision even if the episode's first
         # outcome was already a success. Capture before the aggregate is set.
@@ -546,7 +584,7 @@ class DiffNavEnv(NavigationEnv):
             torch.where(first_collision[:, None], self.root_state()[:, 7:10], self._collision_velocity)
         )
         self._collision_substep.copy_(torch.where(first_collision, self._physical_substep, self._collision_substep))
-        if self.cfg.variant == "dcol":
+        if self.cfg.variant == "terminal":
             self._dynamic_positions_by_substep[self._physical_substep - 1].copy_(self.motion.position)
             self._dynamic_velocities_by_substep[self._physical_substep - 1].copy_(self.motion.velocity)
         self._substep_collision |= terms["collision"]
@@ -570,10 +608,14 @@ class DiffNavEnv(NavigationEnv):
         self.extras["transition"]["collision_position"] = self._collision_position.clone()
         self.extras["transition"]["collision_substep"] = self._collision_substep.clone()
         self.extras["transition"]["collision_velocity"] = self._collision_velocity.clone()
-        if self.cfg.variant == "dcol":
+        if self.cfg.variant == "terminal":
             self.extras["transition"]["dynamic_positions_by_substep"] = self._dynamic_positions_by_substep.clone()
             self.extras["transition"]["dynamic_velocities_by_substep"] = self._dynamic_velocities_by_substep.clone()
         self.extras["transition"]["actuator"] = self.filtered_command.clone()
+        callback = getattr(self, "pre_reset_loss_callback", None)
+        if callback is not None:
+            self.pre_reset_loss_callback = None
+            callback(self.extras["transition"])
         return terminated, timeout
 
     @torch.no_grad()
@@ -586,7 +628,9 @@ class DiffNavEnv(NavigationEnv):
         self._physical_substep += 1
         state = self.root_state()
         alpha = torch.exp(
-            -self.diffnav_parameters["pitch_ctl_delay"] * self.diffnav_parameters["control_gain_scale"] * self.physics_dt
+            -self.diffnav_parameters["pitch_ctl_delay"]
+            * self.diffnav_parameters["control_gain_scale"]
+            * self.physics_dt
         )
         self.filtered_command.mul_(alpha).add_(self.command * (1 - alpha))
         forward = quat_apply(state[:, 3:7], state.new_tensor((1.0, 0.0, 0.0)).expand(self.num_envs, -1))

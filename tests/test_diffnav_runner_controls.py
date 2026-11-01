@@ -30,7 +30,7 @@ def _trainer(path, schedule="cosine", stage="pretrain_s0", algorithm="bptt", **c
         physics_dt=0.01,
         policy_dt=0.1,
         velocity_loss_mode="variant_default",
-        variant="dcol",
+        variant="terminal",
         algorithm=algorithm,
         observation_normalization=True,
         lr_schedule=schedule,
@@ -47,7 +47,7 @@ def _trainer(path, schedule="cosine", stage="pretrain_s0", algorithm="bptt", **c
         num_envs=2,
         nonfinite_events=0,
         cfg=SimpleNamespace(
-            variant="dcol",
+            variant="terminal",
             training_stage=stage,
             seed=0,
             terrain_seed=0,

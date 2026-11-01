@@ -32,7 +32,9 @@ def load_legacy_rotor_group(aerialnav_root: Path):
 
 @torch.no_grad()
 def run(aerialnav_root: Path, num_envs: int, num_steps: int) -> None:
-    params_path = aerialnav_root / "isaac-training/third_party/OmniDrones/omni_drones/robots/assets/usd/hummingbird.yaml"
+    params_path = (
+        aerialnav_root / "isaac-training/third_party/OmniDrones/omni_drones/robots/assets/usd/hummingbird.yaml"
+    )
     with params_path.open(encoding="utf-8") as stream:
         params = yaml.safe_load(stream)
 

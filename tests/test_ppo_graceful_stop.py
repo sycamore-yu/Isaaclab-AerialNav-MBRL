@@ -364,7 +364,9 @@ class PpoGracefulStopTests(unittest.TestCase):
             self.assertEqual(result["status"], "completed")
             self.assertEqual(result["physics"], "newton_mjwarp")
             self.assertEqual(result["stage"], "pretrain_s0")
-            self.assertEqual((result["completed_updates"], result["stage_updates"], result["environment_steps"]), (2, 2, 2 * 32 * 64))
+            self.assertEqual(
+                (result["completed_updates"], result["stage_updates"], result["environment_steps"]), (2, 2, 2 * 32 * 64)
+            )
             payload = json.loads(Path(result["checkpoint"]).read_text())
             self.assertEqual(payload["infos"]["frontend"], "torch")
             self.assertIsNone(result["stop_requested"])

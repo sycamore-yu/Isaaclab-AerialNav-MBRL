@@ -18,3 +18,5 @@ from the available NavRL third-party checkout. Both had SHA-256:
 Proper upstream names in this attribution and in the accompanying license texts are intentional. They are not current project package, experiment, or method identifiers.
 
 Isaac Sim and other binary dependencies may have additional terms beyond this project's source license. Consult NVIDIA's license terms before redistributing their binaries; this repository does not vendor the simulator.
+
+cuRoboV2 is an external dependency from https://github.com/NVlabs/curobo, pinned to revision `78fd485fa82d9b9a063fb4985e371814587e666a`. It retains NVIDIA's Apache-2.0 license. The project calls its ESDF and shape-query interfaces; it does not vendor its optimizer or simulator binaries. See `LICENSE-cuRobo`.

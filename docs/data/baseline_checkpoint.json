@@ -1,0 +1,34 @@
+{
+  "profile": "rectangular_direct_sdf_v1",
+  "checkpoint": "weights/baseline_direct.pt",
+  "training_update": 2129,
+  "method": "diffnav",
+  "policy": "CNN-GRU192",
+  "parameter_count": 514496,
+  "stage": "finetune_s1",
+  "static_obstacles": 480,
+  "dynamic_obstacles": 32,
+  "randomization": true,
+  "num_envs": 512,
+  "seed": 0,
+  "terrain_seed": 0,
+  "geometry_backend": "curobo_v2",
+  "collision_metric": "sdf",
+  "position_integration": "trapezoid",
+  "loss_timing": "pre_reset",
+  "goal_reference": "linear",
+  "velocity_window_s": 2.0,
+  "arrival_wait_s": 10.0,
+  "success_contract": "final_goal_occupancy_without_failure",
+  "export": "inference only; no optimizer, paths or training history",
+  "output_parity": {
+    "cpu_batches": [
+      1,
+      4,
+      17
+    ],
+    "action_output": "exact",
+    "recurrent_state": "exact"
+  },
+  "held_out_evaluation_verified": false
+}

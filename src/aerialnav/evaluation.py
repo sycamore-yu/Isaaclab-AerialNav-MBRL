@@ -1,4 +1,4 @@
-"""First-outcome episode accounting shared by both training methods."""
+"""Final-goal episode accounting with historical first-event support."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ def first_outcome(*, reached, collision, bounds, invalid, timeout):
 
 
 class EpisodeEvaluation:
-    """Latch exactly one result per initial drone episode, before autoreset."""
+    """Record one finished result per initial episode, before autoreset."""
 
     def __init__(self, starts, goals, seed):
         self.rows = [None] * len(starts)
@@ -31,10 +31,16 @@ class EpisodeEvaluation:
             key: transition[key].detach().cpu().tolist()
             for key in ("reached", "collision", "bounds", "invalid", "timeout", "time_s", "step")
         }
-        substep_codes = transition.get("first_event_code")
+        final_codes = transition.get("terminal_event_code")
+        substep_codes = final_codes if final_codes is not None else transition.get("first_event_code")
         if substep_codes is not None:
             substep_codes = substep_codes.detach().cpu().tolist()
-            values["time_s"] = transition["first_event_time_s"].detach().cpu().tolist()
+            if final_codes is None:
+                values["time_s"] = transition["first_event_time_s"].detach().cpu().tolist()
+        arrivals = None
+        if "arrived" in transition:
+            arrivals = transition["arrived"].detach().cpu().tolist()
+            arrival_times = transition["arrive_time"].detach().cpu().tolist()
         for index, row in enumerate(self.rows):
             if row is not None:
                 continue
@@ -54,6 +60,10 @@ class EpisodeEvaluation:
                     "start": self.starts[index],
                     "goal": self.goals[index],
                 }
+                if arrivals is not None:
+                    self.rows[index].update(
+                        arrived=arrivals[index], arrive_time=arrival_times[index] if arrivals[index] else None
+                    )
 
     @property
     def complete(self):
@@ -64,7 +74,7 @@ class EpisodeEvaluation:
             raise ValueError("Evaluation contains unfinished episodes.")
         labels = ("success", "collision", "timeout", "bounds", "invalid")
         counts = {key: sum(row["outcome"] == key for row in self.rows) for key in labels}
-        times = [row["time_s"] for row in self.rows if row["outcome"] == "success"]
+        times = [row.get("arrive_time", row["time_s"]) for row in self.rows if row["outcome"] == "success"]
         count = len(self.rows)
         return {
             "episodes": count,

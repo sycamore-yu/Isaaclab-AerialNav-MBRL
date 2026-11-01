@@ -1,17 +1,16 @@
-# Evaluation protocol
-
-The public checkpoint is a static-scene policy. Set `--dynamic_obstacles 0`. Use independent training and evaluation seeds.
-
-For each held-out map seed, evaluate at least 1,024 complete episodes. Count first safe arrival rather than intermediate distance-to-goal, and report successes, collisions, altitude/bounds exits, invalid-state terminations and timeouts. Use no domain randomization at the reference protocol; report any other setting separately.
-
-The original 89.48% figure is a **training** statistic. Until held-out runs have been completed in this repackaged repository, no held-out success rate is claimed.
+# Evaluate a checkpoint
 
 ```bash
 PYTHONPATH=src .venv/bin/python scripts/evaluate.py \
-  --method diffnav --checkpoint weights/best_static_s0.pt \
-  --static_obstacles 300 --dynamic_obstacles 0 --episodes 1024 \
-  --seed 10000 --terrain_seed 10000 \
-  --output runs/eval_seed10000.json physics=isaacsim_physx
+  --checkpoint weights/baseline_direct.pt --stage finetune_s1 \
+  --episodes 1024 --seed 10000 --terrain_seed 10000 \
+  --output runs/evaluation.json
 ```
 
-Run again with `10001`, `10002`. Do not merge results from different backends without showing backend-specific metrics.
+A stage selects its obstacle counts, timeout and randomization. `finetune_s1` matches the baseline's 480 static/32 dynamic randomized task. `pretrain_s1` uses 360/16 without randomization; these are different difficulty levels. Every initial episode receives one final outcome, and reset episodes do not enter the denominator.
+
+The arrival radius is 0.5 m. First entry latches a timestamp; leaving or re-entering does not restart it. After strictly more than 10 seconds, current goal occupancy triggers truncation. Collision, bounds, invalid state or the original time limit can end the episode sooner. Success requires final goal occupancy without failure. First arrival is recorded separately, not scored as final success.
+
+Report all failure classes and the denominator, with the stage, seeds, speed range, geometry backend and checkpoint configuration. Do not compare these results with the previous draft's first-arrival/static training rate.
+
+For an environment-only check, use `scripts/smoke.py`. A short run verifies loading/reset/stepping, not navigation performance. Historical `weights/best_static_s0.pt` remains readable but is not the new dynamic baseline.

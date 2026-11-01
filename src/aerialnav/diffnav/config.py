@@ -6,13 +6,13 @@ from typing import Literal
 
 from aerialnav.physics import DEFAULT_FRONTEND, DEFAULT_PHYSICS, validate_runtime
 
-DIFFNAV_VARIANTS = ("step", "continuous", "dcol")
+DIFFNAV_VARIANTS = ("step", "continuous", "terminal")
 DIFFNAV_ALGORITHMS = ("bptt", "shac", "ahac")
 
 
 @dataclass
 class DiffNavTrainCfg:
-    variant: Literal["step", "continuous", "dcol"] = "dcol"
+    variant: Literal["step", "continuous", "terminal"] = "terminal"
     algorithm: Literal["bptt", "shac", "ahac"] = "bptt"
     recurrent_model: Literal["gru", "sru_lstm_gated"] = "gru"
     timesteps: int = 150
@@ -23,7 +23,11 @@ class DiffNavTrainCfg:
     physics_dt: float = 0.05
     policy_dt: float = 0.05
     velocity_loss_mode: Literal["variant_default", "per_step", "truncated_window", "full_window", "ema"] | None = None
-    collision_metric: Literal["dcol", "sdf"] = "dcol"
+    collision_metric: Literal["sdf"] = "sdf"
+    position_integration: Literal["original", "trapezoid"] | None = None
+    geometry_backend: Literal["native", "curobo_v2"] = "curobo_v2"
+    avoidance_gradient: Literal["original", "reshaped"] = "original"
+    perception: Literal["depth"] = "depth"
     approach_mode: Literal["finite_difference", "relative"] = "finite_difference"
     lateral_avoidance: float = 0.0
     risk_speed_floor: float = 1.0
@@ -74,10 +78,22 @@ class DiffNavTrainCfg:
     seed: int = 0
     gradient_diagnostic_updates: tuple[int, ...] = ()
     gradient_projection: Literal["none", "height_priority"] = "none"
+    loss_timing: Literal["deferred", "pre_reset"] | None = None
 
     def __post_init__(self):
+        # Older public weights used this name for terminal sampling.
+        if self.variant == "dcol":
+            self.variant = "terminal"
         if self.velocity_loss_mode is None:
             self.velocity_loss_mode = "per_step" if self.algorithm in ("shac", "ahac") else "full_window"
+        if self.position_integration is None:
+            self.position_integration = (
+                "trapezoid" if self.algorithm == "bptt" and self.velocity_loss_mode == "full_window" else "original"
+            )
+        if self.loss_timing is None:
+            self.loss_timing = (
+                "pre_reset" if self.algorithm == "bptt" and self.velocity_loss_mode == "full_window" else "deferred"
+            )
 
     @property
     def resolved_velocity_loss_mode(self) -> Literal["per_step", "window", "truncated_window", "ema"]:
@@ -98,6 +114,29 @@ class DiffNavTrainCfg:
         return steps
 
     def validate(self) -> None:
+        self.validate_collision_metric()
+        if self.avoidance_gradient not in ("original", "reshaped"):
+            raise ValueError("avoidance_gradient must be original or reshaped")
+        if self.avoidance_gradient == "reshaped" and (
+            self.algorithm != "bptt" or self.approach_mode != "finite_difference"
+        ):
+            raise ValueError("reshaped avoidance requires BPTT and finite_difference approach mode")
+        if self.geometry_backend not in ("native", "curobo_v2"):
+            raise ValueError("geometry_backend must be native or curobo_v2")
+        if self.geometry_backend == "curobo_v2" and (
+            self.collision_metric != "sdf" or self.approach_mode != "finite_difference"
+        ):
+            raise ValueError("cuRoboV2 requires SDF and finite_difference approach mode")
+        if self.position_integration not in ("original", "trapezoid"):
+            raise ValueError("position_integration must be original or trapezoid")
+        if self.perception != "depth":
+            raise ValueError("Original DiffNav uses depth observations")
+        if self.loss_timing not in ("deferred", "pre_reset"):
+            raise ValueError("loss_timing must be deferred or pre_reset")
+        if self.loss_timing == "pre_reset" and (
+            self.algorithm != "bptt" or self.resolved_velocity_loss_mode != "window"
+        ):
+            raise ValueError("pre_reset loss timing currently requires BPTT with full_window velocity")
         validate_runtime(self.physics, self.frontend)
         if self.variant not in DIFFNAV_VARIANTS:
             raise ValueError(f"variant must be one of {DIFFNAV_VARIANTS}")
@@ -108,8 +147,6 @@ class DiffNavTrainCfg:
         if self.recurrent_model == "sru_lstm_gated" and self.algorithm != "bptt":
             raise ValueError("SRU-LSTM-Gated currently requires --algorithm bptt; SHAC/AHAC are not supported")
         _ = self.resolved_velocity_loss_mode
-        if self.collision_metric not in ("dcol", "sdf") or (self.collision_metric == "sdf" and self.variant != "dcol"):
-            raise ValueError("collision_metric must be dcol or sdf; sdf comparison requires variant dcol timing")
         if self.approach_mode not in ("finite_difference", "relative"):
             raise ValueError("approach_mode must be finite_difference or relative")
         if not math.isfinite(self.lateral_avoidance) or self.lateral_avoidance < 0:
@@ -147,7 +184,7 @@ class DiffNavTrainCfg:
             raise ValueError("failure_terminal_cost requires SHAC or AHAC")
         if not math.isfinite(self.critic_target_tau) or not 0 < self.critic_target_tau <= 1:
             raise ValueError("critic_target_tau must be in (0, 1]")
-        if self.algorithm != "bptt" and self.variant != "dcol":
+        if self.algorithm != "bptt" and self.variant != "terminal":
             raise ValueError("The SHAC/AHAC comparisons require the dcol configuration")
         if self.lr_schedule not in ("cosine", "plateau", "constant"):
             raise ValueError("lr_schedule must be cosine, plateau, or constant")
@@ -211,3 +248,9 @@ class DiffNavTrainCfg:
         ) != len(self.gradient_diagnostic_updates):
             raise ValueError("gradient_diagnostic_updates must contain unique positive integers")
         _ = self.velocity_window_steps
+
+    def validate_collision_metric(self):
+        if self.collision_metric != "sdf":
+            raise ValueError(
+                "Current DiffNav uses SDF only; use the explicit historical DCOL reference for comparisons"
+            )

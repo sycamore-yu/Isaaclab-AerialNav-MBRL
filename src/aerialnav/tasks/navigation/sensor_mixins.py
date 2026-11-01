@@ -171,7 +171,6 @@ class _BatchedDepthCameraMixin:
         self._shared_mesh_transform_source = None
         self._shared_mesh_transform_reordered = None
 
-
     def _invalidate_initialize_callback(self, event):
         self._clear_shared_mesh_tracking()
         super()._invalidate_initialize_callback(event)

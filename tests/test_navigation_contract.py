@@ -13,7 +13,7 @@ from aerialnav.tasks.navigation.task_logic import (
 )
 
 
-def test_aerialnav_free_space_observation_and_reward():
+def test_navigation_free_space_observation_and_reward():
     position = torch.tensor([[0.0, 0.0, 2.0]])
     velocity = torch.tensor([[1.0, 0.0, 0.0]])
     goal = torch.tensor([[10.0, 0.0, 2.0]])

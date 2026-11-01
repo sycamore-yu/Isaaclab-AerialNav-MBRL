@@ -3,7 +3,7 @@
 import gymnasium as gym
 
 gym.register(
-    id="Isaac-AerialNav-Static-PPO-v0",
+    id="Isaac-AerialNav-PPO-v0",
     entry_point="aerialnav.tasks.navigation.navigation_env:NavigationEnv",
     disable_env_checker=True,
     kwargs={
@@ -14,7 +14,7 @@ gym.register(
     },
 )
 gym.register(
-    id="Isaac-AerialNav-Static-Depth-v0",
+    id="Isaac-AerialNav-Depth-v0",
     entry_point="aerialnav.tasks.navigation.navigation_env:DiffNavEnv",
     disable_env_checker=True,
     kwargs={

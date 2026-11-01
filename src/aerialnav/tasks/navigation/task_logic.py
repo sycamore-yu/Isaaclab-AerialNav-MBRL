@@ -1,6 +1,6 @@
 """Navigation observation, reward and shared-obstacle rules, independent of Kit.
 
-Adapted from an upstream MIT-licensed navigation implementation (revision 3725bcc). World coordinates are
+Adapted from Zhefan-Xu/Navigation, commit 3725bcc (MIT). World coordinates are
 intentional: cloned drones share one map and never offset it by env_origins.
 """
 
@@ -8,6 +8,30 @@ from __future__ import annotations
 
 import numpy as np
 import torch
+
+from aerialnav.training import END_CLEARANCE, MAP_SIZE
+
+
+def sample_navigation_route(speed, generator, height_range=(0.5, 2.5)):
+    """Sample feasible XY segments of exactly 18v metres, within +/-8 degrees of +/-X."""
+    speed = speed.reshape(-1)
+    if not torch.isfinite(speed).all() or (speed <= 0).any() or (18 * speed > MAP_SIZE[0] - 2 * END_CLEARANCE).any():
+        raise ValueError("18v routes require finite positive target speeds at most 6 m/s")
+    count = len(speed)
+    random = torch.rand(count, 6, generator=generator, device=speed.device, dtype=speed.dtype)
+    angle = (random[:, 0] * 2 - 1) * (8 * torch.pi / 180)
+    sign = torch.where(random[:, 1] < 0.5, -1.0, 1.0)
+    delta = 18 * speed[:, None] * sign[:, None] * torch.stack((angle.cos(), angle.sin()), dim=-1)
+    half = speed.new_tensor((MAP_SIZE[0] / 2 - END_CLEARANCE, MAP_SIZE[1] / 2))
+    low = torch.maximum(-half, -half - delta)
+    high = torch.minimum(half, half - delta)
+    position = speed.new_empty(count, 3)
+    position[:, :2] = low + (high - low).clamp_min(0) * random[:, 2:4]
+    position[:, 2] = 0.5 + 2.0 * random[:, 4]
+    target = position.clone()
+    target[:, :2] += delta
+    target[:, 2] = height_range[0] + (height_range[1] - height_range[0]) * random[:, 5]
+    return position, target
 
 
 def goal_frame(vector: torch.Tensor, direction: torch.Tensor, *, inverse: bool = False) -> torch.Tensor:
@@ -34,15 +58,17 @@ def obstacle_categories(total: int) -> list[int]:
 
 
 def dynamic_layout(total: int, seed: int) -> tuple[np.ndarray, np.ndarray]:
-    """Original rejection sampling of origins and the eight size categories."""
+    """Shared rectangular world; end strips stay clear of obstacle footprints."""
     rng = np.random.RandomState(seed)
     positions, sizes, previous = [], [], []
-    distance = 2 * np.sqrt(400 / total) if total else 0.0
+    half_x, half_y = MAP_SIZE[0] / 2 - END_CLEARANCE, MAP_SIZE[1] / 2
+    distance = np.sqrt((2 * half_x) * (2 * half_y) / total) if total else 0.0
     for category, count in enumerate(obstacle_categories(total)):
         for _ in range(count):
             spacing, attempts = distance, 0
             while True:
-                x, y = rng.uniform(-20, 20, size=2)
+                width = (category % 4 + 1) / 4
+                x, y = rng.uniform((-half_x + width / 2, -half_y + width / 2), (half_x - width / 2, half_y - width / 2))
                 z = rng.uniform(0, 4.5) if category < 4 else 2.5
                 point = np.array((x, y))
                 valid = all(np.linalg.norm(point - other) > spacing for other in previous)
@@ -81,7 +107,8 @@ class DynamicObstacleMotion:
         for axis, extent in enumerate((5.0, 5.0, 4.5)):
             local[:, axis] = torch.rand(len(ids), generator=self.rng, device=local.device) * (2 * extent) - extent
         self.goal[ids] = self.origin[ids] + local
-        self.goal[:, :2].clamp_(-20, 20)
+        half = self.size.new_tensor((MAP_SIZE[0] / 2 - END_CLEARANCE, MAP_SIZE[1] / 2)) - self.size[:, :2] / 2
+        self.goal[:, :2] = torch.maximum(torch.minimum(self.goal[:, :2], half), -half)
         self.goal[:, 2].clamp_(0, 4.5)
         self.goal[self.cylinders, 2] = 2.5
         if self.step_count % max(1, int(2.0 / self.dt)) == 0:
@@ -90,6 +117,16 @@ class DynamicObstacleMotion:
             delta = self.goal - self.position
             self.velocity = speed * delta / delta.norm(dim=-1, keepdim=True).clamp_min(1e-6)
         self.position.add_(self.velocity * self.dt)
+        # Velocity is held for two seconds; reflect overshoot to preserve the shared world's bounds.
+        for axis in range(2):
+            limit = half[:, axis]
+            outside = self.position[:, axis].abs() > limit
+            self.position[:, axis] = torch.where(
+                outside,
+                self.position[:, axis].sign() * (2 * limit - self.position[:, axis].abs()),
+                self.position[:, axis],
+            )
+            self.velocity[:, axis] = torch.where(outside, -self.velocity[:, axis], self.velocity[:, axis])
         self.step_count += 1
 
 
@@ -150,7 +187,10 @@ def navigation_terms(position, velocity, target, direction, lidar_distance, moti
         "lidar": lidar_scan,
         "dynamic_obstacle": dynamic,
         "reward": reward,
-        "bounds": (position[:, 2] < 0.2) | (position[:, 2] > 4.0),
+        "bounds": (position[:, 2] < 0.2)
+        | (position[:, 2] > 4.0)
+        | (position[:, 0].abs() > MAP_SIZE[0] / 2)
+        | (position[:, 1].abs() > MAP_SIZE[1] / 2),
         "reached": distance[:, 0] < 0.5,
         "reward_velocity": velocity_reward,
         "reward_static": safety_static,

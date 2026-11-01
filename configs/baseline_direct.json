@@ -1,0 +1,16 @@
+{
+  "method": "diffnav", "stage": "finetune_s1", "fresh_stage": true,
+  "physics": "newton_mjwarp", "frontend": "warp", "num_envs": 512,
+  "seed": 0, "terrain_seed": 0, "report_episodes": 1024,
+  "static_obstacles": 480, "dynamic_obstacles": 32, "randomization": true,
+  "world_size_xy_m": [120, 40], "target_speed_range_mps": [1, 6],
+  "route_distance": "18 * target_speed", "algorithm": "bptt", "recurrent_model": "gru",
+  "variant": "terminal", "collision_metric": "sdf", "geometry_backend": "curobo_v2",
+  "position_integration": "trapezoid", "loss_timing": "pre_reset",
+  "velocity_loss_mode": "full_window", "velocity_window_s": 2.0,
+  "goal_reference": "linear", "avoidance_gradient": "original",
+  "timesteps": 150, "physics_dt": 0.05, "policy_dt": 0.05,
+  "wait_before_truncate_s": 10.0, "success": "final_goal_occupancy_without_failure",
+  "optimizer": "adamw", "lr": 0.001, "weight_decay": 0.01,
+  "cosine_period_updates": 400, "max_grad_norm": 5.0
+}

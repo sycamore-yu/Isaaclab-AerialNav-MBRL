@@ -1,6 +1,6 @@
 cff-version: 1.2.0
 message: "If you use this software, cite its upstream dependencies as appropriate."
-title: "AerialNav: Static Obstacle Avoidance with Isaac Lab"
+title: "AerialNav: Depth-based Quadrotor Navigation"
 type: software
 version: 0.1.0
 authors:

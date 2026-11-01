@@ -15,6 +15,7 @@ from aerialnav.physics import runtime_metadata
 from aerialnav.tasks.navigation.depth_history import OBSERVATION_CONTRACT
 from aerialnav.tasks.navigation.randomization import DifferentiableDelay
 from aerialnav.training import (
+    EPISODE_END_CONTRACT,
     STAGE_CONFIG,
     record_curriculum,
     tensorboard_directory,
@@ -23,8 +24,8 @@ from aerialnav.training import (
 )
 
 from .actor_critic import ActorCriticSettings, CostActorCritic, short_horizon_cost_objective
+from .collision import height_bounded_gap, metric_navigation_gap
 from .critic_state import CriticHistory, critic_observation
-from .dcol import height_bounded_gap, metric_navigation_gap
 from .diagnostics import GradientDiagnostic, collision_records, critic_vertical_probe
 from .dynamics import PointMassState, align_state, align_transition, policy_transition
 from .losses import VelocityEMA, diffnav_transition_costs, risk_speed_scale
@@ -32,6 +33,7 @@ from .model import DiffNavPolicy, decode_action, policy_state
 from .normalization import PolicyObservationNormalizer
 from .optimization import OptimizerStepMonitor, RecoveryConfig, RecoveryController, make_plateau_scheduler
 from .projection import ActionUpdateProbe, height_priority_gradient
+from .streaming import PreResetLoss
 
 
 def cosine_learning_rate(update, cfg):
@@ -71,6 +73,72 @@ def rollout_diagnostics(history):
 
 
 class DiffNavTrainer:
+    def transition_costs(self, history, cfg, velocity_history=None):
+        if cfg.loss_timing == "pre_reset":
+            if self.step_loss.steps != len(history["velocity"]):
+                raise RuntimeError("Expected exactly one pre-reset loss per transition")
+            return self.step_loss.finish()
+        return diffnav_transition_costs(history, cfg, velocity_history)
+
+    def begin_rollout_loss(self):
+        self.pre_reset_collision = None
+        self.step_loss = (
+            PreResetLoss(self.cfg, diffnav_transition_costs, self.velocity_history)
+            if self.cfg.loss_timing == "pre_reset"
+            else None
+        )
+
+    def _collision_endpoint(self, predicted_positions, terminal_position, transition):
+        substep = transition["collision_substep"]
+        index = (substep - 1).clamp_min(0)
+        rows = torch.arange(self.env.num_envs, device=self.env.device)
+        collision_position = align_state(predicted_positions[rows, index], transition["collision_position"])
+        collision_position = torch.where(substep[:, None] > 0, collision_position, terminal_position)
+        pose_index = torch.where(substep > 0, index, predicted_positions.shape[1] - 1)
+        return collision_position, transition["dynamic_positions_by_substep"][pose_index]
+
+    def prepare_transition_loss(self, history, state, command, rotation, parameters):
+        if self.step_loss is None:
+            return
+        sample = {name: values[-1] for name, values in history.items() if values}
+
+        def before_reset(transition):
+            with torch.enable_grad():
+                applied = align_state(command, transition["executed_action"])
+                if self.cfg.variant == "terminal":
+                    prediction, positions = policy_transition(
+                        state, applied, rotation, parameters, self.cfg, record_positions=True
+                    )
+                    self.pre_reset_prediction = (prediction, positions)
+                else:
+                    prediction = policy_transition(state, applied, rotation, parameters, self.cfg)
+                    self.pre_reset_prediction = prediction
+                terminal, _ = align_transition(
+                    prediction,
+                    transition["position"],
+                    transition["velocity"],
+                    state.velocity,
+                    transition["terminated"] | transition["timeout"],
+                    transition["position"],
+                    transition["velocity"],
+                    self.cfg.policy_dt,
+                    transition["actuator"],
+                )
+                scored = sample | {"position": terminal.position, "velocity": terminal.velocity}
+                if self.cfg.variant == "terminal":
+                    position, obstacles = self._collision_endpoint(positions, terminal.position, transition)
+                    gap = self._collision_gap(position, parameters["margin"], obstacles)
+                    self.pre_reset_collision = (position, obstacles, gap)
+                    scored["collision_gap"] = torch.cat((sample["collision_lookahead"], gap[:, None]), dim=1)
+                if self.cfg.failure_terminal_cost:
+                    code = transition.get("terminal_event_code", transition["first_event_code"])
+                    scored["failure_terminal"] = transition["terminated"] & (code >= 2) & (code <= 4)
+                self.step_loss.append(scored)
+                if not torch.equal(sample["episode_id"], self.env.episode_id):
+                    raise RuntimeError("Loss was evaluated after episode reset")
+
+        self.env.pre_reset_loss_callback = before_reset
+
     def __init__(self, env, cfg, log_dir):
         cfg.validate()
         if abs(env.physics_dt - cfg.physics_dt) > 1e-8 or abs(env.step_dt - cfg.policy_dt) > 1e-8:
@@ -202,49 +270,75 @@ class DiffNavTrainer:
             self.actor_critic.load_state_dict(self._pending_critic_state)
             self._pending_critic_state = None
 
-    def _dcol_gap(self, query, radius, obstacle_positions=None, *, static_distance=None):
-        """Select dynamic DCOL or SDF without changing sample times or static geometry."""
+    def _collision_gap(self, query, radius, obstacle_positions=None, *, static_distance=None):
+        """Metric SDF minus the safety radius, at the existing sample times."""
         from aerialnav.tasks.navigation.geometry import nearest_obstacle_signed_distance
-
-        from .dcol import hybrid_collision_gap
 
         radius = radius.reshape(-1, *([1] * (query.ndim - 2))).expand(query.shape[:-1])
         static_distance = (
             self.env.terrain_distance.signed_distance(query) if static_distance is None else static_distance
         )
         obstacle_positions = self.env.motion.position if obstacle_positions is None else obstacle_positions
-        if self.cfg.collision_metric == "sdf":
-            return (
-                nearest_obstacle_signed_distance(query, static_distance, obstacle_positions, self.env.motion.size)
-                - radius
+        return (
+            nearest_obstacle_signed_distance(
+                query,
+                static_distance,
+                obstacle_positions,
+                self.env.motion.size,
+                dynamic_backend=getattr(self.env.terrain_distance, "dynamic_signed_distance", None),
             )
-        return hybrid_collision_gap(
-            query,
-            radius,
-            static_distance,
-            obstacle_positions,
-            self.env.motion.size,
+            - radius
         )
 
-    def load_stage_checkpoint(self, path):
-        """Continue the same experiment after rebuilding its stage-specific terrain."""
+    def load_stage_checkpoint(self, path, *, resume=False):
+        """Load the preceding stage or explicitly resume saved same-stage learning state."""
         payload = torch.load(path, map_location=self.env.device, weights_only=True)
         if payload["format_version"] != 3 or payload["method"] != "diffnav":
             raise ValueError("Stage transitions require this experiment's DiffNav checkpoint")
         if payload["environment"].get("observation_contract") != OBSERVATION_CONTRACT:
             raise ValueError("Observation timing changed; resume the old experiment with its frozen source")
         # Version-3 persisted configs predate optional failure-cost and target-rate fields.
-        saved_config = asdict(type(self.cfg)(**payload["train_cfg"]))
+        saved_config = asdict(
+            type(self.cfg)(
+                **(
+                    payload["train_cfg"]
+                    | {
+                        "loss_timing": payload["train_cfg"].get("loss_timing", "deferred"),
+                        "position_integration": payload["train_cfg"].get("position_integration", "original"),
+                        "geometry_backend": payload["train_cfg"].get("geometry_backend", "native"),
+                        "avoidance_gradient": payload["train_cfg"].get("avoidance_gradient", "original"),
+                    }
+                )
+            )
+        )
         allowed_stage_changes = {"lr", "max_iterations", "stop_after_acceptance", "gradient_diagnostic_updates"}
+        if resume:
+            allowed_stage_changes.remove("lr")
         for name, value in asdict(self.cfg).items():
             if name not in allowed_stage_changes and saved_config[name] != value:
                 raise ValueError(f"Stage transitions cannot change {name}")
         stages = list(STAGE_CONFIG)
         index = stages.index(self.env.cfg.training_stage)
-        if index == 0 or payload["environment"]["training_stage"] != stages[index - 1]:
-            raise ValueError("The checkpoint must come from the immediately preceding training stage")
-        if self.cfg.max_iterations is None and not payload["curriculum"]["stage_passed"]:
-            raise ValueError("Formal training requires a checkpoint that passed the preceding stage")
+        if resume:
+            saved_env = payload["environment"]
+            expected = {
+                "training_stage": self.env.cfg.training_stage,
+                "static_obstacles": self.env.cfg.num_static_obstacles,
+                "dynamic_obstacles": self.env.cfg.num_dynamic_obstacles,
+                "seed": self.env.cfg.seed,
+                "terrain_seed": self.env.cfg.terrain_seed,
+                "sim_to_real": asdict(self.env.cfg.sim_to_real),
+                "target_speed_range": getattr(self.env.cfg, "target_speed_range", None),
+            }
+            if payload["num_envs"] != self.env.num_envs or any(
+                saved_env[key] != value for key, value in expected.items()
+            ):
+                raise ValueError("Same-stage continuation requires matching environment, seed and num_envs")
+        else:
+            if index == 0 or payload["environment"]["training_stage"] != stages[index - 1]:
+                raise ValueError("The checkpoint must come from the immediately preceding training stage")
+            if self.cfg.max_iterations is None and not payload["curriculum"]["stage_passed"]:
+                raise ValueError("Formal training requires a checkpoint that passed the preceding stage")
         self.model.load_state_dict(payload["model_state_dict"], strict=True)
         self.optimizer.load_state_dict(payload["optimizer_state_dict"])
         self.normalizer.load_state_dict(payload["normalizer_state_dict"], strict=True)
@@ -255,12 +349,14 @@ class DiffNavTrainer:
         self.environment_steps = payload["environment_steps"]
         self.elapsed_s = payload["elapsed_s"]
         self.nonfinite_grad_events = payload["nonfinite_grad_events"]
-        self.schedule_updates = 0 if self.env.cfg.training_stage == "finetune_s1" else payload["schedule_updates"]
+        self.schedule_updates = (
+            payload["schedule_updates"] if resume or self.env.cfg.training_stage != "finetune_s1" else 0
+        )
         self.lr_scale = payload["lr_scale"]
         self.lr_cap = payload["lr_cap"]
         # A harder stage has a different report distribution. Start a fresh
         # Plateau/recovery report history; retain model/optimizer/normalization.
-        if self.env.cfg.training_stage == "finetune_s1" or self.cfg.lr != payload["train_cfg"]["lr"]:
+        if not resume and (self.env.cfg.training_stage == "finetune_s1" or self.cfg.lr != payload["train_cfg"]["lr"]):
             self.lr_scale, self.lr_cap = 1.0, self.cfg.lr
             for group in self.optimizer.param_groups:
                 group["lr"] = self.cfg.lr
@@ -268,6 +364,37 @@ class DiffNavTrainer:
         torch.set_rng_state(payload["torch_rng_state"].cpu())
         if "cuda_rng_state" in payload and torch.device(self.env.device).type == "cuda":
             torch.cuda.set_rng_state(payload["cuda_rng_state"].cpu(), self.env.device)
+        if resume:
+            self.stage_updates = payload["stage_updates"]
+            if self.scheduler is not None:
+                self.scheduler.load_state_dict(payload["scheduler_state_dict"])
+            self.log_dir.mkdir(parents=True, exist_ok=True)
+            write_json(
+                self.log_dir / "continuation.json",
+                {
+                    "checkpoint": self.parent_checkpoint,
+                    "completed_updates": self.completed_updates,
+                    "stage_updates": self.stage_updates,
+                    "schedule_updates": self.schedule_updates,
+                    "environment_steps": self.environment_steps,
+                    "previous_episode_end_contract": payload["environment"].get(
+                        "episode_end_contract", "arrival_latched_until_failure_or_timeout_v0"
+                    ),
+                    "episode_end_contract": EPISODE_END_CONTRACT,
+                    "previous_wait_before_truncate_s": payload["environment"].get("wait_before_truncate_s"),
+                    "wait_before_truncate_s": getattr(self.env.cfg, "wait_before_truncate", 10.0),
+                    "restored": [
+                        "model",
+                        "optimizer",
+                        "normalizer",
+                        "scheduler",
+                        "torch_cpu_cuda_rng",
+                        "LR",
+                        "counters",
+                    ],
+                    "reset": ["environment", "recurrent_state", "report_window", "best_reports", "recovery_reports"],
+                },
+            )
 
     def _checkpoint(self, path):
         payload = {
@@ -310,10 +437,14 @@ class DiffNavTrainer:
                 "policy_dt": self.env.step_dt,
                 "depth_camera_batch_size": getattr(self.env.cfg, "depth_camera_batch_size", None),
                 "height_target_range": self.env.cfg.height_target_range,
+                "target_speed_range": getattr(self.env.cfg, "target_speed_range", None),
+                "geometry_backend": self.cfg.geometry_backend,
                 "training_stage": self.env.cfg.training_stage,
                 "variant": self.cfg.variant,
                 "sim_to_real": asdict(self.env.cfg.sim_to_real),
                 "observation_contract": OBSERVATION_CONTRACT,
+                "episode_end_contract": EPISODE_END_CONTRACT,
+                "wait_before_truncate_s": getattr(self.env.cfg, "wait_before_truncate", 10.0),
             },
             "torch_rng_state": torch.get_rng_state(),
             "curriculum": self.env.curriculum.state_dict() if self.env.curriculum is not None else None,
@@ -424,12 +555,16 @@ class DiffNavTrainer:
     def _result(self, status, checkpoint=None, error=None):
         result = {
             "method": "diffnav",
+            "episode_end_contract": EPISODE_END_CONTRACT,
+            "wait_before_truncate_s": getattr(self.env.cfg, "wait_before_truncate", 10.0),
             "physics": self.cfg.physics,
             **runtime_metadata(self.env),
             "variant": self.cfg.variant,
             "algorithm": self.cfg.algorithm,
             "recurrent_model": self.cfg.recurrent_model,
             "collision_metric": self.cfg.collision_metric,
+            "geometry_backend": self.cfg.geometry_backend,
+            "avoidance_gradient": self.cfg.avoidance_gradient,
             "approach_mode": self.cfg.approach_mode,
             "lateral_avoidance": self.cfg.lateral_avoidance,
             "risk_speed_floor": self.cfg.risk_speed_floor,
@@ -439,8 +574,12 @@ class DiffNavTrainer:
             "resolved_velocity_loss_mode": self.cfg.resolved_velocity_loss_mode,
             "height_loss_mode": self.cfg.height_loss_mode,
             "height_target_range": list(self.cfg.height_target_range),
-            "static_obstacle_distance": "signed_heightfield_occupancy_exit_proxy",
-            "static_projection": "float64_selected_face_refinement_float32_storage",
+            "static_obstacle_distance": getattr(
+                self.env.terrain_distance, "geometry_mode", "signed_heightfield_occupancy_exit_proxy"
+            ),
+            "static_projection": getattr(
+                self.env.terrain_distance, "projection_precision", "float64_selected_face_refinement_float32_storage"
+            ),
             "optimizer": self.cfg.optimizer,
             "weight_decay": self.cfg.weight_decay,
             "gradient_projection": self.cfg.gradient_projection,
@@ -471,8 +610,8 @@ class DiffNavTrainer:
                 and self.env.curriculum.acceptance_passed
                 and self.env.num_envs >= 1024
                 and self.env.curriculum.min_episodes >= 1024
-                and self.env.cfg.num_static_obstacles == 400
-                and self.env.cfg.num_dynamic_obstacles == 100
+                and self.env.cfg.num_static_obstacles == STAGE_CONFIG["finetune_s2"]["static_obstacles"]
+                and self.env.cfg.num_dynamic_obstacles == STAGE_CONFIG["finetune_s2"]["dynamic_obstacles"]
                 and self.env.cfg.sim_to_real.enabled
             ),
             "stage_passed": bool(self.env.curriculum is not None and self.env.curriculum.stage_passed),
@@ -512,14 +651,21 @@ class DiffNavTrainer:
             )
         lookahead = torch.linspace(0, self.cfg.policy_dt, 10, device=self.env.device)[None, :, None]
         writer = SummaryWriter(str(tensorboard_directory(self.log_dir)))
+        writer.add_text("Protocol/episode_end_contract", EPISODE_END_CONTRACT, self.completed_updates)
         if self.cfg.variant == "continuous":
             write_json(
                 self.log_dir / "continuous_geometry.json",
                 {
                     "ground_plane_z_m": 0.01,
                     "ground_clearance": "query_height_minus_ground_plane_minus_radius",
-                    "static_geometry": "signed_heightfield_occupancy_exit_proxy",
-                    "static_projection": "float64_selected_face_refinement_float32_storage",
+                    "static_geometry": getattr(
+                        self.env.terrain_distance, "geometry_mode", "signed_heightfield_occupancy_exit_proxy"
+                    ),
+                    "static_projection": getattr(
+                        self.env.terrain_distance,
+                        "projection_precision",
+                        "float64_selected_face_refinement_float32_storage",
+                    ),
                     "applies_to": ["obstacle_avoidance", "collision"],
                     "query_timing": "drone_and_obstacles_at_same_constant_velocity_lookahead_time",
                     "static_penetration": "negative_distance_to_verified_original_mesh_exit",
@@ -528,9 +674,9 @@ class DiffNavTrainer:
                     "collision_or_bounds_reset": False,
                 },
             )
-        if self.cfg.variant == "dcol":
+        if self.cfg.variant == "terminal":
             write_json(
-                self.log_dir / "dcol_geometry.json",
+                self.log_dir / "collision_geometry.json",
                 {
                     "scope": "hybrid_dynamic_" + self.cfg.collision_metric,
                     "dynamic_geometry": "sphere_vs_axis_aligned_box_or_finite_z_cylinder",
@@ -556,6 +702,7 @@ class DiffNavTrainer:
         started = time.perf_counter()
         previous_elapsed_s = self.elapsed_s
         initial_updates = self.completed_updates
+        initial_stage_updates = self.stage_updates
         self._result("running")
         try:
             updates = count() if self.cfg.max_iterations is None else range(self.cfg.max_iterations)
@@ -578,6 +725,7 @@ class DiffNavTrainer:
                 )
                 self.last_rollout_steps = rollout_steps
                 history = defaultdict(list)
+                self.begin_rollout_loss()
                 collisions = []
                 value_probes = []
                 terminated_count = torch.zeros((), device=self.env.device, dtype=torch.long)
@@ -626,7 +774,7 @@ class DiffNavTrainer:
                     query = state.position[:, None] + state.velocity[:, None] * lookahead
                     from aerialnav.tasks.navigation.geometry import nearest_obstacle_signed_distance
 
-                    if self.cfg.approach_mode == "relative":
+                    if self.cfg.approach_mode == "relative" or self.cfg.avoidance_gradient == "reshaped":
                         query.requires_grad_(True)
                     # shortcut: constant obstacle velocity within one policy step; turns are not predicted.
                     obstacle_positions = self.env.motion.position + self.env.motion.velocity * lookahead[..., None]
@@ -637,6 +785,7 @@ class DiffNavTrainer:
                         obstacle_positions,
                         self.env.motion.size,
                         dynamic_velocity=self.env.motion.velocity if self.cfg.approach_mode == "relative" else None,
+                        dynamic_backend=getattr(self.env.terrain_distance, "dynamic_signed_distance", None),
                     )
                     if self.cfg.approach_mode == "relative":
                         obstacle_distance, obstacle_velocity = geometry
@@ -679,13 +828,26 @@ class DiffNavTrainer:
                     command, velocity_prediction = decode_action(output, policy_heading, parameters["thr_est_error"])
                     # Source main_cuda records p + v * sub_div before env.run, including terminating steps.
                     history["obstacle_signed_distance"].append(obstacle_distance)
-                    if self.cfg.variant == "dcol":
-                        dcol_lookahead = self._dcol_gap(
+                    if self.cfg.avoidance_gradient == "reshaped":
+                        from .gradient_field import reshape_avoidance_distance
+
+                        history["avoidance_signed_distance"].append(
+                            reshape_avoidance_distance(
+                                obstacle_distance,
+                                query,
+                                state.velocity.detach(),
+                                observation["target"] - state.position.detach(),
+                            )
+                        )
+                    if self.cfg.variant == "terminal":
+                        collision_lookahead = self._collision_gap(
                             query[:, 1:-1],
                             parameters["margin"],
                             obstacle_positions[:, 1:-1],
                             static_distance=static_distance[:, 1:-1],
                         )
+                    if self.cfg.variant == "terminal":
+                        history["collision_lookahead"].append(collision_lookahead)
                     history["margin"].append(parameters["margin"])
                     history["target_velocity"].append(target_velocity)
                     history["height_target"].append(observation["height_target"].detach().clone())
@@ -701,6 +863,7 @@ class DiffNavTrainer:
                     applied_command = action_history.push(
                         command, self.env.perturbation.action_buffer.time_lags.clone(), zero_until_ready=True
                     )
+                    self.prepare_transition_loss(history, state, applied_command, rotation, parameters)
                     with torch.no_grad():
                         _, _, terminated, timeout, info = self.env.step(command.detach())
                         # DirectRLEnv reuses these buffers on the next simulation step.
@@ -708,23 +871,31 @@ class DiffNavTrainer:
                         done = terminated | timeout
                         next_observation = self.env.get_diffnav_observation()
                     transition = info["transition"]
-                    if diagnostic_update and self.cfg.variant == "dcol":
+                    if diagnostic_update and self.cfg.variant == "terminal":
                         collisions.extend(collision_records(self.env, transition))
                     execution_error = torch.maximum(
                         execution_error, (applied_command.detach() - transition["executed_action"]).abs().max()
                     )
                     applied_command = align_state(applied_command, transition["executed_action"])
-                    if self.cfg.variant == "dcol":
-                        prediction, predicted_positions = policy_transition(
-                            state, applied_command, rotation, parameters, self.cfg, record_positions=True
-                        )
+                    if self.cfg.variant == "terminal":
+                        cached = getattr(self, "pre_reset_prediction", None)
+                        if cached is None:
+                            prediction, predicted_positions = policy_transition(
+                                state, applied_command, rotation, parameters, self.cfg, record_positions=True
+                            )
+                        else:
+                            prediction, predicted_positions = cached
+                        self.pre_reset_prediction = None
                     else:
-                        prediction = policy_transition(state, applied_command, rotation, parameters, self.cfg)
+                        prediction = getattr(self, "pre_reset_prediction", None)
+                        if prediction is None:
+                            prediction = policy_transition(state, applied_command, rotation, parameters, self.cfg)
+                        self.pre_reset_prediction = None
                     history["bounds"].append(transition["bounds"])
                     history["done"].append(done.clone())
                     history["collision"].append(transition["collision"])
                     if self.cfg.failure_terminal_cost:
-                        code = transition["first_event_code"]
+                        code = transition.get("terminal_event_code", transition["first_event_code"])
                         history["failure_terminal"].append(terminated & (code >= 2) & (code <= 4))
                     if self.cfg.resolved_velocity_loss_mode == "truncated_window":
                         history["timeout"].append(transition["timeout"])
@@ -748,23 +919,21 @@ class DiffNavTrainer:
                     history["velocity"].append(terminal_state.velocity)
                     if self.velocity_ema is not None:
                         history["velocity_ema"].append(self.velocity_ema.update(terminal_state.velocity))
-                    if self.cfg.variant == "dcol":
+                    if self.cfg.variant == "terminal":
                         # Use the first collision's actual physical substep, including its
                         # obstacle poses. A later policy-end position can already have passed
                         # the object. Its aligned surrogate graph survives same-step reset.
-                        substep = transition["collision_substep"]
-                        index = (substep - 1).clamp_min(0)
-                        rows = torch.arange(self.env.num_envs, device=self.env.device)
-                        collision_position = align_state(
-                            predicted_positions[rows, index], transition["collision_position"]
-                        )
-                        collision_position = torch.where(
-                            substep[:, None] > 0, collision_position, terminal_state.position
-                        )
-                        pose_index = torch.where(substep > 0, index, predicted_positions.shape[1] - 1)
-                        collision_obstacles = transition["dynamic_positions_by_substep"][pose_index]
-                        terminal_gap = self._dcol_gap(collision_position, parameters["margin"], collision_obstacles)
-                        history["dcol_gap"].append(torch.cat((dcol_lookahead, terminal_gap[:, None]), dim=1))
+                        if self.pre_reset_collision is None:
+                            collision_position, collision_obstacles = self._collision_endpoint(
+                                predicted_positions, terminal_state.position, transition
+                            )
+                            terminal_gap = self._collision_gap(
+                                collision_position, parameters["margin"], collision_obstacles
+                            )
+                        else:
+                            collision_position, collision_obstacles, terminal_gap = self.pre_reset_collision
+                            self.pre_reset_collision = None
+                        history["collision_gap"].append(torch.cat((collision_lookahead, terminal_gap[:, None]), dim=1))
                         if self.horizon_controller is not None:
                             endpoint_clearance = metric_navigation_gap(
                                 collision_position,
@@ -820,7 +989,7 @@ class DiffNavTrainer:
                     observation_history.reset(done)
                     observation = next_observation
                     terminated_count += done.sum()
-                losses, self.velocity_history, transition_cost = diffnav_transition_costs(
+                losses, self.velocity_history, transition_cost = self.transition_costs(
                     history, self.cfg, self.velocity_history
                 )
                 actor_loss = losses["total"]
@@ -980,8 +1149,8 @@ class DiffNavTrainer:
                             model_velocity_error=rollout_metrics["surrogate_velocity_error_mps"],
                         )
                     )
-                self.stage_updates = update + 1
-                self.completed_updates = initial_updates + self.stage_updates
+                self.stage_updates = initial_stage_updates + update + 1
+                self.completed_updates = initial_updates + update + 1
                 self.environment_steps += rollout_steps * self.env.num_envs
                 self.schedule_updates += 1
                 self.elapsed_s = previous_elapsed_s + time.perf_counter() - started

@@ -1,13 +1,11 @@
 # Changelog
 
-## v0.1.0 (local release candidate, 2026-10-31)
+## Unreleased
 
-- Created a static-only user-facing training and evaluation profile.
-- Established independent `aerialnav` namespace and `diffnav` implementation.
-- Preserved the optional PPO baseline with distinct task registration.
-- Migrated the best static policy into an inference-only checkpoint.
-- Published sanitized single-run wall-clock benchmark evidence.
-- Removed internal experiment history, developer notes, runtime paths, and full training checkpoint metadata.
-- Retained upstream legal notices and exact Hummingbird asset attribution.
-
-**Not yet verified:** independent multi-seed static-navigation evaluation of this reorganized source tree, and Newton/Warp policy equivalence.
+- Replace the static-only draft default with the direct randomized rectangular navigation baseline.
+- Use Newton/Warp, cuRobo SDF, trapezoidal surrogate integration and pre-reset loss construction.
+- Add the 10-second arrival-wait/final-state success protocol and complete failure reporting.
+- Name the sampling protocol `terminal`; keep old inference-weight labels compatible.
+- Preserve the legacy static weights and benchmark data separately from the new baseline.
+- Replace the draft Static Gym IDs with neutral task IDs and pin the optional geometry dependency.
+- Keep the public Git history independent of the development repository.

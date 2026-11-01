@@ -10,8 +10,7 @@ from pathlib import Path
 def summarize(statistics: Path, updates: Path) -> dict:
     reports = [json.loads(line) for line in statistics.read_text().splitlines() if line.strip()]
     metrics = {
-        row["update"]: row
-        for row in (json.loads(line) for line in updates.read_text().splitlines() if line.strip())
+        row["update"]: row for row in (json.loads(line) for line in updates.read_text().splitlines() if line.strip())
     }
     if not reports:
         raise ValueError("No training episode reports available")

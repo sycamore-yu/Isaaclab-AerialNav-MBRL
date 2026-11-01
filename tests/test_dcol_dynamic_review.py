@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-from aerialnav.diffnav.dcol import dynamic_min_alpha, hybrid_collision_gap
+from aerialnav.reference.dcol import dynamic_min_alpha, hybrid_collision_gap
 
 
 @pytest.fixture(autouse=True)

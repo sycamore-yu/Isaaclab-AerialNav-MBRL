@@ -3,23 +3,21 @@
 from __future__ import annotations
 
 import ast
-import copy
-import functools
 import os.path as osp
 import subprocess
 
 import numpy as np
 import pytest
 import torch
-import trimesh
 import yaml
 from reference_repo import UPSTREAM_NAVIGATION
 from torch import nn
 
 from aerialnav.control import GRAVITY, MASS, ROTOR_CONFIG, LeeRotorController, rotor_allocation
-from aerialnav.terrain import NavigationObstaclesTerrainCfg, discrete_obstacles_terrain, obstacle_height_field
 
-pytestmark = pytest.mark.skipif(not (UPSTREAM_NAVIGATION / ".git").exists(), reason="Set UPSTREAM_NAVIGATION_SOURCE to a pinned upstream checkout")
+pytestmark = pytest.mark.skipif(
+    not (UPSTREAM_NAVIGATION / ".git").exists(), reason="Set UPSTREAM_NAVIGATION_SOURCE to a pinned upstream checkout"
+)
 
 OMNI = "isaac-training/third_party/OmniDrones/omni_drones"
 TERRAIN = "isaac-training/third_party/orbit/source/extensions/omni.isaac.orbit/omni/isaac/orbit/terrains"
@@ -117,43 +115,3 @@ def original_height_function():
         f"{TERRAIN}/height_field/hf_terrains.py", {"discrete_obstacles_terrain"}, namespace, strip_decorators=True
     )
     return namespace["discrete_obstacles_terrain"]
-
-
-@pytest.mark.parametrize("seed", [0, 73])
-def test_height_field_matches_original_sampling(seed):
-    cfg = NavigationObstaclesTerrainCfg(size=(39.9, 39.9), horizontal_scale=0.1, vertical_scale=0.1)
-    cfg.obstacle_height_mode = "range"
-    original = original_height_function()
-    np.random.seed(seed)
-    expected = original(0.5, cfg)
-    actual = obstacle_height_field(0.5, cfg, np.random.RandomState(seed))
-    np.testing.assert_array_equal(actual, expected)
-
-
-def test_mesh_and_origin_match_original_seed_zero():
-    namespace = {"np": np, "trimesh": trimesh, "copy": copy, "functools": functools}
-    load_definitions(
-        f"{TERRAIN}/height_field/utils.py",
-        {
-            "height_field_to_mesh",
-            "convert_height_field_to_mesh",
-        },
-        namespace,
-    )
-    original_mesh = namespace["height_field_to_mesh"](original_height_function())
-    cfg = NavigationObstaclesTerrainCfg(
-        size=(40.0, 40.0),
-        horizontal_scale=0.1,
-        vertical_scale=0.1,
-        slope_threshold=0.75,
-        seed=0,
-    )
-    cfg.obstacle_height_mode = "range"
-    np.random.seed(0)
-    np.random.choice(1, p=[1.0])
-    difficulty = np.random.uniform(0.0, 1.0)
-    expected_mesh, expected_origin = original_mesh(difficulty, copy.deepcopy(cfg))
-    actual_mesh, actual_origin = discrete_obstacles_terrain(difficulty, copy.deepcopy(cfg))
-    np.testing.assert_array_equal(actual_mesh[0].vertices, expected_mesh[0].vertices)
-    np.testing.assert_array_equal(actual_mesh[0].faces, expected_mesh[0].faces)
-    np.testing.assert_allclose(actual_origin, expected_origin, rtol=0, atol=1e-12)

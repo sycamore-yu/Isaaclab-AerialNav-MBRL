@@ -1,7 +1,7 @@
 # Copyright (c) 2022-2024, The ORBIT Project Developers.
 # All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
-"""Height-field obstacle sampler adapted from upstream code for Isaac Lab 3.0."""
+"""Navigation's custom height-field sampler, hosted by Isaac Lab 3.0 terrain classes."""
 
 from __future__ import annotations
 
@@ -9,6 +9,8 @@ import numpy as np
 from isaaclab.terrains import TerrainGeneratorCfg, TerrainImporterCfg
 from isaaclab.terrains.height_field.hf_terrains_cfg import HfTerrainBaseCfg
 from isaaclab.utils import configclass
+
+from aerialnav.training import END_CLEARANCE, MAP_SIZE
 
 
 def obstacle_height_field(difficulty, cfg, rng=None):
@@ -20,7 +22,14 @@ def obstacle_height_field(difficulty, cfg, rng=None):
     width_max = int(cfg.obstacle_width_range[1] / cfg.horizontal_scale)
     widths = np.arange(width_min, width_max, 4)
     lengths = np.arange(width_min, width_max, 4)
-    x_positions = np.arange(0, width_pixels, 4)
+    clearance = int(getattr(cfg, "end_clearance", 0.0) / cfg.horizontal_scale)
+    x_positions = (
+        np.arange(clearance, width_pixels - clearance - width_max + 1, 4)
+        if clearance
+        else np.arange(0, width_pixels, 4)
+    )
+    if not len(x_positions):
+        raise ValueError("Terrain has no room for obstacles outside the end clearance")
     y_positions = np.arange(0, length_pixels, 4)
     platform_width = int(cfg.platform_width / cfg.horizontal_scale)
     heights = np.zeros((width_pixels, length_pixels))
@@ -104,6 +113,7 @@ class NavigationObstaclesTerrainCfg(HfTerrainBaseCfg):
     obstacle_height_probability = [0.1, 0.15, 0.20, 0.55]
     num_obstacles = 350
     platform_width = 0.0
+    end_clearance = 0.0
 
 
 def build_terrain_cfg(num_envs, num_obstacles, seed):
@@ -114,8 +124,8 @@ def build_terrain_cfg(num_envs, num_obstacles, seed):
         terrain_type="generator",
         terrain_generator=TerrainGeneratorCfg(
             seed=seed,
-            size=(40.0, 40.0),
-            border_width=5.0,
+            size=MAP_SIZE,
+            border_width=0.0,
             num_rows=1,
             num_cols=1,
             horizontal_scale=0.1,
@@ -129,6 +139,7 @@ def build_terrain_cfg(num_envs, num_obstacles, seed):
                     vertical_scale=0.1,
                     border_width=0.0,
                     num_obstacles=num_obstacles,
+                    end_clearance=END_CLEARANCE,
                 )
             },
         ),

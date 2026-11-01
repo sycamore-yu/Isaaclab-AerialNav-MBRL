@@ -6,8 +6,8 @@ import trimesh
 from test_diffnav_contract import loss_history
 
 from aerialnav.diffnav.config import DiffNavTrainCfg
-from aerialnav.diffnav.dcol import dynamic_min_alpha, hybrid_collision_gap
 from aerialnav.diffnav.losses import diffnav_transition_costs
+from aerialnav.reference.dcol import dynamic_min_alpha, hybrid_collision_gap
 from aerialnav.tasks.navigation.geometry import (
     TerrainDistance,
     dynamic_signed_distance,

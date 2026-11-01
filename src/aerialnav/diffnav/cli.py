@@ -34,6 +34,8 @@ TRAIN_ARG_CHOICES = {
     if get_args(field.type) and isinstance(get_args(field.type)[0], str)
 }
 TRAIN_ARG_CHOICES["velocity_loss_mode"] = get_args(get_args(DiffNavTrainCfg.__annotations__["velocity_loss_mode"])[0])
+TRAIN_ARG_CHOICES["loss_timing"] = ("deferred", "pre_reset")
+TRAIN_ARG_CHOICES["position_integration"] = ("original", "trapezoid")
 TRAIN_ARG_CHOICES["timing"] = ("baseline", "unified_20hz", "unified_50hz")
 TRAIN_ARG_TYPES = {
     "timing": str,
@@ -48,9 +50,13 @@ TRAIN_ARG_TYPES = {
     "normalization_variance_floor": float,
     "recovery_enabled": parse_binary_flag,
     "timesteps": int,
+    "loss_timing": str,
     "velocity_window_s": float,
     "velocity_loss_mode": str,
     "collision_metric": str,
+    "position_integration": str,
+    "geometry_backend": str,
+    "avoidance_gradient": str,
     "approach_mode": str,
     "lateral_avoidance": float,
     "risk_speed_floor": float,
@@ -152,7 +158,7 @@ def parse_train_args(tokens: list[str]) -> dict[str, TrainArgValue]:
     if values.get("algorithm", "bptt") != "bptt":
         if values.get("recurrent_model", "gru") == "sru_lstm_gated":
             raise ValueError("SRU-LSTM-Gated currently requires --algorithm bptt; SHAC/AHAC are not supported")
-        if values.get("variant", "dcol") != "dcol":
+        if values.get("variant", "terminal") != "terminal":
             raise ValueError("SHAC/AHAC comparisons require --variant dcol")
         if values.get("gradient_projection", "none") != "none":
             raise ValueError("Height-priority projection requires --algorithm bptt")
@@ -184,6 +190,8 @@ def add_train_args(parser):
         camera_batch_size=64,
         lr=None,
         velocity_loss_mode=None,
+        loss_timing=None,
+        position_integration=None,
         height_target_min=defaults["height_target_range"][0],
         height_target_max=defaults["height_target_range"][1],
     )

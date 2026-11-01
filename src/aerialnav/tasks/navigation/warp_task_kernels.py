@@ -10,6 +10,11 @@ from __future__ import annotations
 import torch
 import warp as wp
 
+from aerialnav.training import MAP_SIZE
+
+MAP_HALF_X = wp.constant(MAP_SIZE[0] / 2)
+MAP_HALF_Y = wp.constant(MAP_SIZE[1] / 2)
+
 
 @wp.func
 def _at_least(value: float, lower: float) -> float:
@@ -161,7 +166,7 @@ def navigation_terms_kernel(
     reward_terms[env, 4] = smooth
     reward_terms[env, 5] = height_penalty
     reached[env] = distance < 0.5
-    bounds[env] = p[2] < 0.2 or p[2] > 4.0
+    bounds[env] = p[2] < 0.2 or p[2] > 4.0 or wp.abs(p[0]) > MAP_HALF_X or wp.abs(p[1]) > MAP_HALF_Y
 
 
 @wp.kernel(enable_backward=False)
@@ -190,7 +195,12 @@ def first_events_kernel(
         target[env, 2] - root_state[env, 2],
     )
     hit = collision_gap[env] <= 0.0
-    outside = root_state[env, 2] < 0.2 or root_state[env, 2] > 4.0
+    outside = (
+        root_state[env, 2] < 0.2
+        or root_state[env, 2] > 4.0
+        or wp.abs(root_state[env, 0]) > MAP_HALF_X
+        or wp.abs(root_state[env, 1]) > MAP_HALF_Y
+    )
     bad_state = bool(False)  # noqa: UP018 - mutable Warp scalar in a dynamic loop
     for component in range(13):
         if not wp.isfinite(root_state[env, component]):
@@ -264,7 +274,7 @@ def _check_tensor(name: str, value: torch.Tensor, shape: tuple[int, ...], dtype:
 
 
 class WarpNavigationTerms:
-    """Bind fixed inputs and allocate the upstream observation term dictionary once.
+    """Bind fixed inputs and allocate the original Navigation term dictionary once.
 
     ``selected_indices`` and ``selected_distance_xy`` are the original Torch
     ``distances_xy.topk(min(5, obstacle_count), largest=False)`` outputs. The

@@ -1,4 +1,4 @@
-"""Load a PPO checkpoint through the RSL-RL runner."""
+"""Load a Navigation checkpoint through the official RSL-RL runner."""
 
 from importlib.metadata import version
 from pathlib import Path

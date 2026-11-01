@@ -16,7 +16,7 @@ def test_terminal_failure_cost_is_shared_by_actor_and_td_without_bootstrapping_f
     cfg = DiffNavTrainCfg(algorithm="shac", height_loss_mode="boundary_huber", failure_terminal_cost=300)
     velocity = torch.zeros(2, 3, 3, requires_grad=True)
     history = loss_history(velocity)
-    history["dcol_gap"] = [torch.ones(3, 9), torch.ones(3, 9)]
+    history["collision_gap"] = [torch.ones(3, 9), torch.ones(3, 9)]
     # Failure, success and timeout are different event outcomes.
     failed = torch.tensor([[True, False, False], [False, False, False]])
     history["failure_terminal"] = list(failed)

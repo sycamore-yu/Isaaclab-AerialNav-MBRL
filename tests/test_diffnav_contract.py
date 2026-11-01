@@ -3,7 +3,6 @@
 import importlib.util
 import json
 import math
-import os
 from dataclasses import asdict
 from pathlib import Path
 from types import SimpleNamespace
@@ -346,7 +345,7 @@ def test_dcol_changes_only_collision_gap_and_preserves_approach_weight():
     vectors[0, :, 0] = torch.linspace(2.0, 1.1, 10)
     history["obstacle_signed_distance"] = [vectors.norm(dim=-1)] * 3
     gap = torch.full((3, 1, 9), 0.02, requires_grad=True)
-    history["dcol_gap"] = list(gap.unbind(0))
+    history["collision_gap"] = list(gap.unbind(0))
     original, _, _ = diffnav_transition_costs(
         history,
         DiffNavTrainCfg(
@@ -363,7 +362,7 @@ def test_dcol_changes_only_collision_gap_and_preserves_approach_weight():
         DiffNavTrainCfg(
             physics_dt=0.01,
             policy_dt=0.1,
-            variant="dcol",
+            variant="terminal",
             velocity_loss_mode="full_window",
             height_loss_mode="boundary_huber",
             velocity_window_s=0.2,
@@ -395,13 +394,15 @@ def test_variant_and_height_boundary_configuration():
 
 
 def test_original_network_matches_published_model():
-    reference_root = os.environ.get("DIFFNAV_REFERENCE_ROOT")
-    if not reference_root:
-        pytest.skip("Set DIFFNAV_REFERENCE_ROOT to a pinned upstream checkout")
+    import os
+
+    reference_root = os.environ.get("POLICY_REFERENCE_ROOT")
+    if reference_root is None:
+        pytest.skip("Set POLICY_REFERENCE_ROOT to an upstream policy checkout")
     source = Path(reference_root) / "model.py"
     if not source.exists():
         pytest.skip("Original read-only source checkout is not mounted")
-    spec = importlib.util.spec_from_file_location("upstream_policy_reference_model", source)
+    spec = importlib.util.spec_from_file_location("upstream_reference_model", source)
     reference_module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(reference_module)
     reference = reference_module.Model(10, 6)
@@ -517,7 +518,13 @@ def test_collision_substep_trace_matches_the_model_and_keeps_only_its_causal_gra
     parameters, rotation, cfg = (
         nominal_parameters(1),
         torch.eye(3)[None],
-        DiffNavTrainCfg(physics_dt=0.01, policy_dt=0.1, variant="step", velocity_loss_mode="variant_default"),
+        DiffNavTrainCfg(
+            physics_dt=0.01,
+            policy_dt=0.1,
+            variant="step",
+            velocity_loss_mode="variant_default",
+            position_integration="original",
+        ),
     )
     final, positions = policy_transition(start, command, rotation, parameters, cfg, record_positions=True)
     expected = policy_transition(start, command, rotation, parameters, cfg)
@@ -632,11 +639,23 @@ def test_pre_step_lookahead_preserves_gradient_for_a_crossed_obstacle():
     }
     pre_loss, _, _ = diffnav_transition_costs(
         dict(base, obstacle_signed_distance=[pre_vectors.norm(dim=-1)]),
-        DiffNavTrainCfg(physics_dt=0.01, policy_dt=0.1, variant="step", velocity_loss_mode="variant_default"),
+        DiffNavTrainCfg(
+            physics_dt=0.01,
+            policy_dt=0.1,
+            variant="step",
+            velocity_loss_mode="variant_default",
+            position_integration="original",
+        ),
     )
     post_loss, _, _ = diffnav_transition_costs(
         dict(base, obstacle_signed_distance=[post_vectors.norm(dim=-1)]),
-        DiffNavTrainCfg(physics_dt=0.01, policy_dt=0.1, variant="step", velocity_loss_mode="variant_default"),
+        DiffNavTrainCfg(
+            physics_dt=0.01,
+            policy_dt=0.1,
+            variant="step",
+            velocity_loss_mode="variant_default",
+            position_integration="original",
+        ),
     )
     assert pre_loss["obstacle_avoidance"] > 0
     assert post_loss["obstacle_avoidance"] == 0
@@ -754,6 +773,12 @@ class AnalyticEnv:
         }
         done = torch.tensor([self.total_steps % 2 == 0, False])
         transition["collision"] = done.clone()
+        transition["terminated"] = done.clone()
+        transition["timeout"] = torch.zeros_like(done)
+        callback = getattr(self, "pre_reset_loss_callback", None)
+        if callback is not None:
+            self.pre_reset_loss_callback = None
+            callback(transition)
         if done[0]:
             self.position[0] = torch.tensor([0.0, 0.0, 2.0])
             self.velocity[0] = 0
@@ -882,6 +907,50 @@ def test_stage_handoff_rejects_changed_rollout_length(tmp_path):
         second.load_stage_checkpoint(tmp_path / "first" / "checkpoint_final.pt")
 
 
+def test_same_stage_resume_preserves_learning_state_and_cumulative_counts(tmp_path):
+    env = AnalyticEnv()
+    env.cfg.training_stage = "finetune_s1"
+    env.cfg.wait_before_truncate = 5.0
+    cfg = DiffNavTrainCfg(
+        physics_dt=0.01, policy_dt=0.1, variant="step", timesteps=4, max_iterations=2, velocity_window_s=0.2
+    )
+    first = DiffNavTrainer(env, cfg, tmp_path / "first")
+    first.run()
+    first.lr_scale, first.lr_cap = 0.5, 0.0007
+    checkpoint = tmp_path / "first" / "checkpoint_stopped.pt"
+    first._checkpoint(checkpoint)
+    saved = torch.load(checkpoint, map_location="cpu", weights_only=True)
+    # Version-3 checkpoints before this change have no explicit end contract.
+    del saved["environment"]["episode_end_contract"]
+    torch.save(saved, checkpoint)
+    resumed_env = AnalyticEnv()
+    resumed_env.cfg.training_stage = "finetune_s1"
+    resumed_env.cfg.wait_before_truncate = 10.0
+    second = DiffNavTrainer(resumed_env, cfg, tmp_path / "continued")
+    second.load_stage_checkpoint(checkpoint, resume=True)
+    assert second.completed_updates == second.stage_updates == second.schedule_updates == 2
+    assert second.environment_steps == 2 * cfg.timesteps * env.num_envs
+    assert second.lr_scale == 0.5 and second.lr_cap == 0.0007
+    for name, value in second.model.state_dict().items():
+        torch.testing.assert_close(value, saved["model_state_dict"][name], rtol=0, atol=0)
+    assert all(int(value["step"]) == 2 for value in second.optimizer.state.values())
+    receipt = json.loads((tmp_path / "continued" / "continuation.json").read_text())
+    assert receipt["previous_episode_end_contract"] == "arrival_latched_until_failure_or_timeout_v0"
+    assert receipt["episode_end_contract"] == "diffaero_arrival_wait_final_goal_v2"
+    assert receipt["previous_wait_before_truncate_s"] == 5.0
+    assert receipt["wait_before_truncate_s"] == 10.0
+    result = second.run()
+    assert result["completed_updates"] == result["stage_updates"] == second.schedule_updates == 4
+    assert result["environment_steps"] == 4 * cfg.timesteps * env.num_envs
+    assert all(int(value["step"]) == 4 for value in second.optimizer.state.values())
+    assert result["parent_checkpoint"] == str(checkpoint.resolve()) and result["fresh"] is False
+    incompatible = AnalyticEnv()
+    incompatible.cfg.training_stage = "pretrain_s1"
+    other = DiffNavTrainer(incompatible, cfg, tmp_path / "wrong_stage")
+    with pytest.raises(ValueError, match="matching environment"):
+        other.load_stage_checkpoint(checkpoint, resume=True)
+
+
 def test_stage_handoff_rejects_another_comparison_variant(tmp_path):
     env = AnalyticEnv()
     env.cfg.training_stage = "pretrain_s1"
@@ -981,7 +1050,9 @@ def test_event_randomization_uses_geometry_margin_and_nominal_evaluation():
     env = EventEnv()
     randomize_diffnav_parameters(env, None, body_radius=0.3)
     parameters = env.diffnav_parameters
-    assert bool(((parameters["max_speed"] >= 2.25) & (parameters["max_speed"] <= 9.75)).all())
+    assert bool(((parameters["max_speed"] >= 1.0) & (parameters["max_speed"] <= 6.0)).all())
+    generator = torch.Generator().manual_seed(env.cfg.seed + 1729)
+    torch.testing.assert_close(parameters["max_speed"], 1.0 + 5.0 * torch.rand(16, 1, generator=generator))
     assert bool(((parameters["margin"] >= 0.3) & (parameters["margin"] <= 0.5)).all())
     untouched = {key: value[1:].clone() for key, value in parameters.items()}
     randomize_diffnav_parameters(env, torch.tensor([0]), body_radius=0.3)

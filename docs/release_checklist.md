@@ -1,21 +1,20 @@
-# Local release candidate checklist
+# Release baseline status
 
-| Area | Current state | Evidence or remaining gate |
-|---|---|---|
-| Independent source directory | Complete | Clean export into `opensource_projects/aerialnav-static` |
-| Package / method / task naming | Complete | `aerialnav`, `diffnav`, task IDs and scripts; upstream license notices preserved |
-| Static defaults | Complete in public entrypoints | S0, 300 static, 0 dynamic, PhysX/Torch |
-| Inference weight export | Complete | `weights/best_static_s0.pt`; new and original CPU model outputs bitwise identical on three batches |
-| Training benchmark evidence | Complete | `docs/data/static_training_summary.json` with process wall clock |
-| Source checks | **Passed** | `ruff check`, `compileall`, public identifier scan and TOML/lock project-name consistency |
-| Unit and contract tests | **Passed** | 365 passed, 13 skipped, 38 warnings, 85 subtests. Upstream PPO parity subset: 10 passed with an explicitly supplied source checkout |
-| Simulator smoke | **Blocked: NVIDIA Omniverse EULA not accepted** | First launch requested explicit NVIDIA EULA confirmation. No acceptance was performed on behalf of the user |
-| Independent held-out evaluation | **Not verified** | At least 3 unseen map seeds × 1024 completed episodes; include all failure categories |
-| Optional Newton/Warp parity | **Not verified** | Report separately from PhysX; no unverified speedup claim |
-| External release on GitHub | Not performed | Manual owner review and authorized push |
+The selected profile is [baseline_direct](../configs/baseline_direct.json): dynamic rectangular navigation, original avoidance gradients, linear goal-speed reference, cuRobo SDF/trapezoidal surrogate BPTT, Newton/Warp, and final-state success after the arrival wait.
 
-Static task and baseline PPO share some low-level internal utilities with the upstream multi-obstacle environment. This repository intentionally exposes a static profile without claiming that every underlying helper is intrinsically static-only.
+| Area | Evidence |
+|---|---|
+| Public API and default configuration | `aerialnav` / `diffnav`; `variant=terminal`; baseline-profile contract test |
+| Baseline checkpoint | `weights/baseline_direct.pt`, update 2129; exact CPU outputs and recurrent state at batches 1, 4 and 17 |
+| Legacy checkpoint | `weights/best_static_s0.pt` remains readable; its benchmark is historical |
+| Source and metadata privacy | Full source/docs scan, decoded USD metadata, and both checkpoint metadata scans pass |
+| Regression | 409 passed, 10 skipped, 85 subtests; skipped tests require optional upstream sources |
+| Public export boundary | 10 targeted checks pass, including rejection of unrecognised configuration metadata |
+| Geometry and packaging | cuRobo geometry checks pass; locked dependency resolution, wheel build/import and packaged asset/notices verified |
+| Simulator startup | Blocked by NVIDIA Omniverse EULA acceptance; no simulator result has been inferred from unit tests |
+| Held-out navigation result | Not established for the exported baseline checkpoint; no performance rate advertised |
+| Remote publication | Not performed |
 
-## Naming re-audit (2026-10-31)
+The old Static Gym IDs belonged to the static-only draft. Current task IDs are `Isaac-AerialNav-Depth-v0` and `Isaac-AerialNav-PPO-v0`. File-based training/evaluation/export entrypoints remain available. The optional PPO training entrypoint keeps its static profile; it is not a matched dynamic-task comparison.
 
-The Python package, method identifiers, Gym task IDs, configuration, tests, docs, repository filename list and inference weights were rechecked. Public interfaces no longer use former individual or project-specific names. A mistaken upstream repository / nonexistent license citation was corrected; correct attribution remains in `THIRD_PARTY_NOTICES.md` and the four third-party license files. The standalone public Git history contains no private development ancestry. Repeat the check using `python scripts/audit_release.py`; its current coverage includes release documentation and tracked source paths.
+Review the [publishing workflow](publishing.md) before copying changes to the standalone public repository. Do not merge private development ancestry into this release branch.

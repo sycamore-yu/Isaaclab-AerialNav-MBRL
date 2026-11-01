@@ -1,5 +1,5 @@
 {
-  "profile": "static_obstacle_avoidance",
+  "profile": "legacy_static_obstacle_avoidance",
   "training_stage": "pretrain_s0",
   "algorithm": "bptt",
   "variant": "dcol",

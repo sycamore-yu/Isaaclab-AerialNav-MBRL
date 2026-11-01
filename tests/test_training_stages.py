@@ -8,11 +8,26 @@ from aerialnav.tasks.navigation.curriculum import STAGE_CONFIG, TrainingCurricul
 
 def test_formal_curriculum_starts_without_dynamic_obstacles():
     assert list(STAGE_CONFIG.items()) == [
-        ("pretrain_s0", {"static_obstacles": 300, "dynamic_obstacles": 0, "randomization": False}),
-        ("pretrain_s1", {"static_obstacles": 300, "dynamic_obstacles": 40, "randomization": False}),
-        ("pretrain_s2", {"static_obstacles": 400, "dynamic_obstacles": 120, "randomization": False}),
-        ("finetune_s1", {"static_obstacles": 300, "dynamic_obstacles": 40, "randomization": True}),
-        ("finetune_s2", {"static_obstacles": 400, "dynamic_obstacles": 100, "randomization": True}),
+        (
+            "pretrain_s0",
+            {"static_obstacles": 240, "dynamic_obstacles": 0, "randomization": False, "episode_length_s": 30.0},
+        ),
+        (
+            "pretrain_s1",
+            {"static_obstacles": 360, "dynamic_obstacles": 16, "randomization": False, "episode_length_s": 35.0},
+        ),
+        (
+            "pretrain_s2",
+            {"static_obstacles": 480, "dynamic_obstacles": 32, "randomization": False, "episode_length_s": 40.0},
+        ),
+        (
+            "finetune_s1",
+            {"static_obstacles": 480, "dynamic_obstacles": 32, "randomization": True, "episode_length_s": 40.0},
+        ),
+        (
+            "finetune_s2",
+            {"static_obstacles": 600, "dynamic_obstacles": 48, "randomization": True, "episode_length_s": 45.0},
+        ),
     ]
     curriculum = TrainingCurriculum(10, "cpu", stage="pretrain_s0")
     transition = {
@@ -29,7 +44,7 @@ def test_formal_curriculum_starts_without_dynamic_obstacles():
     curriculum.observe(transition)
     report = curriculum.pop_report(update=2)
     assert report["episodes"] == 10 and report["success_rate"] == 0.8
-    assert report["static_obstacles"] == 300 and report["dynamic_obstacles"] == 0
+    assert report["static_obstacles"] == 240 and report["dynamic_obstacles"] == 0
     assert report["randomization"] is False and report["bounds_rate"] == 0.2
     assert curriculum.stage_passed and not curriculum.acceptance_passed
     assert not curriculum.ready_to_advance

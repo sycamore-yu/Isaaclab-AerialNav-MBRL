@@ -14,7 +14,7 @@ def _cfg(window=4, **overrides):
     values = {
         "physics_dt": 0.01,
         "policy_dt": 0.1,
-        "variant": "dcol",
+        "variant": "terminal",
         "velocity_loss_mode": "truncated_window",
         "velocity_window_s": window * 0.1,
         "coef_v_pred": 0.0,
@@ -45,7 +45,7 @@ def _history(velocity, episode_step, *, target=None, episode=None, **events):
         "episode_step": list(step.unbind(0)),
         "position": list(position.unbind(0)),
         "obstacle_signed_distance": list(vector.norm(dim=-1).unbind(0)),
-        "dcol_gap": [velocity.new_full((batch, 9), 9.7)] * count,
+        "collision_gap": [velocity.new_full((batch, 9), 9.7)] * count,
         "height_target": [velocity.new_full((batch,), 2.0)] * count,
         "height_range": [velocity.new_full((batch, 2), 2.0)] * count,
         "margin": [velocity.new_full((batch,), 0.3)] * count,
@@ -261,12 +261,12 @@ def test_other_six_costs_and_geometry_gradients_remain_exactly_unchanged():
     position = velocity.new_tensor([[[0.0, 0, 3.8]], [[0.0, 0, 4.1]]]).requires_grad_()
     variables = (vector, gap, command, prediction, position)
     for name, value in zip(
-        ("obstacle_vector", "dcol_gap", "command", "velocity_prediction", "position"), variables, strict=True
+        ("obstacle_vector", "collision_gap", "command", "velocity_prediction", "position"), variables, strict=True
     ):
         history[name] = list(value.unbind(0))
     history["obstacle_signed_distance"] = list(vector.norm(dim=-1).unbind(0))
     cfg = DiffNavTrainCfg(
-        physics_dt=0.01, policy_dt=0.1, variant="dcol", velocity_loss_mode="truncated_window", velocity_window_s=0.4
+        physics_dt=0.01, policy_dt=0.1, variant="terminal", velocity_loss_mode="truncated_window", velocity_window_s=0.4
     )
     original, _, original_cost = diffnav_transition_costs(history, replace(cfg, velocity_loss_mode="full_window"))
     complete, _, cost = diffnav_transition_costs(history, cfg)

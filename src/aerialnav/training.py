@@ -7,13 +7,16 @@ from contextlib import contextmanager
 from pathlib import Path
 
 STAGES = ("pretrain_s0", "pretrain_s1", "pretrain_s2", "finetune_s1", "finetune_s2")
-DEFAULT_STAGE = "pretrain_s0"
+MAP_SIZE = (120.0, 40.0)  # X, Y metres.
+END_CLEARANCE = 6.0
+DEFAULT_STAGE = "finetune_s1"
+EPISODE_END_CONTRACT = "diffaero_arrival_wait_final_goal_v2"
 STAGE_CONFIG = {
-    "pretrain_s0": {"static_obstacles": 300, "dynamic_obstacles": 0, "randomization": False},
-    "pretrain_s1": {"static_obstacles": 300, "dynamic_obstacles": 40, "randomization": False},
-    "pretrain_s2": {"static_obstacles": 400, "dynamic_obstacles": 120, "randomization": False},
-    "finetune_s1": {"static_obstacles": 300, "dynamic_obstacles": 40, "randomization": True},
-    "finetune_s2": {"static_obstacles": 400, "dynamic_obstacles": 100, "randomization": True},
+    "pretrain_s0": {"static_obstacles": 240, "dynamic_obstacles": 0, "randomization": False, "episode_length_s": 30.0},
+    "pretrain_s1": {"static_obstacles": 360, "dynamic_obstacles": 16, "randomization": False, "episode_length_s": 35.0},
+    "pretrain_s2": {"static_obstacles": 480, "dynamic_obstacles": 32, "randomization": False, "episode_length_s": 40.0},
+    "finetune_s1": {"static_obstacles": 480, "dynamic_obstacles": 32, "randomization": True, "episode_length_s": 40.0},
+    "finetune_s2": {"static_obstacles": 600, "dynamic_obstacles": 48, "randomization": True, "episode_length_s": 45.0},
 }
 
 

@@ -119,7 +119,7 @@ def test_setting_zero_active_obstacles_does_not_require_a_dynamic_pose_buffer():
 def test_empty_dynamic_geometry_keeps_ground_and_static_gradients(snapshots):
     import torch
 
-    from aerialnav.diffnav.dcol import hybrid_collision_gap
+    from aerialnav.reference.dcol import hybrid_collision_gap
 
     query = torch.tensor([[[0.0, 0.0, 0.6], [0.0, 0.0, 1.2]], [[0.0, 0.0, 0.7], [0.0, 0.0, 1.3]]], requires_grad=True)
     static_closest = query.detach().clone()

@@ -83,13 +83,13 @@ class DiffNavTrainConfigTests(unittest.TestCase):
         self.assertEqual((cfg.ahac_min_horizon, cfg.ahac_initial_horizon, cfg.ahac_max_horizon), (16, 32, 300))
         # A permitted initial H above the previous 150 cap is not silently
         # limited by the independent BPTT timesteps setting.
-        DiffNavTrainCfg(algorithm="ahac", variant="dcol", ahac_initial_horizon=200).validate()
+        DiffNavTrainCfg(algorithm="ahac", variant="terminal", ahac_initial_horizon=200).validate()
 
     def test_default_velocity_mode_uses_terminal_completion_for_continuous_and_dcol(self):
         for variant, expected in (
             ("step", "per_step"),
             ("continuous", "truncated_window"),
-            ("dcol", "truncated_window"),
+            ("terminal", "truncated_window"),
         ):
             with self.subTest(variant=variant):
                 cfg = DiffNavTrainCfg(variant=variant, velocity_loss_mode="variant_default")
@@ -102,7 +102,7 @@ class DiffNavTrainConfigTests(unittest.TestCase):
             for mode in ("per_step", "truncated_window", "full_window"):
                 with self.subTest(algorithm=algorithm, mode=mode):
                     cfg = DiffNavTrainCfg(
-                        variant="dcol", algorithm=algorithm, velocity_loss_mode=mode, velocity_window_s=2.0
+                        variant="terminal", algorithm=algorithm, velocity_loss_mode=mode, velocity_window_s=2.0
                     )
                     cfg.validate()
                     self.assertEqual(cfg.resolved_velocity_loss_mode, "window" if mode == "full_window" else mode)
@@ -126,7 +126,7 @@ class DiffNavTrainConfigTests(unittest.TestCase):
                     _ = cfg.resolved_velocity_loss_mode
         for mode in ("per_step", "truncated_window", "full_window"):
             with self.subTest(mode=mode), self.assertRaisesRegex(ValueError, "velocity_window_s"):
-                DiffNavTrainCfg(variant="dcol", velocity_loss_mode=mode, velocity_window_s=0.125).validate()
+                DiffNavTrainCfg(variant="terminal", velocity_loss_mode=mode, velocity_window_s=0.125).validate()
         with self.assertRaisesRegex(ValueError, "variant"):
             DiffNavTrainCfg(variant="truncated_window").validate()
 
@@ -172,7 +172,7 @@ class DiffNavTrainConfigTests(unittest.TestCase):
                 DiffNavTrainCfg(weight_decay=decay).validate()
 
     def test_height_priority_is_explicit_bptt_only_and_serialized(self):
-        for variant in ("step", "continuous", "dcol"):
+        for variant in ("step", "continuous", "terminal"):
             cfg = DiffNavTrainCfg(variant=variant, gradient_projection="height_priority")
             with self.subTest(variant=variant):
                 cfg.validate()
@@ -181,7 +181,9 @@ class DiffNavTrainConfigTests(unittest.TestCase):
                 self.assertEqual(restored.gradient_projection, "height_priority")
         for algorithm in ("shac", "ahac"):
             with self.subTest(algorithm=algorithm), self.assertRaisesRegex(ValueError, "BPTT"):
-                DiffNavTrainCfg(variant="dcol", algorithm=algorithm, gradient_projection="height_priority").validate()
+                DiffNavTrainCfg(
+                    variant="terminal", algorithm=algorithm, gradient_projection="height_priority"
+                ).validate()
         with self.assertRaisesRegex(ValueError, "gradient_projection"):
             DiffNavTrainCfg(gradient_projection="pcgrad").validate()
 
@@ -198,7 +200,7 @@ class DiffNavTrainConfigTests(unittest.TestCase):
     def test_linear_remains_default_for_every_algorithm(self):
         for algorithm in ("bptt", "shac", "ahac"):
             with self.subTest(algorithm=algorithm):
-                cfg = DiffNavTrainCfg(algorithm=algorithm, variant="dcol")
+                cfg = DiffNavTrainCfg(algorithm=algorithm, variant="terminal")
                 cfg.validate()
                 self.assertEqual(cfg.critic_value_transform, "linear")
 
@@ -206,7 +208,7 @@ class DiffNavTrainConfigTests(unittest.TestCase):
         for algorithm in ("shac", "ahac"):
             for transform in ("linear", "softplus"):
                 with self.subTest(algorithm=algorithm, transform=transform):
-                    cfg = DiffNavTrainCfg(algorithm=algorithm, variant="dcol", critic_value_transform=transform)
+                    cfg = DiffNavTrainCfg(algorithm=algorithm, variant="terminal", critic_value_transform=transform)
                     cfg.validate()
                     payload = json.loads(json.dumps(asdict(cfg)))
                     self.assertEqual(payload["critic_value_transform"], transform)
@@ -218,7 +220,9 @@ class DiffNavTrainConfigTests(unittest.TestCase):
         for algorithm, transform in (("bptt", "softplus"), ("shac", "relu"), ("ahac", ""), ("shac", None)):
             with self.subTest(algorithm=algorithm, transform=transform):
                 with self.assertRaisesRegex(ValueError, "critic_value_transform"):
-                    DiffNavTrainCfg(algorithm=algorithm, variant="dcol", critic_value_transform=transform).validate()
+                    DiffNavTrainCfg(
+                        algorithm=algorithm, variant="terminal", critic_value_transform=transform
+                    ).validate()
 
 
 if __name__ == "__main__":

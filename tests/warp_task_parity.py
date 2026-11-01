@@ -278,9 +278,7 @@ def main():
     navigation = args.project_root / "src/aerialnav/tasks/navigation"
     task_logic = load_module("parity_original_task_logic", navigation / "task_logic.py")
     kernels = load_module("parity_warp_task_kernels", navigation / "warp_task_kernels.py")
-    termination = load_module(
-        "parity_original_termination", args.project_root / "src/aerialnav/diffnav/termination.py"
-    )
+    termination = load_module("parity_original_termination", args.project_root / "src/aerialnav/diffnav/termination.py")
     device = torch.device(args.device)
     wp.init()
     caller_stream = None

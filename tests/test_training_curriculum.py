@@ -77,7 +77,7 @@ def test_aggregate_includes_all_completed_samples_without_step_mean_bias():
     assert next_report["episode_length_mean"] == 1
 
 
-def test_aerialnav_collision_wins_same_step_and_reset_clears_partial_history():
+def test_navigation_collision_wins_same_step_and_reset_clears_partial_history():
     curriculum = TrainingCurriculum(2, "cpu")
     values = {name: torch.tensor([False, False]) for name in ("bounds", "invalid", "timeout")}
     values.update(

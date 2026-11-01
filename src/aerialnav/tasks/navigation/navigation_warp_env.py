@@ -19,6 +19,7 @@ from isaaclab_experimental.envs import DirectRLEnvWarp
 from isaaclab_experimental.envs.interactive_scene_warp import InteractiveSceneWarp
 from isaaclab_experimental.utils.warp_graph_cache import WarpGraphCache
 
+from aerialnav.training import MAP_SIZE
 from aerialnav.warp_control import WarpLeeRotorController
 
 from .navigation_env import DiffNavEnv, NavigationEnv
@@ -271,7 +272,10 @@ class _WarpNavigation:
             collision_gap=self.nearest_obstacle_signed_distance(state[:, :3]) - 0.3,
         )
         self._run_warp("first_events", self._warp_events.launch)
-        return dict(self._warp_events.terms)
+        terms = dict(self._warp_events.terms)
+        if not getattr(self.cfg, "height_bounds_reset", True):
+            terms["bounds"] = (state[:, :2].abs() > state.new_tensor(MAP_SIZE) / 2).any(-1)
+        return terms
 
     def _compute_terms(self):
         state = self.root_state()

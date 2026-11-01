@@ -35,7 +35,7 @@ def ground_history(query_height, terminal_height=None):
         "previous_command": list(zero.unbind(0)),
         "velocity_prediction": list(zero.unbind(0)),
         "observed_velocity": list(zero.unbind(0)),
-        "dcol_gap": list((signed[..., 1:] - 0.3).unbind(0)),
+        "collision_gap": list((signed[..., 1:] - 0.3).unbind(0)),
         **{
             name: [torch.zeros(batch, dtype=torch.bool, device=query_height.device) for _ in range(count)]
             for name in ("done", "collision", "bounds", "timeout", "invalid")
@@ -60,7 +60,7 @@ def original_obstacle_terms(history, cfg):
 
 
 @pytest.mark.parametrize("dtype", (torch.float32, torch.float64))
-@pytest.mark.parametrize("variant", ("step", "continuous", "dcol"))
+@pytest.mark.parametrize("variant", ("step", "continuous", "terminal"))
 def test_all_above_ground_values_and_gradients_are_exactly_unchanged(dtype, variant):
     base = torch.tensor([[0.5, 1.6], [0.8, 2.0], [1.0, 2.5]], dtype=dtype)
     # Descending look-ahead values exercise an approach weight greater than one.
@@ -78,7 +78,7 @@ def test_all_above_ground_values_and_gradients_are_exactly_unchanged(dtype, vari
     torch.testing.assert_close(actual_gradient, expected_gradient, rtol=0, atol=0)
 
 
-@pytest.mark.parametrize("variant", ("step", "continuous", "dcol"))
+@pytest.mark.parametrize("variant", ("step", "continuous", "terminal"))
 def test_below_ground_both_obstacle_terms_and_legacy_boundary_height_restore_upward(variant):
     height = torch.tensor([-0.1, -0.5, -1.5, -2.0], dtype=torch.float64, requires_grad=True)
     query = height[None, :, None].expand(3, -1, 10)
@@ -109,7 +109,7 @@ def test_below_ground_both_obstacle_terms_and_legacy_boundary_height_restore_upw
     torch.testing.assert_close(losses["total"], cost.mean(), rtol=0, atol=0)
 
 
-@pytest.mark.parametrize("variant", ("step", "continuous", "dcol"))
+@pytest.mark.parametrize("variant", ("step", "continuous", "terminal"))
 def test_lookahead_crossing_ground_keeps_the_original_detached_approach_formula(variant):
     query = torch.tensor(
         [[[0.2, 0.15, 0.1, 0.05, 0.02, -0.02, -0.1, -0.2, -0.3, -0.4]]], dtype=torch.float64, requires_grad=True
@@ -133,7 +133,7 @@ def test_lookahead_crossing_ground_keeps_the_original_detached_approach_formula(
 
 
 @pytest.mark.parametrize("query_z,terminal_z,should_penalize", [(2.0, -2.0, False), (-0.5, 2.0, True)])
-@pytest.mark.parametrize("variant", ("step", "continuous", "dcol"))
+@pytest.mark.parametrize("variant", ("step", "continuous", "terminal"))
 def test_ground_geometry_uses_pre_step_queries_not_post_step_or_reset_height(
     query_z,
     terminal_z,
@@ -152,7 +152,7 @@ def test_ground_geometry_uses_pre_step_queries_not_post_step_or_reset_height(
         assert bool((query_gradient[..., 1:] < 0).all())
 
 
-@pytest.mark.parametrize("variant", ("step", "continuous", "dcol"))
+@pytest.mark.parametrize("variant", ("step", "continuous", "terminal"))
 def test_every_variant_uses_signed_ground_for_both_obstacle_terms(variant):
     height = torch.tensor([-0.1, -0.5, 0.5, 2.0], dtype=torch.float64, requires_grad=True)
     query = height[None, :, None].expand(3, -1, 10)
@@ -172,7 +172,7 @@ def test_every_variant_uses_signed_ground_for_both_obstacle_terms(variant):
     assert bool((avoidance_gradient[:2] < 0).all())
 
 
-@pytest.mark.parametrize("variant", ("step", "continuous", "dcol"))
+@pytest.mark.parametrize("variant", ("step", "continuous", "terminal"))
 def test_every_variant_requires_signed_queries_and_rejects_misaligned_samples(variant):
     query = torch.full((3, 1, 10), 2.0)
     history = ground_history(query)

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 import isaaclab.sim as sim_utils
 from isaaclab.assets import AssetBaseCfg, RigidObjectCfg, RigidObjectCollectionCfg
 from isaaclab.envs import DirectRLEnvCfg
@@ -53,7 +55,7 @@ class SharedNavigationSceneCfg(InteractiveSceneCfg):
     class_type = "aerialnav.tasks.navigation.scene:SharedNavigationScene"
 
     drone = make_drone_cfg("{ENV_REGEX_NS}/Hummingbird")
-    terrain = build_terrain_cfg(num_envs=1024, num_obstacles=350, seed=0)
+    terrain = build_terrain_cfg(num_envs=1024, num_obstacles=STAGE_CONFIG[DEFAULT_STAGE]["static_obstacles"], seed=0)
     ground = AssetBaseCfg(
         prim_path="/World/defaultGroundPlane",
         spawn=sim_utils.GroundPlaneCfg(size=(300.0, 300.0), color=(0.1, 0.1, 0.1)),
@@ -169,18 +171,19 @@ class NavigationEventsCfg:
 @configclass
 class NavigationEnvCfg(DirectRLEnvCfg):
     decimation = 1
-    episode_length_s = 35.2
+    episode_length_s = 40.0
     action_space = 3
     observation_space = 202
     state_space = 0
     seed = 0
-    num_static_obstacles: int = 300
-    num_dynamic_obstacles: int = 0
+    num_static_obstacles: int = STAGE_CONFIG[DEFAULT_STAGE]["static_obstacles"]
+    num_dynamic_obstacles: int = STAGE_CONFIG[DEFAULT_STAGE]["dynamic_obstacles"]
     depth_camera_batch_size: int = 16
     training_curriculum: bool = True
-    training_stage: str | None = None
+    training_stage: str | None = DEFAULT_STAGE
     training_stage_config: dict | None = None
     training_report_episodes: int | None = None
+    wait_before_truncate: float = 10.0
     sim_to_real: SimToRealCfg = SimToRealCfg()
     events = NavigationEventsCfg()
     terrain_seed: int = 0
@@ -205,6 +208,11 @@ class NavigationEnvCfg(DirectRLEnvCfg):
 
     def configure_scene(self):
         """Apply task counts after command-line overrides and before launch."""
+        if not math.isfinite(self.wait_before_truncate) or self.wait_before_truncate < 0:
+            raise ValueError("wait_before_truncate must be finite and nonnegative")
+        stage = self.training_stage_config or STAGE_CONFIG.get(self.training_stage)
+        if stage is not None:
+            self.episode_length_s = stage["episode_length_s"]
         newton = isinstance(self.sim.physics, NewtonCfg)
         # Newton's global geometry is read by one camera BVH; movement comes
         # from shared GPU tensors. No dynamic rigid body enters any MJWarp world.
@@ -237,7 +245,7 @@ class NavigationEnvCfg(DirectRLEnvCfg):
                 setattr(self.scene, name, asset_cfg)
         self.scene.lidar.update_period = self.sim.dt * self.decimation
 
-        # Mesh selection follows the upstream obstacle-map and quadcopter configuration.
+        # Navigation ros1/map_manager/cfg/dynamic_map_param.yaml and quadcopter.urdf.
         target = MultiMeshRayCasterCfg.RaycastTargetCfg
         meshes = [
             target(prim_expr="/World/ground", is_shared=True, track_mesh_transforms=False),
@@ -275,7 +283,7 @@ class NavigationEnvCfg(DirectRLEnvCfg):
                 pos=(0.09, 0.0, 0.095), rot=(0.0, 0.0, 0.0, 1.0), convention="world"
             ),
             pattern_cfg=patterns.PinholeCameraPatternCfg.from_intrinsic_matrix(
-                # Scale the upstream camera intrinsics to preserve the original field of view.
+                # Scale the Navigation calibration with the image to preserve its field of view.
                 [554.254691191187 / 4, 0.0, 320.5 / 4, 0.0, 554.254691191187 / 4, 240.5 / 4, 0.0, 0.0, 1.0],
                 width=160,
                 height=120,
@@ -312,12 +320,14 @@ class DiffNavEnvCfg(NavigationEnvCfg):
     num_dynamic_obstacles: int = STAGE_CONFIG[DEFAULT_STAGE]["dynamic_obstacles"]
     training_report_episodes: int | None = 1024
     sim_to_real: SimToRealCfg = SimToRealCfg(enabled=STAGE_CONFIG[DEFAULT_STAGE]["randomization"])
-    variant: str = "dcol"
+    height_bounds_reset: bool = True
+    geometry_backend: str = "curobo_v2"
+    variant: str = "terminal"
     timing: str = "unified_20hz"
     capture_terminal_observation: bool = False
     depth_camera_batch_size: int = 64
     height_target_range: tuple[float, float] = (0.5, 2.5)
-    target_speed_range: tuple[float, float] | None = None
+    target_speed_range: tuple[float, float] | None = (1.0, 6.0)
     decimation = 10
     events = DiffNavEventsCfg()
 
@@ -327,8 +337,10 @@ class DiffNavEnvCfg(NavigationEnvCfg):
         super().__post_init__()
 
     def configure_scene(self):
-        if self.variant not in ("step", "continuous", "dcol"):
+        if self.variant not in ("step", "continuous", "terminal"):
             raise ValueError(f"Unknown DiffNav variant: {self.variant}")
+        if self.geometry_backend not in ("native", "curobo_v2"):
+            raise ValueError("geometry_backend must be native or curobo_v2")
         if self.timing not in ("baseline", "unified_20hz", "unified_50hz"):
             raise ValueError(f"Unknown DiffNav timing: {self.timing}")
         self.sim.dt = {"baseline": 0.01, "unified_20hz": 0.05, "unified_50hz": 0.02}[self.timing]

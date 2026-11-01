@@ -16,7 +16,7 @@ The separately initialized **public repository** is `aerialnav-static`, with `ma
 2. Run the public-source audit and targeted regression checks:
 
    ```bash
-   python scripts/audit_release.py
+   python scripts/audit_release.py --weights
    python -m ruff check src scripts tests
    python -m compileall -q src scripts tests
    PYTHONPATH=src python -m pytest -q -m 'not integration' tests
@@ -59,4 +59,4 @@ The placeholders above are not literal filesystem paths or URLs.
 
 ## Status
 
-The local release is a source release candidate. The simulator smoke check has not completed because the local NVIDIA Omniverse installation requested explicit EULA acceptance. No EULA was accepted and no remote GitHub publication was performed during setup.
+The branch now carries the selected dynamic direct-navigation baseline. The simulator smoke check is awaiting explicit NVIDIA Omniverse EULA acceptance. Source, geometry, metadata and packaging checks are recorded in `docs/release_checklist.md`. No remote GitHub publication has been performed.

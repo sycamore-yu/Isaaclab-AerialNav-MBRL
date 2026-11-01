@@ -26,9 +26,7 @@ def cpu_threads():
 
 
 def test_cell_initialization_multistep_outputs_and_gradients_match_upstream():
-    root = Path(
-        os.environ.get("SRU_REFERENCE_ROOT", "")
-    )
+    root = Path(os.environ.get("SRU_REFERENCE_ROOT", ""))
     source = root / "network/lstm_sru_gate.py"
     if not source.is_file():
         pytest.skip("Set SRU_REFERENCE_ROOT to the pinned upstream checkout for numerical parity")

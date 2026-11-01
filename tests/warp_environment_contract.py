@@ -1,7 +1,7 @@
 """Real Newton/Warp navigation contract checks; run each method in a process.
 
 Examples:
-    .venv/bin/python tests/warp_environment_contract.py --method aerialnav
+    .venv/bin/python tests/warp_environment_contract.py --method navigation
     .venv/bin/python tests/warp_environment_contract.py --method diffnav --variant dcol
     .venv/bin/python tests/warp_environment_contract.py --method diffnav --variant step
     .venv/bin/python tests/warp_environment_contract.py --method diffnav --variant continuous
@@ -199,7 +199,7 @@ def run_contract(env, steps):
             stable = env.episode_id == ids_before
             if bool(stable.any()) and bool((env.diffnav_parameters["dg"][stable] != dg_before[stable]).any()):
                 interval_updates += 1
-            if env.cfg.variant == "dcol":
+            if env.cfg.variant == "terminal":
                 trace = transition["dynamic_positions_by_substep"]
                 assert trace.shape == (env.cfg.decimation, 8, 3)
                 assert bool(torch.isfinite(trace).all())
@@ -239,7 +239,7 @@ def run_contract(env, steps):
             assert interval_updates > 0, "Active DiffNav disturbance never updated within an unchanged episode"
             summary["checks"]["interval_disturbance"] = {"updated_steps": interval_updates}
         else:
-            summary["checks"]["interval_disturbance"] = "not_configured_for_aerialnav"
+            summary["checks"]["interval_disturbance"] = "not_configured_for_navigation"
         assert not torch.equal(initial_motion, env.motion.position), "Shared obstacle process did not advance"
 
         # Consecutive manual partial resets also exercise the _stepping lifetime.
@@ -374,7 +374,7 @@ def run_contract(env, steps):
 def main():
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument("--method", choices=("ppo", "diffnav"), default="ppo")
-    parser.add_argument("--variant", choices=("dcol", "step", "continuous"), default="dcol")
+    parser.add_argument("--variant", choices=("terminal", "step", "continuous"), default="terminal")
     parser.add_argument("--timing", choices=("baseline", "unified_20hz", "unified_50hz"), default="baseline")
     parser.add_argument("--steps", type=int, default=6)
     parser.add_argument("--seed", type=int, default=17)
@@ -423,7 +423,7 @@ def main():
         "dynamic_obstacles": 8,
         "seed": args.seed,
     }
-    task = "Isaac-AerialNav-Static-Depth-v0" if args.method == "diffnav" else "Isaac-AerialNav-Static-PPO-v0"
+    task = "Isaac-AerialNav-Depth-v0" if args.method == "diffnav" else "Isaac-AerialNav-PPO-v0"
     try:
         with launch_simulation(cfg, args):
             env = create_navigation_env(task, cfg, args)

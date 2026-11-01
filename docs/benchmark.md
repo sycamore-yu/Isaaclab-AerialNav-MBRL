@@ -1,4 +1,6 @@
-# Static navigation: training wall-clock benchmark
+# Historical static navigation benchmark
+
+This record belongs to the earlier static-only draft, not the current rectangular SDF/trapezoid baseline. Its first-arrival training success rate is not the new final-state success rate.
 
 **Result:** 80.74% training success after **2,906.783 s (48 min 27 s)**; best observed report **89.48%** after **11,391.278 s (3 h 09 min 51 s)**. These numbers come from a single training run and are not independent evaluation.
 

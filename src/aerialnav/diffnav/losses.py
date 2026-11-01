@@ -176,8 +176,8 @@ def height_target_loss(position, height_target, mode="target_exp", *, reduction=
     raise ValueError("height_target_loss reduction must be none, mean, or sum")
 
 
-def aerialnav_height_loss(position, height_range):
-    """Upstream C1 height penalty with a fixed 0.2 m episode-band margin."""
+def navigation_height_loss(position, height_range):
+    """Original Navigation C1 height penalty, with a fixed 0.2 m episode-band margin."""
     if height_range.shape != (*position.shape[:-1], 2):
         raise ValueError("height_range must match position's leading dimensions with two episode endpoints")
     low, high = height_range.detach().unbind(-1)
@@ -214,7 +214,7 @@ def diffnav_transition_costs(history, cfg, velocity_history=None):
     metric and coefficient name now denote the selected height term. The
     explicit ``boundary_huber`` mode retains the previous boundary penalty.
     """
-    if cfg.variant not in ("step", "continuous", "dcol", "truncated_window"):
+    if cfg.variant not in ("step", "continuous", "terminal", "truncated_window"):
         raise ValueError(f"Unsupported DiffNav loss variant: {cfg.variant}")
     if "obstacle_signed_distance" not in history:
         raise ValueError("DiffNav losses require obstacle_signed_distance from the pre-step look-ahead queries")
@@ -276,6 +276,11 @@ def diffnav_transition_costs(history, cfg, velocity_history=None):
     if obstacle_distance.shape != (timesteps, num_envs, 10):
         raise ValueError("obstacle_signed_distance must match the [T, N, 10] obstacle look-ahead samples")
     distance = obstacle_distance - margin
+    avoidance_distance = (
+        torch.stack(history["avoidance_signed_distance"]) - margin
+        if "avoidance_signed_distance" in history
+        else distance
+    )
     # Ten source look-ahead points include both endpoints: dt_sample = policy_dt / 9.
     approach = (-distance.diff(dim=2) * ((distance.shape[2] - 1) / cfg.policy_dt)).clamp_min(1).detach()
     lateral_cost = 0.0
@@ -284,12 +289,12 @@ def diffnav_transition_costs(history, cfg, velocity_history=None):
             torch.stack(history["relative_velocity"]), torch.stack(history["obstacle_normal"]), distance[:, :, 1:]
         )
         approach = closing.clamp_min(1).detach()
-    collision_gap = torch.stack(history["dcol_gap"]) if cfg.variant == "dcol" else distance[:, :, 1:]
+    collision_gap = torch.stack(history["collision_gap"]) if cfg.variant == "terminal" else distance[:, :, 1:]
     command = torch.stack(history["command"])
     command_previous = torch.stack(history["previous_command"])
     position = torch.stack(history["position"])
     if cfg.height_loss_mode == "goal_height_band":
-        height_cost = aerialnav_height_loss(position, torch.stack(history["height_range"]))
+        height_cost = navigation_height_loss(position, torch.stack(history["height_range"]))
     elif cfg.height_loss_mode == "boundary_huber":
         height_cost = height_boundary_loss(
             position,
@@ -310,7 +315,7 @@ def diffnav_transition_costs(history, cfg, velocity_history=None):
         "velocity_prediction": F.mse_loss(
             torch.stack(history["velocity_prediction"]), torch.stack(history["observed_velocity"]), reduction="none"
         ).mean(dim=-1),
-        "obstacle_avoidance": (approach * (1 - distance[:, :, 1:]).relu().square()).mean(dim=-1)
+        "obstacle_avoidance": (approach * (1 - avoidance_distance[:, :, 1:]).relu().square()).mean(dim=-1)
         + cfg.lateral_avoidance * lateral_cost,
         "collision": (F.softplus(-32 * collision_gap) * approach).mean(dim=-1),
         "acceleration": command.square().sum(dim=-1),

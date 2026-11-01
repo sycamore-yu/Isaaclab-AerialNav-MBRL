@@ -119,7 +119,11 @@ def main():
         random.seed(args.seed)
         np.random.seed(args.seed)
         torch.manual_seed(args.seed)
-        stage_config = STAGE_CONFIG[args.stage]
+        stage_config = STAGE_CONFIG[args.stage] | {
+            "static_obstacles": 300,
+            "dynamic_obstacles": 0,
+            "randomization": False,
+        }
         cfg = NavigationEnvCfg()
         cfg.scene.num_envs = args.num_envs
         cfg.seed = args.seed
@@ -181,7 +185,7 @@ def main():
             "decimation": cfg.decimation,
             "episode_length_s": cfg.episode_length_s,
             "training": agent_cfg.to_dict(),
-            "task": "Isaac-AerialNav-Static-PPO-v0",
+            "task": "Isaac-AerialNav-PPO-v0",
             "optimizer_differences_from_original": [
                 "Official PPO uses a single Adam optimizer and squared value loss without ValueNorm.",
                 "Official actor clipping includes the shared encoder; critic clipping covers its value head.",
@@ -197,7 +201,9 @@ def main():
                 write_json(log_dir / "run_config.json", run_config)
                 write_json(log_dir / "nominal_dynamics.json", env.nominal_dynamics)
                 wrapped = RslRlVecEnvWrapper(env, clip_actions=None)
-                runner = ContinuousNavigationRunner(wrapped, agent_cfg.to_dict(), log_dir=str(log_dir), device=args.device)
+                runner = ContinuousNavigationRunner(
+                    wrapped, agent_cfg.to_dict(), log_dir=str(log_dir), device=args.device
+                )
                 if parent_checkpoint is not None:
                     loaded_infos = runner.load(parent_checkpoint, strict=True, map_location=args.device)
                     initial_updates = int(loaded_infos["completed_updates"])

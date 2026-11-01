@@ -521,7 +521,7 @@ class TerrainDistance:
 
 
 def _closest_dynamic_surface(point, dynamic_position, dynamic_size):
-    """Upstream dynamic surface projection with detached face selection."""
+    """The original Navigation dynamic surface projection, with detached selection."""
     delta = point[:, None] - dynamic_position[None]
     extent = dynamic_size[None] * 0.5
     box = delta.clamp(-extent, extent)
@@ -591,13 +591,22 @@ def dynamic_signed_distance(query, positions, sizes, *, return_index=False):
 
 
 def nearest_obstacle_signed_distance(
-    query, static_signed_distance, dynamic_position, dynamic_size, ground_z=0.01, *, dynamic_velocity=None
+    query,
+    static_signed_distance,
+    dynamic_position,
+    dynamic_size,
+    ground_z=0.01,
+    *,
+    dynamic_velocity=None,
+    dynamic_backend=None,
 ):
     """Minimum signed static/ground/full dynamic surface distance, before radius."""
     if static_signed_distance.shape != query.shape[:-1]:
         raise ValueError("static_signed_distance must have shape query.shape[:-1], not closest-point vectors.")
     fixed = torch.minimum(static_signed_distance, query[..., 2] - ground_z)
-    moving, winner = dynamic_signed_distance(query, dynamic_position, dynamic_size, return_index=True)
+    moving, winner = (dynamic_signed_distance if dynamic_backend is None else dynamic_backend)(
+        query, dynamic_position, dynamic_size, return_index=True
+    )
     distance = torch.minimum(fixed, moving)
     if dynamic_velocity is None:
         return distance

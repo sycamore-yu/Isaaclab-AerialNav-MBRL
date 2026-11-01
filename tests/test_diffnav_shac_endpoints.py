@@ -18,7 +18,7 @@ class EndpointEnv(AnalyticEnv):
     def __init__(self, trigger_step=1):
         super().__init__()
         self.trigger_step = trigger_step
-        self.cfg.variant = "dcol"
+        self.cfg.variant = "terminal"
         self.episode_length_buf = torch.zeros(2, dtype=torch.long)
         self.motion = SimpleNamespace(position=torch.empty(0, 3), velocity=torch.empty(0, 3), size=torch.empty(0, 3))
         self.terrain_distance = SimpleNamespace(signed_distance=lambda q: q[..., 0] * 0 + 100)
@@ -97,7 +97,7 @@ def _run_endpoint_case(tmp_path, trigger_step=1, algorithm="shac", failure_cost=
         failure_terminal_cost=failure_cost,
     )
     trainer = DiffNavTrainer(env, cfg, tmp_path)
-    trainer._dcol_gap = lambda query, radius, positions=None, **kwargs: query[..., 0] * 0 + 5
+    trainer._collision_gap = lambda query, radius, positions=None, **kwargs: query[..., 0] * 0 + 5
     original_initialize = trainer._initialize_critic
     endpoints, values, targets = [], [], []
 

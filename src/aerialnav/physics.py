@@ -7,8 +7,8 @@ import sys
 
 PHYSICS_PRESETS = ("isaacsim_physx", "newton_mjwarp")
 FRONTENDS = ("torch", "warp")
-DEFAULT_PHYSICS = "isaacsim_physx"
-DEFAULT_FRONTEND = "torch"
+DEFAULT_PHYSICS = "newton_mjwarp"
+DEFAULT_FRONTEND = "warp"
 
 
 def validate_runtime(physics: str, frontend: str) -> None:

@@ -14,10 +14,10 @@ from aerialnav.physics import create_navigation_env, parse_physics_args, runtime
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
-    parser.add_argument("--method", choices=("ppo", "diffnav"), default="diffnav")
+    parser.add_argument("--method", choices=("ppo", "diffnav"), default="ppo")
     parser.add_argument("--num_envs", type=int, default=16)
     parser.add_argument("--steps", type=int, default=128)
-    parser.add_argument("--dynamic_obstacles", type=int, default=0)
+    parser.add_argument("--dynamic_obstacles", type=int, default=100)
     parser.add_argument("--output", type=Path, default=Path("logs/smoke/result.json"))
     add_launcher_args(parser)
     parser.set_defaults(visualizer=["none"])
@@ -35,7 +35,7 @@ def main():
     cfg.sim.device = args.device
     select_physics(cfg, args.physics_preset)
     cfg.configure_scene()
-    task = "Isaac-AerialNav-Static-Depth-v0" if args.method == "diffnav" else "Isaac-AerialNav-Static-PPO-v0"
+    task = "Isaac-AerialNav-Depth-v0" if args.method == "diffnav" else "Isaac-AerialNav-PPO-v0"
     with launch_simulation(cfg, args):
         env = create_navigation_env(task, cfg, args)
         try:

@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 import torch
 
-from aerialnav.diffnav.dcol import dynamic_min_alpha, hybrid_collision_gap
+from aerialnav.reference.dcol import dynamic_min_alpha, hybrid_collision_gap
 from aerialnav.tasks.navigation.geometry import (
     TerrainDistance,
     nearest_obstacle_signed_distance,

@@ -33,7 +33,7 @@ def _history(velocity, target=None, episode=None, done=None):
         "obstacle_signed_distance": list(vectors.norm(dim=-1).unbind(0)),
         "height_target": [velocity.new_full((batch,), 2.0)] * count,
         "height_range": [velocity.new_full((batch, 2), 2.0)] * count,
-        "dcol_gap": [velocity.new_full((batch, 9), 9.7)] * count,
+        "collision_gap": [velocity.new_full((batch, 9), 9.7)] * count,
         "margin": [velocity.new_full((batch,), 0.3)] * count,
         "command": list(zero.unbind(0)),
         "previous_command": list(zero.unbind(0)),
@@ -46,7 +46,7 @@ def _velocity_only_cfg(**overrides):
     values = {
         "physics_dt": 0.01,
         "policy_dt": 0.1,
-        "variant": "dcol",
+        "variant": "terminal",
         "velocity_loss_mode": "full_window",
         "coef_v_pred": 0.0,
         "coef_obj_avoidance": 0.0,
@@ -137,7 +137,7 @@ def test_per_step_uses_terminal_velocity_before_same_step_reset():
     assert reset_gradient is None
 
 
-@pytest.mark.parametrize("variant", ("continuous", "dcol"))
+@pytest.mark.parametrize("variant", ("continuous", "terminal"))
 def test_explicit_full_window_retains_known_values_gradients_and_detached_prefix(variant):
     # This is the pre-override W=2 regression case: one environment resets
     # inside the rollout; the other resets between the prefix and rollout.
@@ -209,7 +209,7 @@ def _rich_history():
     position.requires_grad_()
     for name, value in (
         ("obstacle_vector", vectors),
-        ("dcol_gap", gap),
+        ("collision_gap", gap),
         ("command", command),
         ("velocity_prediction", prediction),
         ("position", position),
@@ -238,7 +238,7 @@ def test_step_variant_default_and_override_are_exactly_identical():
 
 def test_dcol_override_preserves_all_six_other_costs_and_their_gradients():
     velocity, history, geometry_and_control = _rich_history()
-    cfg = DiffNavTrainCfg(physics_dt=0.01, policy_dt=0.1, variant="dcol", velocity_loss_mode="full_window")
+    cfg = DiffNavTrainCfg(physics_dt=0.01, policy_dt=0.1, variant="terminal", velocity_loss_mode="full_window")
     original, _, original_cost = diffnav_transition_costs(history, cfg)
     explicit, cache, explicit_cost = diffnav_transition_costs(history, replace(cfg, velocity_loss_mode="per_step"))
     assert original["velocity"] == 0  # Three transitions cannot fill W20.

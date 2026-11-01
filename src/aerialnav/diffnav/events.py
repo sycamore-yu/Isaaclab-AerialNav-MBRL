@@ -49,13 +49,10 @@ def randomize_diffnav_parameters(env, env_ids, body_radius=0.3, target_speed_ran
         return torch.randn(count, *shape, device=env.device, generator=generator)
 
     parameters = env.diffnav_parameters
-    if target_speed_range is None:
-        parameters["max_speed"][env_ids] = (0.75 + 2.5 * uniform(1)) * 3
-    else:
-        low, high = target_speed_range
-        if not (math.isfinite(low) and math.isfinite(high) and 0 < low < high):
-            raise ValueError("target speed range must be finite with 0 < min < max")
-        parameters["max_speed"][env_ids] = low + (high - low) * uniform(1)
+    low, high = (1.0, 6.0) if target_speed_range is None else target_speed_range
+    if not (math.isfinite(low) and math.isfinite(high) and 0 < low < high):
+        raise ValueError("target speed range must be finite with 0 < min < max")
+    parameters["max_speed"][env_ids] = low + (high - low) * uniform(1)
     parameters["z_drag_coef"][env_ids] = 1
     if env.cfg.evaluation or env.cfg.training_stage is not None:
         parameters["margin"][env_ids] = body_radius

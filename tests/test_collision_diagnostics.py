@@ -31,7 +31,7 @@ def test_collision_categories_do_not_count_collision_after_success():
 
 
 def test_dynamic_metrics_match_smooth_face_derivatives_without_equal_scaling():
-    from aerialnav.diffnav.diagnostics import compare_dynamic_metrics
+    from aerialnav.reference.diagnostics import compare_dynamic_metrics
 
     report = compare_dynamic_metrics(
         torch.tensor([[2.0, 0.1, 2.0]], dtype=torch.double),
@@ -57,6 +57,6 @@ def test_cached_static_query_retains_its_live_escape_gradient():
     trainer = SimpleNamespace(env=env, cfg=SimpleNamespace(collision_metric="dcol"))
     points = torch.tensor([[[0.0, 0.0, 2.0]]], requires_grad=True)
     cached = 1 + 0.4 * points[..., 0]
-    gap = DiffNavTrainer._dcol_gap(trainer, points, torch.tensor([0.3]), static_distance=cached)
+    gap = DiffNavTrainer._collision_gap(trainer, points, torch.tensor([0.3]), static_distance=cached)
     assert float(gap.detach()) == pytest.approx(0.7)
     torch.testing.assert_close(torch.autograd.grad(gap.sum(), points)[0], torch.tensor([[[0.4, 0.0, 0.0]]]))

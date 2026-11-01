@@ -11,7 +11,8 @@ from aerialnav.diffnav.actor_critic import (
     CostActorCritic,
     critic_split_indices,
 )
-from aerialnav.diffnav.dcol import height_bounded_gap, hybrid_collision_gap, metric_navigation_gap
+from aerialnav.diffnav.collision import height_bounded_gap, metric_navigation_gap
+from aerialnav.reference.dcol import hybrid_collision_gap
 
 
 def test_single_dangerous_trajectory_is_not_diluted_by_256_environments():
