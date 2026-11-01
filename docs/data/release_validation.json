@@ -46,11 +46,17 @@
   ],
   "held_out_evaluation_verified": false,
   "clean_environment_install_verified": false,
-  "remote_publication_performed": false,
+  "remote_publication_performed": true,
   "regression": {
     "passed": 410,
     "skipped": 10,
     "subtests_passed": 85,
     "config_checks_after_message_cleanup": 16
+  },
+  "publication": {
+    "url": "https://github.com/sycamore-yu/Isaaclab-diff-aerialnav",
+    "visibility": "public",
+    "branch": "main",
+    "initial_published_commit": "0ce8d1079d98e89dbe6eda244f35067f6e1d92e1"
   }
 }

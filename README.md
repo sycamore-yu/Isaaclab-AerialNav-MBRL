@@ -18,6 +18,8 @@ Successful flights with the packaged GRU policy. Cyan marks the flown path; gree
 Linux, an NVIDIA GPU, and Python 3.12 are required. From the repository root:
 
 ```bash
+git clone https://github.com/sycamore-yu/Isaaclab-diff-aerialnav.git
+cd Isaaclab-diff-aerialnav
 uv sync --frozen --extra curobo
 ```
 

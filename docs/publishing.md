@@ -8,7 +8,7 @@ The original development repository maintains a **history-isolated** Git branch:
 
 Its contents are also checked out in a dedicated worktree. This branch has **no shared ancestor** with the development `main`; it was bootstrapped from the sanitized public repository, not from the development history.
 
-The separately initialized **public repository** is `aerialnav-static`, with `main` as its publication branch. It is the **only** repository that should be connected to the future public GitHub remote.
+The separately initialized **public checkout** is `aerialnav-static`, with `main` as its publication branch. It is connected to [sycamore-yu/Isaaclab-diff-aerialnav](https://github.com/sycamore-yu/Isaaclab-diff-aerialnav). It is the **only** checkout connected to that public GitHub remote.
 
 ## Update workflow
 
@@ -61,4 +61,4 @@ The placeholders above are not literal filesystem paths or URLs.
 
 ## Status
 
-The branch now carries the selected dynamic direct-navigation baseline. The user-authorized N4 simulator smoke passed: two training updates and four packaged-checkpoint inference episodes. A full held-out evaluation remains outstanding. Source, geometry, metadata and packaging checks are recorded in `docs/release_checklist.md`. No remote GitHub publication has been performed.
+The selected dynamic direct-navigation baseline is published on GitHub, together with optional SRU training and successful static/dynamic flight demos. The user-authorized N4 simulator smoke passed: two training updates and four packaged-checkpoint inference episodes. A full held-out evaluation remains outstanding. Source, geometry, metadata and packaging checks are recorded in `docs/release_checklist.md`.

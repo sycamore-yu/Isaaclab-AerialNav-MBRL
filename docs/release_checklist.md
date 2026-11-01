@@ -15,7 +15,7 @@ The selected profile is [baseline_direct](../configs/baseline_direct.json): dyna
 | Simulator smoke | User-authorized EULA acceptance; N4 Newton/Warp training completed 2 updates, no nonfinite states/gradients; packaged baseline inference completed 4 episodes (2 success, 2 timeout) |
 | Held-out navigation result | Not established for the exported baseline checkpoint; no performance rate advertised |
 | Flight demos | Static and moving-obstacle successful rollouts with the packaged checkpoint, real-time MP4 and GIF previews; [recording details](data/flight_demos.json) |
-| Remote publication | Not performed |
+| Remote publication | Published on GitHub as [sycamore-yu/Isaaclab-diff-aerialnav](https://github.com/sycamore-yu/Isaaclab-diff-aerialnav), public `main`; only the isolated release history was pushed |
 
 The old Static Gym IDs belonged to the static-only draft. Current task IDs are `Isaac-AerialNav-Depth-v0` and `Isaac-AerialNav-PPO-v0`. File-based training/evaluation/export entrypoints remain available. The optional PPO training entrypoint keeps its static profile; it is not a matched dynamic-task comparison.
 
