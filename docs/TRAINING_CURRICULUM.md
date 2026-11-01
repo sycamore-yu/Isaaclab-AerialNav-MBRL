@@ -35,6 +35,10 @@
 
 同阶段继续训练使用 `run_acceptance.py --resume_checkpoint <checkpoint_stopped.pt> --start_stage <原阶段> --output <新目录>`；非 S0 继续运行仍需 `--screening`。恢复模型、优化器、归一化、学习率调度、Torch CPU/CUDA RNG、累计更新与样本数；重建环境和时序历史，重新统计报告、最佳成绩与恢复档位。新目录保留父检查点和新旧回合协议，不覆盖历史。到达等待时长可随协议调整，继续训练记录旧值与新值并重新累计报告。`train_zhang.py --resume_checkpoint` 可用于单阶段继续；`--checkpoint` 仍严格用于前一阶段交接。
 
+终点参考的新训练默认值为 `--goal_speed_profile smooth --goal_approach_time_s 2.0`。旧检查点的恢复、阶段交接和独立推理保留其保存的公式；缺少字段的历史检查点按 `linear` 读取。同阶段显式迁移允许修改这两个字段，`continuation.json` 记录新旧值，累计更新、优化器和学习率调度不重启。四组指定实验此次显式迁移并沿用各自原 TensorBoard 目录，在 `Protocol/goal_reference` 和 `Goal/profile_smooth` 标记变更步数；历史事件不改写。
+
+平滑曲线同时用于速度监督参考和原 10 维策略状态中的目标速度特征；最终通行门控复用完整地图距离查询，新机制的推理因此也需要该查询。它不改变现有 2 秒速度窗口、避障／碰撞损失和 10 秒到达等待。`Goal/goal_active_fraction`、`Goal/goal_smooth_weight` 记录每次展开中门控启用比例和平均权重，`Goal/goal_reference_speed_mps` 是局部避障修改前的名义目标参考速度，不是实测飞行速度。详见[设计及验证](SMOOTH_GOAL_APPROACH_20261101.md)。
+
 每个阶段重置全部回合、循环网络状态、观测历史、动作历史和速度窗口。微调 S1 加载本次预训练 S2 的权重，重新开始低难度课程并开启扰动。正式运行没有更新次数上限；`--max_iterations` 只用于短检查。
 
 同阶段性能恢复按 [分档恢复协议](migration/RECOVERY_LADDER_20261029.md) 执行：三份稳定报告建立5%起、每5个百分点一档的历史，连续退化先减半学习率，再观察三份仍退化才恢复同阶段最高稳定档。首次80%报告仍可晋级，未有三份稳定报告则不能标记stable80。恢复不会倒退累计样本、真实报告或晋级事实；恢复时重置环境、GRU、延迟和速度历史。它不允许加载别的实验或跨阶段的最好模型。

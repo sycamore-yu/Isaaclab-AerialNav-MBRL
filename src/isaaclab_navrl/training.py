@@ -42,6 +42,7 @@ def write_training_scalars(writer, metrics, update):
         ),
         "Optimization": ("learning_rate", "grad_norm"),
         "Timing": ("process_elapsed_s", "update_s", "environment_steps", "rollout_steps"),
+        "Goal": ("goal_smooth_weight", "goal_active_fraction", "goal_reference_speed_mps"),
         "Motion": (
             "mean_altitude_m",
             "mean_horizontal_speed_mps",

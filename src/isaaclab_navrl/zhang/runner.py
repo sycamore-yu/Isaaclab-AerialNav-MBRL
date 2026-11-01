@@ -307,6 +307,7 @@ class ZhangTrainer:
                         "position_integration": payload["train_cfg"].get("position_integration", "original"),
                         "geometry_backend": payload["train_cfg"].get("geometry_backend", "native"),
                         "avoidance_gradient": payload["train_cfg"].get("avoidance_gradient", "original"),
+                        "goal_speed_profile": payload["train_cfg"].get("goal_speed_profile", "linear"),
                     }
                 )
             )
@@ -314,6 +315,7 @@ class ZhangTrainer:
         allowed_stage_changes = {"lr", "max_iterations", "stop_after_acceptance", "gradient_diagnostic_updates"}
         if resume:
             allowed_stage_changes.remove("lr")
+            allowed_stage_changes.update(("goal_speed_profile", "goal_approach_time_s"))
         for name, value in asdict(self.cfg).items():
             if name not in allowed_stage_changes and saved_config[name] != value:
                 raise ValueError(f"Stage transitions cannot change {name}")
@@ -381,6 +383,10 @@ class ZhangTrainer:
                         "episode_end_contract", "arrival_latched_until_failure_or_timeout_v0"
                     ),
                     "episode_end_contract": EPISODE_END_CONTRACT,
+                    "previous_goal_speed_profile": saved_config["goal_speed_profile"],
+                    "goal_speed_profile": self.cfg.goal_speed_profile,
+                    "previous_goal_approach_time_s": saved_config["goal_approach_time_s"],
+                    "goal_approach_time_s": self.cfg.goal_approach_time_s,
                     "previous_wait_before_truncate_s": payload["environment"].get("wait_before_truncate_s"),
                     "wait_before_truncate_s": getattr(self.env.cfg, "wait_before_truncate", 10.0),
                     "restored": [
@@ -564,6 +570,8 @@ class ZhangTrainer:
             "recurrent_model": self.cfg.recurrent_model,
             "collision_metric": self.cfg.collision_metric,
             "geometry_backend": self.cfg.geometry_backend,
+            "goal_speed_profile": self.cfg.goal_speed_profile,
+            "goal_approach_time_s": self.cfg.goal_approach_time_s,
             "avoidance_gradient": self.cfg.avoidance_gradient,
             "approach_mode": self.cfg.approach_mode,
             "lateral_avoidance": self.cfg.lateral_avoidance,
@@ -652,6 +660,12 @@ class ZhangTrainer:
         lookahead = torch.linspace(0, self.cfg.policy_dt, 10, device=self.env.device)[None, :, None]
         writer = SummaryWriter(str(tensorboard_directory(self.log_dir)))
         writer.add_text("Protocol/episode_end_contract", EPISODE_END_CONTRACT, self.completed_updates)
+        writer.add_text(
+            "Protocol/goal_reference",
+            f"profile={self.cfg.goal_speed_profile}; approach_time_s={self.cfg.goal_approach_time_s}",
+            self.completed_updates,
+        )
+        writer.add_scalar("Goal/profile_smooth", float(self.cfg.goal_speed_profile == "smooth"), self.completed_updates)
         if self.cfg.variant == "continuous":
             write_json(
                 self.log_dir / "continuous_geometry.json",
@@ -745,6 +759,25 @@ class ZhangTrainer:
                                 observation_history,
                             ).detach()
                         )
+                    from .goal import final_approach_weight
+
+                    goal_weight = None
+                    if self.cfg.goal_speed_profile == "smooth":
+                        goal_weight = final_approach_weight(
+                            self.env,
+                            state.position,
+                            observation["target"],
+                            parameters["max_speed"],
+                            parameters["margin"],
+                            self.cfg.goal_approach_time_s,
+                        )
+                    if goal_weight is not None:
+                        history["goal_smooth_weight"].append(goal_weight)
+                    goal_options = dict(
+                        goal_speed_profile=self.cfg.goal_speed_profile,
+                        goal_approach_time_s=self.cfg.goal_approach_time_s,
+                        goal_clear_weight=goal_weight,
+                    )
                     _, heading, target_velocity, rotation = policy_state(
                         state.position,
                         state.velocity,
@@ -752,7 +785,10 @@ class ZhangTrainer:
                         observation["target"],
                         parameters["max_speed"],
                         parameters["margin"],
+                        **goal_options,
                     )
+                    if goal_weight is not None:
+                        history["goal_reference_speed"].append(target_velocity.detach().norm(dim=-1))
                     observation_history.push(
                         torch.cat((state.position, state.velocity), dim=-1), observation["input_delay_steps"]
                     )
@@ -763,6 +799,7 @@ class ZhangTrainer:
                         observation["policy_target"],
                         parameters["max_speed"],
                         parameters["margin"],
+                        **goal_options,
                     )
                     # Camera output is a reused buffer and must not overwrite saved CNN inputs.
                     depth = observation["policy_depth_features"].detach().clone()
@@ -1139,6 +1176,13 @@ class ZhangTrainer:
                         {f"Critic/{name}": value for name, value in self.critic_monitor.after_step().items()}
                     )
                 rollout_metrics = rollout_diagnostics(history)
+                if history["goal_smooth_weight"]:
+                    weights = torch.stack(history["goal_smooth_weight"])
+                    rollout_metrics.update(
+                        goal_smooth_weight=float(weights.mean()),
+                        goal_active_fraction=float((weights > 0).float().mean()),
+                        goal_reference_speed_mps=float(torch.stack(history["goal_reference_speed"]).mean()),
+                    )
                 if self.horizon_controller is not None:
                     terminal_fraction = float(torch.stack(history["absorbing_terminal"]).any(dim=0).float().mean())
                     algorithm_metrics.update(

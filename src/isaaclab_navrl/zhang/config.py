@@ -26,6 +26,8 @@ class ZhangTrainCfg:
     collision_metric: Literal["sdf"] = "sdf"
     position_integration: Literal["original", "trapezoid"] | None = None
     geometry_backend: Literal["native", "curobo_v2"] = "curobo_v2"
+    goal_speed_profile: Literal["linear", "smooth"] = "smooth"
+    goal_approach_time_s: float = 2.0
     avoidance_gradient: Literal["original", "reshaped"] = "original"
     perception: Literal["depth"] = "depth"
     approach_mode: Literal["finite_difference", "relative"] = "finite_difference"
@@ -112,6 +114,10 @@ class ZhangTrainCfg:
 
     def validate(self) -> None:
         self.validate_collision_metric()
+        if self.goal_speed_profile not in ("linear", "smooth"):
+            raise ValueError("goal_speed_profile must be linear or smooth")
+        if not math.isfinite(self.goal_approach_time_s) or self.goal_approach_time_s <= 0:
+            raise ValueError("goal_approach_time_s must be finite and positive")
         if self.avoidance_gradient not in ("original", "reshaped"):
             raise ValueError("avoidance_gradient must be original or reshaped")
         if self.avoidance_gradient == "reshaped" and (

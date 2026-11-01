@@ -87,10 +87,20 @@ def main(*, reference_dcol=False):
         parser.error("Later stages require the previous checkpoint or explicit --fresh_stage comparison")
     if args.log_dir.exists() and any(args.log_dir.iterdir()):
         parser.error("Each training stage requires a new or empty --log_dir")
-    if args.resume_checkpoint is not None and args.lr is None:
+    saved_train = None
+    if args.resume_checkpoint is not None or args.checkpoint is not None:
         import torch
 
-        args.lr = torch.load(args.resume_checkpoint, map_location="cpu", weights_only=True)["train_cfg"]["lr"]
+        saved_train = torch.load(args.resume_checkpoint or args.checkpoint, map_location="cpu", weights_only=True)[
+            "train_cfg"
+        ]
+    # An existing checkpoint retains its feature meaning unless explicitly migrated.
+    if args.goal_speed_profile is None:
+        args.goal_speed_profile = saved_train.get("goal_speed_profile", "linear") if saved_train else "smooth"
+    if args.goal_approach_time_s is None:
+        args.goal_approach_time_s = saved_train.get("goal_approach_time_s", 2.0) if saved_train else 2.0
+    if args.resume_checkpoint is not None and args.lr is None:
+        args.lr = saved_train["lr"]
     args.lr = (
         args.lr
         if args.lr is not None

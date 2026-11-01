@@ -790,6 +790,7 @@ def test_two_bptt_updates_survive_resets_and_save_independent_inference(tmp_path
     torch.manual_seed(3)
     env = AnalyticEnv()
     cfg = ZhangTrainCfg(
+        goal_speed_profile="linear",
         recurrent_model=recurrent_model,
         physics_dt=0.01,
         policy_dt=0.1,
@@ -907,7 +908,13 @@ def test_same_stage_resume_preserves_learning_state_and_cumulative_counts(tmp_pa
     env.cfg.training_stage = "finetune_s1"
     env.cfg.wait_before_truncate = 5.0
     cfg = ZhangTrainCfg(
-        physics_dt=0.01, policy_dt=0.1, variant="step", timesteps=4, max_iterations=2, velocity_window_s=0.2
+        goal_speed_profile="linear",
+        physics_dt=0.01,
+        policy_dt=0.1,
+        variant="step",
+        timesteps=4,
+        max_iterations=2,
+        velocity_window_s=0.2,
     )
     first = ZhangTrainer(env, cfg, tmp_path / "first")
     first.run()
@@ -917,11 +924,14 @@ def test_same_stage_resume_preserves_learning_state_and_cumulative_counts(tmp_pa
     saved = torch.load(checkpoint, map_location="cpu", weights_only=True)
     # Version-3 checkpoints before this change have no explicit end contract.
     del saved["environment"]["episode_end_contract"]
+    del saved["train_cfg"]["goal_speed_profile"]
+    del saved["train_cfg"]["goal_approach_time_s"]
     torch.save(saved, checkpoint)
     resumed_env = AnalyticEnv()
     resumed_env.cfg.training_stage = "finetune_s1"
     resumed_env.cfg.wait_before_truncate = 10.0
-    second = ZhangTrainer(resumed_env, cfg, tmp_path / "continued")
+    resumed_cfg = ZhangTrainCfg(**(asdict(cfg) | {"goal_speed_profile": "smooth"}))
+    second = ZhangTrainer(resumed_env, resumed_cfg, tmp_path / "continued")
     second.load_stage_checkpoint(checkpoint, resume=True)
     assert second.completed_updates == second.stage_updates == second.schedule_updates == 2
     assert second.environment_steps == 2 * cfg.timesteps * env.num_envs
@@ -934,6 +944,9 @@ def test_same_stage_resume_preserves_learning_state_and_cumulative_counts(tmp_pa
     assert receipt["episode_end_contract"] == "diffaero_arrival_wait_final_goal_v2"
     assert receipt["previous_wait_before_truncate_s"] == 5.0
     assert receipt["wait_before_truncate_s"] == 10.0
+    assert receipt["previous_goal_speed_profile"] == "linear"
+    assert receipt["goal_speed_profile"] == "smooth"
+    assert receipt["goal_approach_time_s"] == 2.0
     result = second.run()
     assert result["completed_updates"] == result["stage_updates"] == second.schedule_updates == 4
     assert result["environment_steps"] == 4 * cfg.timesteps * env.num_envs
@@ -1009,6 +1022,7 @@ def test_bptt_curriculum_resets_temporal_history_without_recreating_optimizer(tm
 
     env = CurriculumEnv()
     cfg = ZhangTrainCfg(
+        goal_speed_profile="linear",
         physics_dt=0.01,
         policy_dt=0.1,
         variant="step",

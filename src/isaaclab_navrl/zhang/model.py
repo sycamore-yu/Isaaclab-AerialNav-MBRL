@@ -80,7 +80,18 @@ def quaternion_matrix(quaternion):
     ).reshape(*quaternion.shape[:-1], 3, 3)
 
 
-def policy_state(position, velocity, quaternion, target, max_speed, margin):
+def policy_state(
+    position,
+    velocity,
+    quaternion,
+    target,
+    max_speed,
+    margin,
+    *,
+    goal_speed_profile="linear",
+    goal_approach_time_s=2.0,
+    goal_clear_weight=None,
+):
     rotation = quaternion_matrix(quaternion.detach())
     forward = rotation[:, :, 0].clone()
     forward[:, 2] = 0
@@ -88,9 +99,16 @@ def policy_state(position, velocity, quaternion, target, max_speed, margin):
     up = torch.zeros_like(forward)
     up[:, 2] = 1
     heading = torch.stack((forward, torch.cross(up, forward, dim=-1), up), dim=-1)
-    target_raw = target.detach() - position.detach()
-    target_norm = target_raw.norm(dim=-1, keepdim=True)
-    target_velocity = target_raw / target_norm.clamp_min(1e-6) * torch.minimum(target_norm, max_speed)
+    from .goal import goal_velocity
+
+    target_velocity = goal_velocity(
+        position,
+        target,
+        max_speed,
+        profile=goal_speed_profile,
+        approach_time_s=goal_approach_time_s,
+        clear_weight=goal_clear_weight,
+    )
     local_velocity = torch.einsum("bi,bij->bj", velocity, heading)
     local_target = torch.einsum("bi,bij->bj", target_velocity, heading)
     state = torch.cat((local_velocity, local_target, rotation[:, 2], margin[:, None]), dim=-1)

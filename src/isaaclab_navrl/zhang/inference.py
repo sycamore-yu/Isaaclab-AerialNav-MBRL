@@ -27,6 +27,7 @@ class ZhangInference:
                 payload["train_cfg"]
                 | {
                     "collision_metric": "sdf",
+                    "goal_speed_profile": payload["train_cfg"].get("goal_speed_profile", "linear"),
                     "position_integration": payload["train_cfg"].get("position_integration", "original"),
                     "geometry_backend": self.training_geometry_backend,
                 }
@@ -52,6 +53,18 @@ class ZhangInference:
         self.hidden[reset] = 0
         self.episode_id.copy_(observation["episode_id"])
         parameters = self.env.zhang_parameters
+        from .goal import final_approach_weight
+
+        goal_weight = None
+        if self.cfg.goal_speed_profile == "smooth":
+            goal_weight = final_approach_weight(
+                self.env,
+                observation["position"],
+                observation["target"],
+                parameters["max_speed"],
+                parameters["margin"],
+                self.cfg.goal_approach_time_s,
+            )
         state, heading, _, _ = policy_state(
             observation["policy_position"],
             observation["policy_velocity"],
@@ -59,6 +72,9 @@ class ZhangInference:
             observation["policy_target"],
             parameters["max_speed"],
             parameters["margin"],
+            goal_speed_profile=self.cfg.goal_speed_profile,
+            goal_approach_time_s=self.cfg.goal_approach_time_s,
+            goal_clear_weight=goal_weight,
         )
         depth, state = self.normalizer.normalize(
             observation["policy_depth_features"], state, self.normalization_snapshot

@@ -56,6 +56,8 @@ TRAIN_ARG_TYPES = {
     "collision_metric": str,
     "position_integration": str,
     "geometry_backend": str,
+    "goal_speed_profile": str,
+    "goal_approach_time_s": float,
     "avoidance_gradient": str,
     "approach_mode": str,
     "lateral_avoidance": float,
@@ -184,6 +186,8 @@ def add_train_args(parser):
     defaults = asdict(ZhangTrainCfg())
     defaults.update(
         timing="unified_20hz",
+        goal_speed_profile=None,
+        goal_approach_time_s=None,
         num_dynamic_obstacles=None,
         target_speed_min=None,
         target_speed_max=None,
