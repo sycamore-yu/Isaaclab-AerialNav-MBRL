@@ -23,8 +23,8 @@ def record_arrival(arrived, arrive_time, reached, elapsed_s):
     arrived |= reached
 
 
-def arrival_wait_timeout(arrived, arrive_time, elapsed_s, wait_before_truncate):
-    return arrived & (elapsed_s - arrive_time >= wait_before_truncate)
+def arrival_wait_timeout(in_goal, arrive_time, elapsed_s, wait_before_truncate):
+    return in_goal & (elapsed_s > arrive_time + wait_before_truncate)
 
 
 @torch.no_grad()

@@ -1,4 +1,4 @@
-"""Arrival starts a deadline; only the final goal occupancy counts as success."""
+"""DiffAero arrival wait gates on current goal occupancy and the first entry time."""
 
 import pytest
 import torch
@@ -21,7 +21,10 @@ def test_first_arrival_time_is_not_restarted_when_leaving_and_returning():
         record_arrival(arrived, arrive_time, torch.tensor([reached]), torch.tensor([time]))
         assert arrived.item() and arrive_time.item() == 1.0
     assert not arrival_wait_timeout(arrived, arrive_time, torch.tensor([5.99]), 5.0).item()
-    assert arrival_wait_timeout(arrived, arrive_time, torch.tensor([6.0]), 5.0).item()
+    assert not arrival_wait_timeout(torch.tensor([True]), arrive_time, torch.tensor([6.0]), 5.0).item()
+    assert arrival_wait_timeout(torch.tensor([True]), arrive_time, torch.tensor([6.05]), 5.0).item()
+    assert not arrival_wait_timeout(torch.tensor([False]), arrive_time, torch.tensor([7.0]), 5.0).item()
+    assert arrival_wait_timeout(torch.tensor([True]), arrive_time, torch.tensor([8.0]), 5.0).item()
     assert not termination_mask(terms(True)).item()
     assert not arrival_wait_timeout(torch.tensor([False]), torch.zeros(1), torch.tensor([100.0]), 5.0).item()
 
@@ -50,8 +53,8 @@ def test_continuous_failure_before_arrival_cannot_become_success():
     assert terminal_outcomes(terms(True), torch.tensor([True]), history).item() == 2
 
 
-@pytest.mark.parametrize("early_episode_timeout", [False, True])
-def test_training_and_evaluation_wait_for_final_result(early_episode_timeout):
+@pytest.mark.parametrize("episode_end_time", [3.0, 35.0])
+def test_training_and_evaluation_wait_for_final_result(episode_end_time):
     curriculum = TrainingCurriculum(2, "cpu", stage="pretrain_s1")
     evaluation = EpisodeEvaluation([[0, 0, 2]] * 2, [[1, 0, 2]] * 2, 17)
     transition = dict(
@@ -73,13 +76,13 @@ def test_training_and_evaluation_wait_for_final_result(early_episode_timeout):
     curriculum.observe(transition)
     evaluation.update(transition)
     assert curriculum.pop_report() is None and evaluation.rows == [None, None]
-    # One drone leaves. The other stays; even an earlier total time limit uses the final predicate.
+    # The existing episode time limit scores final occupancy, including an early timeout.
     transition.update(
         reached=torch.tensor([False, True]),
         timeout=torch.ones(2, dtype=torch.bool),
         terminal_event_code=torch.tensor([5, 1]),
-        time_s=torch.full((2,), 3.0 if early_episode_timeout else 6.0),
-        step=torch.full((2,), 60 if early_episode_timeout else 120),
+        time_s=torch.full((2,), episode_end_time),
+        step=torch.full((2,), int(episode_end_time * 20)),
     )
     curriculum.observe(transition)
     evaluation.update(transition)
@@ -90,7 +93,7 @@ def test_training_and_evaluation_wait_for_final_result(early_episode_timeout):
     assert evaluation.summary()["success_rate"] == 0.5
     assert evaluation.summary()["success_time_mean_s"] == 1.0
     assert evaluation.rows[1]["arrive_time"] == 1.0
-    assert evaluation.rows[1]["time_s"] == (3.0 if early_episode_timeout else 6.0)
+    assert evaluation.rows[1]["time_s"] == episode_end_time
     assert curriculum.pop_report() is None
 
 

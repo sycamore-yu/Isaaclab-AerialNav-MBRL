@@ -929,7 +929,7 @@ def test_same_stage_resume_preserves_learning_state_and_cumulative_counts(tmp_pa
     assert all(int(value["step"]) == 2 for value in second.optimizer.state.values())
     receipt = json.loads((tmp_path / "continued" / "continuation.json").read_text())
     assert receipt["previous_episode_end_contract"] == "arrival_latched_until_failure_or_timeout_v0"
-    assert receipt["episode_end_contract"] == "arrival_wait_final_goal_v1"
+    assert receipt["episode_end_contract"] == "diffaero_arrival_wait_final_goal_v2"
     result = second.run()
     assert result["completed_updates"] == result["stage_updates"] == second.schedule_updates == 4
     assert result["environment_steps"] == 4 * cfg.timesteps * env.num_envs

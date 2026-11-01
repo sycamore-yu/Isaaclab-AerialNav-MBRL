@@ -312,7 +312,7 @@ class NavRLEnv(DirectRLEnv):
         terminated = self._termination_mask(terms)
         elapsed_s = self.episode_length_buf.float() * self.step_dt
         record_arrival(self.arrived, self.arrive_time, terms["reached"], elapsed_s)
-        wait_expired = arrival_wait_timeout(self.arrived, self.arrive_time, elapsed_s, self.cfg.wait_before_truncate)
+        wait_expired = arrival_wait_timeout(terms["reached"], self.arrive_time, elapsed_s, self.cfg.wait_before_truncate)
         episode_timeout = self.episode_length_buf >= self.max_episode_length
         timed_out = episode_timeout | wait_expired
         outcome = terminal_outcomes(terms, terminated | timed_out, self._episode_failure)

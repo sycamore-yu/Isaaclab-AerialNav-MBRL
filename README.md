@@ -33,7 +33,7 @@ PYTHONPATH=src .venv/bin/python scripts/run_comparison_queue.py \
 
 默认对照为：原梯度／论文侧向梯度重塑 × 直接 fS1／完整课程，共四组，均从随机权重开始，seed 0。每份报告至少 1024 个自然完成回合，没有训练更新上限；课程在一个完整报告达到 80% 时晋级，fS2 达标后继续训练以观察保持情况。
 
-训练与评测默认在首次进入目标 0.5 m 区域后记录 `arrived/arrive_time`，等待 `wait_before_truncate=5 s`，等待到期或原回合条件触发后重置；成功要求回合结束时仍在目标区且未发生失败。离开或重新进入不重启首次到达计时。旧记录保留，新机制继续训练使用独立目录与 `--resume_checkpoint`，详见[训练课程](docs/TRAINING_CURRICULUM.md)。
+训练与评测默认在首次进入目标 0.5 m 区域后记录 `arrived/arrive_time`，等待 `wait_before_truncate=5 s`，首次进入已超过 5 s 且当前仍在目标区时截断，或由原回合条件触发重置；成功要求回合结束时仍在目标区且未发生失败。离开或重新进入不重启首次到达计时；截止时刻已离开则继续运行，之后重入且已超过 5 s 才触发到达截断。旧记录保留，新机制继续训练使用独立目录与 `--resume_checkpoint`，详见[训练课程](docs/TRAINING_CURRICULUM.md)。
 
 ```bash
 PYTHONPATH=src .venv/bin/python scripts/launch_rectangular_comparison.py \
