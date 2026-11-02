@@ -53,7 +53,11 @@ def audit(root: Path, *, weights=False) -> list[str]:
                 continue
         for number, line in enumerate(lines, start=1):
             markers = []
-            if obsolete_identifier.search(line) and not license_text:
+            cited_zhang_paper = (
+                name == "README.md"
+                and "[Zhang et al. (2025)](https://doi.org/10.1038/s42256-025-01048-0)" in line
+            )
+            if obsolete_identifier.search(line) and not license_text and not cited_zhang_paper:
                 markers.append("obsolete project or personal identifier")
             # The origin of third-party components is a factual attribution,
             # not an internal method/package identifier.
@@ -61,8 +65,7 @@ def audit(root: Path, *, weights=False) -> list[str]:
                 license_text
                 or (
                     name == "README.md"
-                    and "github.com/Zhefan-Xu/NavRL" in line
-                    and "licenses/NavRL.txt" in line
+                    and "[NavRL](https://github.com/Zhefan-Xu/NavRL)" in line
                 )
             )
             if legacy_project.search(line.replace("licenses/NavRL.txt", "")) and not allowed_credit:
