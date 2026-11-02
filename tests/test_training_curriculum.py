@@ -113,21 +113,33 @@ def test_formal_curriculum_starts_without_dynamic_obstacles():
         ),
         (
             "pretrain_s1",
-            {"static_obstacles": 360, "dynamic_obstacles": 16, "randomization": False, "episode_length_s": 35.0},
+            {"static_obstacles": 240, "dynamic_obstacles": 120, "randomization": False, "episode_length_s": 35.0},
         ),
         (
             "pretrain_s2",
-            {"static_obstacles": 480, "dynamic_obstacles": 32, "randomization": False, "episode_length_s": 40.0},
+            {"static_obstacles": 180, "dynamic_obstacles": 180, "randomization": False, "episode_length_s": 40.0},
         ),
         (
             "finetune_s1",
-            {"static_obstacles": 480, "dynamic_obstacles": 32, "randomization": True, "episode_length_s": 40.0},
+            {"static_obstacles": 320, "dynamic_obstacles": 160, "randomization": True, "episode_length_s": 40.0},
         ),
         (
             "finetune_s2",
-            {"static_obstacles": 600, "dynamic_obstacles": 48, "randomization": True, "episode_length_s": 45.0},
+            {"static_obstacles": 240, "dynamic_obstacles": 240, "randomization": True, "episode_length_s": 45.0},
         ),
     ]
+    assert [cfg["static_obstacles"] + cfg["dynamic_obstacles"] for cfg in STAGE_CONFIG.values()] == [
+        240,
+        360,
+        360,
+        480,
+        480,
+    ]
+    for pretrain, finetune in (("pretrain_s1", "finetune_s1"), ("pretrain_s2", "finetune_s2")):
+        source, target = STAGE_CONFIG[pretrain], STAGE_CONFIG[finetune]
+        assert source["static_obstacles"] * target["dynamic_obstacles"] == (
+            source["dynamic_obstacles"] * target["static_obstacles"]
+        )
     curriculum = TrainingCurriculum(10, "cpu", stage="pretrain_s0")
     transition = {
         "first_event_code": torch.tensor([1] * 8 + [3] * 2),

@@ -15,16 +15,20 @@ def test_stage_switch_resets_override_and_builds_scene_from_new_settings():
     resolved = cfg.apply_training_stage("finetune_s1", stage_config=override)
     cfg.configure_scene()
     assert resolved == override
-    assert cfg.num_static_obstacles == 480 and cfg.dynamic_capacity() == 0
+    assert cfg.num_static_obstacles == 320 and cfg.dynamic_capacity() == 0
     assert cfg.sim_to_real.enabled and cfg.episode_length_s == 40.0
     assert cfg.training_stage_config == override
 
     cfg.apply_training_stage("pretrain_s1")
     cfg.configure_scene()
     assert cfg.training_stage == "pretrain_s1" and cfg.training_stage_config is None
-    assert cfg.num_static_obstacles == 360 and cfg.dynamic_capacity() == 16
+    assert cfg.num_static_obstacles == 240 and cfg.dynamic_capacity() == 120
     assert not cfg.sim_to_real.enabled and cfg.episode_length_s == 35.0
     assert cfg.scene.depth_camera.update_period == cfg.sim.dt * cfg.decimation
+    cfg.apply_training_stage("finetune_s2")
+    cfg.configure_scene()
+    assert cfg.num_static_obstacles == 240 and cfg.dynamic_capacity() == 240
+    assert cfg.sim_to_real.enabled and cfg.episode_length_s == 45.0
     assert STAGE_CONFIG == original
 
 
@@ -32,9 +36,8 @@ def test_ppo_explicit_static_stage_and_manual_scene_overrides_survive():
     cfg = NavigationEnvCfg()
     resolved = cfg.apply_training_stage(
         "pretrain_s0",
-        stage_config=STAGE_CONFIG["pretrain_s0"] | {
-            "static_obstacles": 300, "dynamic_obstacles": 0, "randomization": False
-        },
+        stage_config=STAGE_CONFIG["pretrain_s0"]
+        | {"static_obstacles": 300, "dynamic_obstacles": 0, "randomization": False},
     )
     cfg.configure_scene()
     assert cfg.num_static_obstacles == 300 and cfg.dynamic_capacity() == 0

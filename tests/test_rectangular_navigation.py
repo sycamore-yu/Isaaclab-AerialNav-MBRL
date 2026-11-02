@@ -33,15 +33,20 @@ def test_routes_preserve_uniform_speed_exact_distance_heading_and_bounds():
 def test_new_curriculum_counts_density_and_timeouts():
     assert [(s["static_obstacles"], s["dynamic_obstacles"], s["episode_length_s"]) for s in STAGE_CONFIG.values()] == [
         (240, 0, 30),
-        (360, 16, 35),
-        (480, 32, 40),
-        (480, 32, 40),
-        (600, 48, 45),
+        (240, 120, 35),
+        (180, 180, 40),
+        (320, 160, 40),
+        (240, 240, 45),
     ]
-    assert [s["static_obstacles"] / 4800 for s in STAGE_CONFIG.values()] == [0.05, 0.075, 0.1, 0.1, 0.125]
+    assert [s["static_obstacles"] / 4800 for s in STAGE_CONFIG.values()] == pytest.approx(
+        [0.05, 0.05, 0.0375, 320 / 4800, 0.05]
+    )
+    assert [(s["static_obstacles"] + s["dynamic_obstacles"]) / 4800 for s in STAGE_CONFIG.values()] == pytest.approx(
+        [0.05, 0.075, 0.075, 0.1, 0.1]
+    )
 
 
-@pytest.mark.parametrize("count", [0, 16, 32, 48])
+@pytest.mark.parametrize("count", [0, 120, 160, 180, 240])
 def test_dynamic_geometry_and_motion_stay_outside_clear_end_strips(count):
     positions, sizes = dynamic_layout(count, 7)
     assert np.array_equal(positions, dynamic_layout(count, 7)[0])
@@ -124,8 +129,10 @@ def test_public_direct_profile_selects_the_confirmed_baseline():
     profile = json.loads((Path(__file__).parents[1] / "configs/baseline_direct.json").read_text())
     cfg = DiffNavTrainCfg()
     assert DEFAULT_STAGE == profile["stage"] == "finetune_s1"
-    assert STAGE_CONFIG[DEFAULT_STAGE]["static_obstacles"] == profile["static_obstacles"] == 480
-    assert STAGE_CONFIG[DEFAULT_STAGE]["dynamic_obstacles"] == profile["dynamic_obstacles"] == 32
+    # The packaged checkpoint keeps its original 480/32 metadata.
+    assert profile["static_obstacles"] == 480 and profile["dynamic_obstacles"] == 32
+    assert STAGE_CONFIG[DEFAULT_STAGE]["static_obstacles"] == 320
+    assert STAGE_CONFIG[DEFAULT_STAGE]["dynamic_obstacles"] == 160
     for name in (
         "variant",
         "collision_metric",
