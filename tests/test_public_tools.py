@@ -88,7 +88,7 @@ def test_release_audit_detects_legacy_names_in_publishing_docs(tmp_path):
     publishing.unlink()
     upstream = "Nav" + "RL"
     (tmp_path / "README.md").write_text(
-        f"- [{upstream}](https://github.com/Zhefan-Xu/NavRL) "
+        f"- [{upstream}](https://github.com/Zhefan-Xu/{upstream}) "
         f"([MIT](licenses/{upstream}.txt))\n"
     )
     assert audit(tmp_path) == []
