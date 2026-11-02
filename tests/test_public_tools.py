@@ -87,7 +87,10 @@ def test_release_audit_detects_legacy_names_in_publishing_docs(tmp_path):
 
     publishing.unlink()
     upstream = "Nav" + "RL"
-    (tmp_path / "THIRD_PARTY_NOTICES.md").write_text(f"Original {upstream} project attribution\n")
+    (tmp_path / "README.md").write_text(
+        f"- [{upstream}](https://github.com/Zhefan-Xu/NavRL) "
+        f"([MIT](licenses/{upstream}.txt))\n"
+    )
     assert audit(tmp_path) == []
 
 
@@ -119,6 +122,8 @@ def test_license_layout_is_packaged_and_keeps_credits_separate_from_code(tmp_pat
     assert root / "LICENSE" in included
     assert set((root / "licenses").glob("*.txt")) <= included
     assert len(list((root / "licenses").glob("*.txt"))) == 4
+    readme = (root / "README.md").read_text()
+    assert all(f"(licenses/{path.name})" in readme for path in (root / "licenses").glob("*.txt"))
 
     name = "Nav" + "RL"
     licenses = tmp_path / "licenses"

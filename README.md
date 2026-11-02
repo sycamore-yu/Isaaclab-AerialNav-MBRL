@@ -56,8 +56,15 @@ GRU is the default. For optional SRU-LSTM-Gated BPTT training, add `--recurrent_
 
 ## Acknowledgements
 
-Built with Isaac Lab, cuRobo, and OmniDrones, with upstream navigation components credited in [third-party notices](THIRD_PARTY_NOTICES.md).
+AerialNav uses [Isaac Lab](https://github.com/isaac-sim/IsaacLab) for simulation and [cuRobo](https://github.com/NVlabs/curobo) as an external collision-query dependency. Adapted code and assets from upstream projects are credited below:
+
+- [Isaac Lab / ORBIT](https://github.com/isaac-sim/IsaacLab) — simulation integration and terrain helpers ([BSD-3-Clause](licenses/IsaacLab.txt)).
+- [NavRL](https://github.com/Zhefan-Xu/NavRL) — navigation policy and PPO baseline adaptations ([MIT](licenses/NavRL.txt)).
+- [OmniDrones](https://github.com/btx0424/OmniDrones) — rotor dynamics and the Hummingbird model ([MIT](licenses/OmniDrones.txt)).
+- [SRU](https://github.com/leggedrobotics/sru-pytorch-spatial-learning) — optional SRU-LSTM-Gated cell ([MIT](licenses/SRU.txt)).
+
+These components retain their original copyright notices and licenses, collected in [`licenses/`](licenses/).
 
 ## License
 
-BSD-3-Clause for original project code. Upstream components retain their own licenses.
+Original AerialNav code is licensed under [BSD-3-Clause](LICENSE). Third-party components retain their respective licenses, linked above.

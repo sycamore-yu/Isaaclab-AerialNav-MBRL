@@ -1,7 +1,7 @@
 """PPO shared encoder adapted to RSL-RL 5.5.1.
 
 Network structure is adapted from the upstream navigation policy (MIT).
-See licenses/NavRL.txt and THIRD_PARTY_NOTICES.md.
+See licenses/NavRL.txt (MIT).
 PPO, rollout storage, distributions, and checkpoint management remain upstream.
 """
 

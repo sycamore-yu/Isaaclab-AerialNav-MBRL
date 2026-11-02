@@ -13,7 +13,6 @@ def audit(root: Path, *, weights=False) -> list[str]:
     scanned_dirs = ("src", "scripts", "configs", "tests", "docs", "licenses", ".github")
     scanned_root_files = (
         "README.md",
-        "THIRD_PARTY_NOTICES.md",
         ".gitignore",
         "pyproject.toml",
         "uv.lock",
@@ -54,17 +53,20 @@ def audit(root: Path, *, weights=False) -> list[str]:
                 continue
         for number, line in enumerate(lines, start=1):
             markers = []
-            if obsolete_identifier.search(line) and name != "THIRD_PARTY_NOTICES.md" and not license_text:
+            if obsolete_identifier.search(line) and not license_text:
                 markers.append("obsolete project or personal identifier")
             # The origin of third-party components is a factual attribution,
             # not an internal method/package identifier.
             allowed_credit = (
                 license_text
-                or name == "THIRD_PARTY_NOTICES.md"
-                or (name == "README.md" and "original NavRL teams" in line and "third-party" in line)
+                or (
+                    name == "README.md"
+                    and "github.com/Zhefan-Xu/NavRL" in line
+                    and "licenses/NavRL.txt" in line
+                )
             )
             if legacy_project.search(line.replace("licenses/NavRL.txt", "")) and not allowed_credit:
-                markers.append("unexpected upstream project name outside notices")
+                markers.append("unexpected upstream project name outside acknowledgements")
             if workstation_path.search(line):
                 markers.append("machine-specific path")
             if internal_network.search(line):
