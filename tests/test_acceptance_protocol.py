@@ -125,7 +125,7 @@ class AcceptanceProtocolTests(unittest.TestCase):
                 )
                 for s in STAGES
             ],
-            [(240, 0, False), (360, 16, False), (480, 32, False), (480, 32, True), (600, 48, True)],
+            [(240, 0, False), (240, 120, False), (180, 180, False), (320, 160, True), (240, 240, True)],
         )
 
     def test_same_stage_resume_keeps_lr_and_has_checkpoint_lineage(self):

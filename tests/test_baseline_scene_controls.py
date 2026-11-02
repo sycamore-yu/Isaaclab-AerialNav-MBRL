@@ -89,7 +89,7 @@ def test_dynamic_count_survives_curriculum_and_report(stage, count):
     )
     assert curriculum.pop_report()["dynamic_obstacles"] == count
     assert curriculum.state_dict()["stage_config"] == cfg
-    expected = 16 if stage == "pretrain_s1" else 32
+    expected = 120 if stage == "pretrain_s1" else 160
     assert STAGE_CONFIG[stage]["dynamic_obstacles"] == expected
     assert TrainingCurriculum(1, "cpu", stage=stage).active_obstacles == expected
 
