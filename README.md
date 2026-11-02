@@ -6,6 +6,12 @@ The baseline uses a CNN–GRU policy, Newton + Warp simulation, and SDF collisio
 
 ## Flight demos
 
+[![Watch the complete flight demonstration](docs/media/flight-preview.gif)](docs/media/flight.mp4)
+
+[Watch the full flight video (23.5 s)](docs/media/flight.mp4). The recording shows the 3D flight scene, depth observations, and flight telemetry.
+
+### Additional static and dynamic examples
+
 | Static obstacles | Moving obstacles |
 | --- | --- |
 | [![Static flight](docs/media/static-flight.gif)](docs/media/static-flight.mp4) | [![Dynamic flight](docs/media/dynamic-flight.gif)](docs/media/dynamic-flight.mp4) |
