@@ -78,19 +78,16 @@ class TrainingCurriculum:
             code[transition["invalid"]] = 4
             event_time = transition["time_s"]
         first = (self.outcome == 0) & (code != 0)
-        self.outcome.copy_(torch.where(first, code, self.outcome))
+        self.outcome[first] = code[first]
         arrived = first & (code == 1)
-        self.arrival_time.copy_(torch.where(arrived, event_time, self.arrival_time))
+        self.arrival_time[arrived] = event_time[arrived]
         done = transition["terminated"] | transition["timeout"]
-        # Reuse sorted indices while retaining the original compressed reduction order.
-        done_ids = done.nonzero(as_tuple=False).squeeze(-1)
-        success_ids = (done & (self.outcome == 1)).nonzero(as_tuple=False).squeeze(-1)
-        self.counts += torch.bincount(self.outcome[done_ids], minlength=6)
-        self.time_sum += self.arrival_time[success_ids].double().sum()
-        self.return_sum += transition["episode_return"][done_ids].double().sum()
-        self.length_sum += transition["step"][done_ids].double().sum()
-        self.outcome.index_fill_(0, done_ids, 0)
-        self.arrival_time.index_fill_(0, done_ids, 0)
+        self.counts += torch.bincount(self.outcome[done], minlength=6)
+        self.time_sum += self.arrival_time[done & (self.outcome == 1)].double().sum()
+        self.return_sum += transition["episode_return"][done].double().sum()
+        self.length_sum += transition["step"][done].double().sum()
+        self.outcome[done] = 0
+        self.arrival_time[done] = 0
 
     def reset_episodes(self) -> None:
         self.outcome.zero_()

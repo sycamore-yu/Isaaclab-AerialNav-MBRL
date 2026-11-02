@@ -179,15 +179,14 @@ class NavigationEnv(DirectRLEnv):
         self.height_range[env_ids] = torch.stack(
             (torch.minimum(position[:, 2], target[:, 2]), torch.maximum(position[:, 2], target[:, 2])), dim=-1
         )
-        reset_ids = env_ids.long()
-        self.previous_velocity.index_fill_(0, reset_ids, 0)
-        self.command.index_fill_(0, reset_ids, 0)
-        self.previous_actions.index_fill_(0, reset_ids, 0)
-        self.first_reach_step.index_fill_(0, reset_ids, 0)
-        self.arrived.index_fill_(0, reset_ids, False)
-        self.arrive_time.index_fill_(0, reset_ids, 0)
-        self._episode_failure.index_fill_(0, reset_ids, 0)
-        self.episode_return.index_fill_(0, reset_ids, 0)
+        self.previous_velocity[env_ids] = 0
+        self.command[env_ids] = 0
+        self.previous_actions[env_ids] = 0
+        self.first_reach_step[env_ids] = 0
+        self.arrived[env_ids] = False
+        self.arrive_time[env_ids] = 0
+        self._episode_failure[env_ids] = 0
+        self.episode_return[env_ids] = 0
         self.episode_id[env_ids] += 1
         self._terms = None
 
@@ -320,7 +319,7 @@ class NavigationEnv(DirectRLEnv):
         timed_out = episode_timeout | wait_expired
         outcome = terminal_outcomes(terms, terminated | timed_out, self._episode_failure)
         first = self._first_arrival_mask(terms, terminated)
-        self.first_reach_step.copy_(torch.where(first, self.episode_length_buf, self.first_reach_step))
+        self.first_reach_step[first] = self.episode_length_buf[first]
         state = self.root_state()
         # These values belong to the completed transition, before same-step autoreset.
         self.extras["transition"] = {
@@ -511,15 +510,14 @@ class DiffNavEnv(NavigationEnv):
 
     def _reset_idx(self, env_ids):
         super()._reset_idx(env_ids)
-        reset_ids = torch.as_tensor(env_ids, device=self.device, dtype=torch.long)
-        self.filtered_command.index_fill_(0, reset_ids, 0)
-        reset_first_event(self._event_code, self._event_time, reset_ids)
-        self._substep_collision.index_fill_(0, reset_ids, False)
-        self._collision_position.index_fill_(0, reset_ids, 0)
-        self._collision_velocity.index_fill_(0, reset_ids, 0)
-        self._collision_substep.index_fill_(0, reset_ids, 0)
-        self._substep_bounds.index_fill_(0, reset_ids, False)
-        self._substep_invalid.index_fill_(0, reset_ids, False)
+        self.filtered_command[env_ids] = 0
+        reset_first_event(self._event_code, self._event_time, env_ids)
+        self._substep_collision[env_ids] = False
+        self._collision_position[env_ids] = 0
+        self._collision_velocity[env_ids] = 0
+        self._collision_substep[env_ids] = 0
+        self._substep_bounds[env_ids] = False
+        self._substep_invalid[env_ids] = False
 
     def _termination_mask(self, terms):
         return termination_mask(
@@ -604,9 +602,7 @@ class DiffNavEnv(NavigationEnv):
         terminated, timeout = super()._get_dones()
         timed_out_first = (self._event_code == 0) & timeout
         self._event_code[timed_out_first] = 5
-        self._event_time.copy_(
-            torch.where(timed_out_first, self.episode_length_buf.float() * self.step_dt, self._event_time)
-        )
+        self._event_time[timed_out_first] = self.episode_length_buf[timed_out_first].float() * self.step_dt
         self.extras["transition"]["first_event_code"] = self._event_code.clone()
         self.extras["transition"]["first_event_time_s"] = self._event_time.clone()
         self.extras["transition"]["collision_position"] = self._collision_position.clone()

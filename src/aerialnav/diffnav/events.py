@@ -53,17 +53,17 @@ def randomize_diffnav_parameters(env, env_ids, body_radius=0.3, target_speed_ran
     if not (math.isfinite(low) and math.isfinite(high) and 0 < low < high):
         raise ValueError("target speed range must be finite with 0 < min < max")
     parameters["max_speed"][env_ids] = low + (high - low) * uniform(1)
-    parameters["z_drag_coef"].index_fill_(0, env_ids, 1)
+    parameters["z_drag_coef"][env_ids] = 1
     if env.cfg.evaluation or env.cfg.training_stage is not None:
-        parameters["margin"].index_fill_(0, env_ids, body_radius)
-        parameters["thr_est_error"].index_fill_(0, env_ids, 1)
-        parameters["pitch_ctl_delay"].index_fill_(0, env_ids, 12)
-        parameters["yaw_ctl_delay"].index_fill_(0, env_ids, 6)
-        parameters["drag_2"].index_fill_(0, env_ids, 0)
-        parameters["wind"].index_fill_(0, env_ids, 0)
-        parameters["dg"].index_fill_(0, env_ids, 0)
-        parameters["camera_pitch"].index_fill_(0, env_ids, 0)
-        parameters["camera_fov_scale"].index_fill_(0, env_ids, 1)
+        parameters["margin"][env_ids] = body_radius
+        parameters["thr_est_error"][env_ids] = 1
+        parameters["pitch_ctl_delay"][env_ids] = 12
+        parameters["yaw_ctl_delay"][env_ids] = 6
+        parameters["drag_2"][env_ids] = 0
+        parameters["wind"][env_ids] = 0
+        parameters["dg"][env_ids] = 0
+        parameters["camera_pitch"][env_ids] = 0
+        parameters["camera_fov_scale"][env_ids] = 1
     else:
         parameters["margin"][env_ids] = body_radius + 0.2 * uniform()
         parameters["thr_est_error"][env_ids] = 1 + 0.01 * normal(1)

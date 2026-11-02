@@ -19,7 +19,7 @@ def termination_mask(terms, *, collision_terminates=True, bounds_terminates=True
 def record_arrival(arrived, arrive_time, reached, elapsed_s):
     """Keep the first entry time even when a drone leaves and returns."""
     first = reached & ~arrived
-    arrive_time.copy_(torch.where(first, elapsed_s, arrive_time))
+    arrive_time[first] = elapsed_s[first]
     arrived |= reached
 
 
@@ -35,7 +35,7 @@ def terminal_outcomes(terms, done, episode_failure):
     failure[terms["collision"]] = 2
     failure[terms["invalid"]] = 4
     first_failure = (episode_failure == 0) & (failure != 0)
-    episode_failure.copy_(torch.where(first_failure, failure, episode_failure))
+    episode_failure[first_failure] = failure[first_failure]
     code = torch.where(terms["reached"], 1, 5)
     code = torch.where(episode_failure != 0, episode_failure, code)
     return torch.where(done, code, 0)
@@ -50,16 +50,15 @@ def latch_first_event(event_code, event_time, terms, elapsed_s):
     code[terms["collision"]] = 2
     code[terms["invalid"]] = 4
     first = (event_code == 0) & (code != 0)
-    event_code.copy_(torch.where(first, code, event_code))
-    event_time.copy_(torch.where(first, elapsed_s, event_time))
+    event_code[first] = code[first]
+    event_time[first] = elapsed_s[first]
 
 
 @torch.no_grad()
 def reset_first_event(event_code, event_time, env_ids):
     """Clear only the episodes being reset."""
-    env_ids = torch.as_tensor(env_ids, device=event_code.device, dtype=torch.long)
-    event_code.index_fill_(0, env_ids, 0)
-    event_time.index_fill_(0, env_ids, 0)
+    event_code[env_ids] = 0
+    event_time[env_ids] = 0
 
 
 def first_events(root_state, target, collision_gap, *, height_bounds_reset=True):

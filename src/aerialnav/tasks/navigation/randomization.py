@@ -88,7 +88,7 @@ class PolicyPerturbation:
                 )
                 buffer.time_lags[ids] = lag
             else:
-                buffer.time_lags.index_fill_(0, ids, nominal)
+                buffer.time_lags[ids] = nominal
         for target, active, bounds in (
             (self.control_gain_scale, self.cfg.control_response, self.cfg.control_gain_range),
             (self.thrust_scale, self.cfg.thrust, self.cfg.thrust_scale_range),
@@ -98,7 +98,7 @@ class PolicyPerturbation:
                     len(ids), 1, device=self.device, generator=self.generator
                 )
             else:
-                target.index_fill_(0, ids, 1)
+                target[ids] = 1
         self._observation_key = None
 
     def normal(self, value, std):
