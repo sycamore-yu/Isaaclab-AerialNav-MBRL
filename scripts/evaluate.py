@@ -23,7 +23,9 @@ def main():
     parser.add_argument("--terrain_seed", type=int, default=10000)
     parser.add_argument("--static_obstacles", type=int, default=350)
     parser.add_argument("--dynamic_obstacles", type=int, default=100)
-    parser.add_argument("--stage", choices=("pretrain_s0", "pretrain_s1", "finetune_s1"), default="finetune_s1")
+    parser.add_argument(
+        "--stage", choices=("pretrain_s0", "pretrain_s1", "pretrain_s2", "finetune_s1"), default="finetune_s1"
+    )
     add_launcher_args(parser)
     parser.set_defaults(visualizer=["none"])
     args = parse_physics_args(parser)

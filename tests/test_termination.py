@@ -129,6 +129,10 @@ def test_collision_during_wait_overrides_first_arrival_in_both_consumers():
     curriculum = TrainingCurriculum(1, "cpu", stage="pretrain_s1")
     curriculum.observe(transition)
     assert evaluation.rows[0]["outcome"] == "collision"
+    assert evaluation.rows[0]["first_event_code"] == 1
+    transition["first_event_code"].zero_()
+    evaluation.update(transition)
+    assert evaluation.rows[0]["first_event_code"] == 1
     assert curriculum.pop_report()["counts"]["collision"] == 1
 
 
