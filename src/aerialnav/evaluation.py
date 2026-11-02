@@ -5,7 +5,8 @@ from __future__ import annotations
 import statistics
 
 
-def first_outcome(*, reached, collision, bounds, invalid, timeout):
+def first_outcome(*, reached: bool, collision: bool, bounds: bool, invalid: bool, timeout: bool) -> str | None:
+    """Resolve simultaneous events in invalid, collision, bounds, arrival, timeout order."""
     if invalid:
         return "invalid"
     if collision:
@@ -26,16 +27,21 @@ class EpisodeEvaluation:
         self.rows = [None] * len(starts)
         self.starts, self.goals, self.seed = starts, goals, seed
 
-    def update(self, transition):
+    def update(self, transition) -> None:
+        """Latch results once; terminal codes take precedence over historical first events.
+
+        Transition tensors contain one entry per environment. Times are in seconds;
+        ``step`` counts policy steps. Without terminal codes, retain first-event scoring.
+        """
         values = {
             key: transition[key].detach().cpu().tolist()
             for key in ("reached", "collision", "bounds", "invalid", "timeout", "time_s", "step")
         }
-        final_codes = transition.get("terminal_event_code")
-        substep_codes = final_codes if final_codes is not None else transition.get("first_event_code")
-        if substep_codes is not None:
-            substep_codes = substep_codes.detach().cpu().tolist()
-            if final_codes is None:
+        terminal_codes = transition.get("terminal_event_code")
+        outcome_codes = terminal_codes if terminal_codes is not None else transition.get("first_event_code")
+        if outcome_codes is not None:
+            outcome_codes = outcome_codes.detach().cpu().tolist()
+            if terminal_codes is None:
                 values["time_s"] = transition["first_event_time_s"].detach().cpu().tolist()
         arrivals = None
         if "arrived" in transition:
@@ -47,34 +53,36 @@ class EpisodeEvaluation:
         for index, row in enumerate(self.rows):
             if row is not None:
                 continue
-            if substep_codes is None:
+            if outcome_codes is None:
                 result = first_outcome(
                     **{key: values[key][index] for key in ("reached", "collision", "bounds", "invalid", "timeout")}
                 )
             else:
-                result = (None, "success", "collision", "bounds", "invalid", "timeout")[substep_codes[index]]
-            if result is not None:
-                self.rows[index] = {
-                    "episode": index,
-                    "seed": self.seed,
-                    "outcome": result,
-                    "time_s": values["time_s"][index],
-                    "step": values["step"][index],
-                    "start": self.starts[index],
-                    "goal": self.goals[index],
-                }
-                if arrivals is not None:
-                    self.rows[index].update(
-                        arrived=arrivals[index], arrive_time=arrival_times[index] if arrivals[index] else None
-                    )
-                if first_codes is not None:
-                    self.rows[index]["first_event_code"] = first_codes[index]
+                result = (None, "success", "collision", "bounds", "invalid", "timeout")[outcome_codes[index]]
+            if result is None:
+                continue
+            self.rows[index] = {
+                "episode": index,
+                "seed": self.seed,
+                "outcome": result,
+                "time_s": values["time_s"][index],
+                "step": values["step"][index],
+                "start": self.starts[index],
+                "goal": self.goals[index],
+            }
+            if arrivals is not None:
+                self.rows[index].update(
+                    arrived=arrivals[index], arrive_time=arrival_times[index] if arrivals[index] else None
+                )
+            if first_codes is not None:
+                self.rows[index]["first_event_code"] = first_codes[index]
 
     @property
-    def complete(self):
+    def complete(self) -> bool:
         return all(row is not None for row in self.rows)
 
-    def summary(self):
+    def summary(self) -> dict:
+        """Summarize completed episodes using arrival times for successful flights."""
         if not self.complete:
             raise ValueError("Evaluation contains unfinished episodes.")
         labels = ("success", "collision", "timeout", "bounds", "invalid")
