@@ -319,7 +319,7 @@ class NavigationEnv(DirectRLEnv):
         timed_out = episode_timeout | wait_expired
         outcome = terminal_outcomes(terms, terminated | timed_out, self._episode_failure)
         first = self._first_arrival_mask(terms, terminated)
-        self.first_reach_step[first] = self.episode_length_buf[first]
+        self.first_reach_step.copy_(torch.where(first, self.episode_length_buf, self.first_reach_step))
         state = self.root_state()
         # These values belong to the completed transition, before same-step autoreset.
         self.extras["transition"] = {
@@ -602,7 +602,9 @@ class DiffNavEnv(NavigationEnv):
         terminated, timeout = super()._get_dones()
         timed_out_first = (self._event_code == 0) & timeout
         self._event_code[timed_out_first] = 5
-        self._event_time[timed_out_first] = self.episode_length_buf[timed_out_first].float() * self.step_dt
+        self._event_time.copy_(
+            torch.where(timed_out_first, self.episode_length_buf.float() * self.step_dt, self._event_time)
+        )
         self.extras["transition"]["first_event_code"] = self._event_code.clone()
         self.extras["transition"]["first_event_time_s"] = self._event_time.clone()
         self.extras["transition"]["collision_position"] = self._collision_position.clone()
