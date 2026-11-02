@@ -42,11 +42,7 @@ PYTHONPATH=src .venv/bin/python scripts/train_diffnav.py \
   --seed 0 --terrain_seed 0
 ```
 
-The default task has a 120 × 40 m world, 480 static and 32 dynamic obstacles, randomized dynamics, and target speeds of 1–6 m/s. Routes span `18 × target_speed` metres. Training uses 150-step BPTT, a 2-second velocity window, linear goal-speed guidance, and the original avoidance gradient.
-
-Success requires ending within 0.5 m of the goal without failure. Arrival-triggered reset waits until more than 5 seconds after first entry and the drone is currently inside the goal region. Earlier failures and the episode time limit still end the episode.
-
-For a short training check, add `--max_iterations 2`. See [training](docs/training.md) and [evaluation](docs/evaluation.md) for configuration and checkpoint export.
+The default task has a 120 × 40 m world, 480 static and 32 dynamic obstacles, randomized dynamics, and target speeds of 1–6 m/s. 
 
 GRU is the default. For optional [SRU-LSTM-Gated](https://github.com/leggedrobotics/sru-pytorch-spatial-learning) BPTT training, add `--recurrent_model sru_lstm_gated`; start from fresh weights rather than a GRU checkpoint.
 
