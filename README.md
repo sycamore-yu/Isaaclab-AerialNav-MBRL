@@ -1,31 +1,21 @@
-# AerialNav
+# Isaaclab-AerialNav-MBRL
 
-Depth-based quadrotor navigation with differentiable training in Isaac Lab 3.
+An **Isaac Lab 3 extension** for quadrotor navigation using differentiable model-based reinforcement learning (MBRL). Training gradients propagate through a differentiable point-mass dynamics surrogate, enabling efficient policy optimization.
 
-The baseline uses a CNN–GRU policy, Newton + Warp simulation, and SDF collision losses backed by cuRoboV2. Training gradients pass through a point-mass surrogate.
+**Train a functional navigation policy in as little as 30 minutes on a single NVIDIA RTX 4090 GPU (0.5 GPU-hours).**
 
 ## Flight demos
 
 [![Watch the complete flight demonstration](docs/media/flight-preview.gif)](docs/media/flight.mp4)
 
-[Watch the full flight video (23.5 s)](docs/media/flight.mp4). The recording shows the 3D flight scene, depth observations, and flight telemetry.
-
-### Additional static and dynamic examples
-
-| Static obstacles | Moving obstacles |
-| --- | --- |
-| [![Static flight](docs/media/static-flight.gif)](docs/media/static-flight.mp4) | [![Dynamic flight](docs/media/dynamic-flight.gif)](docs/media/dynamic-flight.mp4) |
-| [Full video · 1×](docs/media/static-flight.mp4) | [Full video · 1×](docs/media/dynamic-flight.mp4) |
-
-Successful flights with the packaged GRU policy. Cyan marks the flown path; green marks the goal.
 
 ## Installation
 
 Linux, an NVIDIA GPU, and Python 3.12 are required. From the repository root:
 
 ```bash
-git clone https://github.com/sycamore-yu/Isaaclab-diff-aerialnav.git
-cd Isaaclab-diff-aerialnav
+git clone https://github.com/sycamore-yu/Isaaclab-AerialNav-MBRL.git
+cd Isaaclab-AerialNav-MBRL
 uv sync --frozen --extra curobo
 ```
 
@@ -58,11 +48,11 @@ Success requires ending within 0.5 m of the goal without failure. Arrival-trigge
 
 For a short training check, add `--max_iterations 2`. See [training](docs/training.md) and [evaluation](docs/evaluation.md) for configuration and checkpoint export.
 
-GRU is the default. For optional SRU-LSTM-Gated BPTT training, add `--recurrent_model sru_lstm_gated`; start from fresh weights rather than a GRU checkpoint.
+GRU is the default. For optional [SRU-LSTM-Gated](https://github.com/leggedrobotics/sru-pytorch-spatial-learning) BPTT training, add `--recurrent_model sru_lstm_gated`; start from fresh weights rather than a GRU checkpoint.
 
 ## Acknowledgements
 
-AerialNav uses [Isaac Lab](https://github.com/isaac-sim/IsaacLab) for simulation and [cuRobo](https://github.com/NVlabs/curobo) as an external collision-query dependency. Adapted code and assets from upstream projects are credited below:
+Isaaclab-AerialNav-MBRL uses [Isaac Lab](https://github.com/isaac-sim/IsaacLab) for simulation and [cuRobo](https://github.com/NVlabs/curobo) as an external collision-query dependency. Adapted code and assets from upstream projects are credited below:
 
 - [Isaac Lab / ORBIT](https://github.com/isaac-sim/IsaacLab) — simulation integration and terrain helpers ([BSD-3-Clause](licenses/IsaacLab.txt)).
 - [NavRL](https://github.com/Zhefan-Xu/NavRL) — navigation policy and PPO baseline adaptations ([MIT](licenses/NavRL.txt)).
@@ -73,4 +63,4 @@ These components retain their original copyright notices and licenses, collected
 
 ## License
 
-Original AerialNav code is licensed under [BSD-3-Clause](LICENSE). Third-party components retain their respective licenses, linked above.
+Original project code is licensed under [BSD-3-Clause](LICENSE). Third-party components retain their respective licenses, linked above.

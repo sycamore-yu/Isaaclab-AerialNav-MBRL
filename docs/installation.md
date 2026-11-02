@@ -3,8 +3,8 @@
 Use Linux x86-64, Python 3.12, a supported NVIDIA driver and [uv](https://docs.astral.sh/uv/).
 
 ```bash
-git clone https://github.com/sycamore-yu/Isaaclab-diff-aerialnav.git
-cd Isaaclab-diff-aerialnav
+git clone https://github.com/sycamore-yu/Isaaclab-AerialNav-MBRL.git
+cd Isaaclab-AerialNav-MBRL
 uv sync --frozen --extra curobo
 ```
 
