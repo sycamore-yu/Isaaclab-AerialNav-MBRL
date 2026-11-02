@@ -179,14 +179,15 @@ class NavigationEnv(DirectRLEnv):
         self.height_range[env_ids] = torch.stack(
             (torch.minimum(position[:, 2], target[:, 2]), torch.maximum(position[:, 2], target[:, 2])), dim=-1
         )
-        self.previous_velocity[env_ids] = 0
-        self.command[env_ids] = 0
-        self.previous_actions[env_ids] = 0
-        self.first_reach_step[env_ids] = 0
-        self.arrived[env_ids] = False
-        self.arrive_time[env_ids] = 0
-        self._episode_failure[env_ids] = 0
-        self.episode_return[env_ids] = 0
+        reset_ids = env_ids.long()
+        self.previous_velocity.index_fill_(0, reset_ids, 0)
+        self.command.index_fill_(0, reset_ids, 0)
+        self.previous_actions.index_fill_(0, reset_ids, 0)
+        self.first_reach_step.index_fill_(0, reset_ids, 0)
+        self.arrived.index_fill_(0, reset_ids, False)
+        self.arrive_time.index_fill_(0, reset_ids, 0)
+        self._episode_failure.index_fill_(0, reset_ids, 0)
+        self.episode_return.index_fill_(0, reset_ids, 0)
         self.episode_id[env_ids] += 1
         self._terms = None
 
@@ -510,14 +511,15 @@ class DiffNavEnv(NavigationEnv):
 
     def _reset_idx(self, env_ids):
         super()._reset_idx(env_ids)
-        self.filtered_command[env_ids] = 0
-        reset_first_event(self._event_code, self._event_time, env_ids)
-        self._substep_collision[env_ids] = False
-        self._collision_position[env_ids] = 0
-        self._collision_velocity[env_ids] = 0
-        self._collision_substep[env_ids] = 0
-        self._substep_bounds[env_ids] = False
-        self._substep_invalid[env_ids] = False
+        reset_ids = torch.as_tensor(env_ids, device=self.device, dtype=torch.long)
+        self.filtered_command.index_fill_(0, reset_ids, 0)
+        reset_first_event(self._event_code, self._event_time, reset_ids)
+        self._substep_collision.index_fill_(0, reset_ids, False)
+        self._collision_position.index_fill_(0, reset_ids, 0)
+        self._collision_velocity.index_fill_(0, reset_ids, 0)
+        self._collision_substep.index_fill_(0, reset_ids, 0)
+        self._substep_bounds.index_fill_(0, reset_ids, False)
+        self._substep_invalid.index_fill_(0, reset_ids, False)
 
     def _termination_mask(self, terms):
         return termination_mask(
