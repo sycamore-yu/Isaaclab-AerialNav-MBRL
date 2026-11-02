@@ -2,7 +2,20 @@
 
 An **Isaac Lab 3 extension** for quadrotor navigation using differentiable model-based reinforcement learning (MBRL). Training gradients propagate through a differentiable point-mass dynamics surrogate, enabling efficient policy optimization.
 We further integrate **CUDA Graph optimizations** into the controller and parallel task computations, reducing GPU kernel-launch overhead and improving training throughput.
-**Train a functional navigation policy in as little as 30 minutes on a single NVIDIA RTX 4090 GPU (0.5 GPU-hours).**
+**Measured single-stage training:** a fresh S0 policy reached **81.30% completed-episode training success** at update **201**, in **28 min 26 s process time** on an RTX 4090 (shared GPU). [Experimental evidence](docs/results/s0-fresh-20261102/README.md). This is **not** the time to finish all five curriculum stages or a held-out benchmark.
+
+## Measured training example (S0 only)
+
+![Fresh S0 training success](docs/media/s0-fresh-20261102.svg)
+
+| Training result | Value |
+|---|---:|
+| First ≥80% completed-episode training report | **U201** (978/1203 = 81.30%) |
+| Time on RTX 4090 | **27m 36.9s trainer / 28m 26.1s including startup** |
+| Work completed | 19.76M transitions, 1024 env, H96, Newton/MJWarp + Warp |
+| Scope | Fresh `pretrain_s0`, 240 static / 0 dynamic obstacles; **not a held-out test** |
+
+The GPU was **shared with other training jobs**. This is an observed single-run wall-clock measurement, not a controlled isolated-GPU speedup or a claim for S1/S2/F1/F2. See the [full experimental receipt, timing data, and verification script](docs/results/s0-fresh-20261102/README.md).
 
 ## Flight demos
 
