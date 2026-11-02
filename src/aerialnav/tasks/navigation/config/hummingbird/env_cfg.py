@@ -206,6 +206,27 @@ class NavigationEnvCfg(DirectRLEnvCfg):
     def __post_init__(self):
         self.configure_scene()
 
+    def apply_training_stage(self, name: str, *, stage_config: dict | None = None) -> dict:
+        """Apply a named stage and return its resolved settings.
+
+        Args:
+            name: Key in the training stage table.
+            stage_config: Complete stage settings for an explicit experiment override.
+                Omitting this preserves the default stage-table lookup in scene configuration.
+
+        Returns:
+            Settings applied to obstacle counts, randomization and episode duration [s].
+            Call ``configure_scene()`` after all task and physics overrides to rebuild the scene.
+        """
+        stage = STAGE_CONFIG[name] if stage_config is None else stage_config
+        self.training_stage = name
+        self.training_stage_config = stage_config
+        self.num_static_obstacles = stage["static_obstacles"]
+        self.num_dynamic_obstacles = stage["dynamic_obstacles"]
+        self.sim_to_real.enabled = stage["randomization"]
+        self.episode_length_s = stage["episode_length_s"]
+        return stage
+
     def configure_scene(self):
         """Apply task counts after command-line overrides and before launch."""
         if not math.isfinite(self.wait_before_truncate) or self.wait_before_truncate < 0:

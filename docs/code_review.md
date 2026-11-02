@@ -8,9 +8,9 @@ Keep the existing Direct environments, task IDs, CLI options, checkpoint fields 
 training metric meanings. A ManagerBased migration would change the implementation
 scope rather than merely normalize naming.
 
-The implemented simplification is confined to `aerialnav.evaluation`: flatten the
-completed-result branch, name terminal versus selected outcome codes explicitly,
-and document event precedence and time units. Existing callers and serialized rows
+The initial simplification in `aerialnav.evaluation` flattens the
+completed-result branch, names terminal versus selected outcome codes explicitly,
+and documents event precedence and time units. Existing callers and serialized rows
 remain unchanged.
 
 ## Isaac Lab alignment
@@ -44,14 +44,13 @@ The tests emitted 35 upstream TorchScript deprecation warnings. No simulation ro
 or training run was launched. Tests cover terminal-over-first-event precedence,
 arrival timing, failure priority and preserving the initially recorded episode result.
 
-## Architecture candidates awaiting selection
+## Selected architecture improvement
 
-1. **Recommended:** concentrate stage application in the existing environment
-   configuration module. Three entry points currently distribute counts,
-   randomization and duration rules. Preserve the PPO static baseline and explicit
-   per-entry-point overrides.
-2. Concentrate transition decoding used by curriculum and evaluation, while keeping
-   first-event history distinct from final outcomes.
+Stage application now lives in the existing environment configuration module, shared
+by all three entry points. See [stage configuration](stage_configuration.md) for usage
+and the preserved per-entry-point defaults. Episode outcome decoding remains a future
+candidate; first-event history and final outcomes remain distinct.
 
-Do not split the trainer merely to shorten its file. Checkpoint and optimizer state
-are coupled; a new interface needs a demonstrated benefit first.
+The same mechanism and evaluation simplification are adapted to local research main,
+not merged from the unrelated public history. Research PPO defaults and its existing
+evaluation row format are preserved.

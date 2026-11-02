@@ -117,14 +117,10 @@ def main():
     cfg.capture_terminal_observation = args.algorithm in ("shac", "ahac")
     cfg.scene.num_envs = args.num_envs
     cfg.seed, cfg.terrain_seed = args.seed, args.terrain_seed
-    cfg.num_static_obstacles = stage["static_obstacles"]
-    cfg.num_dynamic_obstacles = stage["dynamic_obstacles"]
-    cfg.training_stage = args.stage
-    cfg.training_stage_config = stage
+    cfg.apply_training_stage(args.stage, stage_config=stage)
     if args.target_speed_min is not None:
         cfg.target_speed_range = (args.target_speed_min, args.target_speed_max)
     cfg.training_curriculum = True
-    cfg.sim_to_real.enabled = stage["randomization"]
     cfg.sim.device = args.device
     cfg.depth_camera_batch_size = args.camera_batch_size
     select_physics(cfg, args.physics_preset)

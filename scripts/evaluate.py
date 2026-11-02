@@ -55,13 +55,7 @@ def main():
     cfg.seed, cfg.terrain_seed = args.seed, args.terrain_seed
     cfg.evaluation = args.stage is None
     if args.stage:
-        from aerialnav.training import STAGE_CONFIG
-
-        stage = STAGE_CONFIG[args.stage]
-        cfg.training_stage = args.stage
-        cfg.num_static_obstacles = stage["static_obstacles"]
-        cfg.num_dynamic_obstacles = stage["dynamic_obstacles"]
-        cfg.sim_to_real.enabled = stage["randomization"]
+        cfg.apply_training_stage(args.stage)
     cfg.sim.device = args.device
     select_physics(cfg, args.physics_preset)
     cfg.configure_scene()
