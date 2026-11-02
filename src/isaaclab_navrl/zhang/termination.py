@@ -57,8 +57,9 @@ def latch_first_event(event_code, event_time, terms, elapsed_s):
 @torch.no_grad()
 def reset_first_event(event_code, event_time, env_ids):
     """Clear only the episodes being reset."""
-    event_code[env_ids] = 0
-    event_time[env_ids] = 0
+    env_ids = torch.as_tensor(env_ids, device=event_code.device, dtype=torch.long)
+    event_code.index_fill_(0, env_ids, 0)
+    event_time.index_fill_(0, env_ids, 0)
 
 
 def first_events(root_state, target, collision_gap, *, height_bounds_reset=True):
