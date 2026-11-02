@@ -119,17 +119,13 @@ def main():
         random.seed(args.seed)
         np.random.seed(args.seed)
         torch.manual_seed(args.seed)
-        stage_config = STAGE_CONFIG[args.stage]
         cfg = NavRLEnvCfg()
         cfg.scene.num_envs = args.num_envs
         cfg.seed = args.seed
         cfg.terrain_seed = args.terrain_seed
-        cfg.training_stage = args.stage
+        stage_config = cfg.apply_training_stage(args.stage)
         cfg.training_report_episodes = args.report_episodes
         cfg.training_curriculum = True
-        cfg.num_static_obstacles = stage_config["static_obstacles"]
-        cfg.num_dynamic_obstacles = stage_config["dynamic_obstacles"]
-        cfg.sim_to_real.enabled = stage_config["randomization"]
         cfg.sim.device = args.device
         select_physics(cfg, args.physics_preset)
         cfg.configure_scene()
