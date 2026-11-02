@@ -1,6 +1,6 @@
 # Isaaclab-AerialNav-MBRL
 
-An **Isaac Lab 3 extension** for quadrotor navigation using differentiable model-based reinforcement learning (MBRL). Training gradients propagate through a differentiable point-mass dynamics surrogate, enabling efficient policy optimization.
+An **Isaac Lab 3 extension** that reimplements the vision-based quadrotor navigation method of [Zhang et al. (2025)](https://doi.org/10.1038/s42256-025-01048-0) using differentiable model-based reinforcement learning (MBRL). The Isaac Lab physics backend generates forward trajectories, while a differentiable point-mass surrogate propagates policy gradients through time. Inspired by [Song et al. (CoRL 2024)](https://proceedings.mlr.press/v270/song25a.html), the surrogate state is aligned with the non-differentiated simulator state at each step. CUDA Graph optimizations reduce kernel-launch overhead in the controller and Warp task computations to improve parallel training throughput.
 
 **Train a functional navigation policy in as little as 30 minutes on a single NVIDIA RTX 4090 GPU (0.5 GPU-hours).**
 
@@ -52,10 +52,14 @@ GRU is the default. For optional [SRU-LSTM-Gated](https://github.com/leggedrobot
 
 ## Acknowledgements
 
-Isaaclab-AerialNav-MBRL uses [Isaac Lab](https://github.com/isaac-sim/IsaacLab) for simulation and [cuRobo](https://github.com/NVlabs/curobo) as an external collision-query dependency. Adapted code and assets from upstream projects are credited below:
+We would like to express our gratitude to the following projects, which have provided significant support and inspiration for our work:
+
+- [DiffAero](https://github.com/flyingbitac/diffaero) — GPU-accelerated differentiable quadrotor simulation and policy learning.
+- [NavRL](https://github.com/Zhefan-Xu/NavRL) — navigation task design and PPO baseline adaptations ([MIT](licenses/NavRL.txt)).
+
+The implementation uses [Isaac Lab](https://github.com/isaac-sim/IsaacLab) for simulation and [cuRobo](https://github.com/NVlabs/curobo) as an external collision-query dependency. Third-party code and assets retain their original licenses:
 
 - [Isaac Lab / ORBIT](https://github.com/isaac-sim/IsaacLab) — simulation integration and terrain helpers ([BSD-3-Clause](licenses/IsaacLab.txt)).
-- [NavRL](https://github.com/Zhefan-Xu/NavRL) — navigation policy and PPO baseline adaptations ([MIT](licenses/NavRL.txt)).
 - [OmniDrones](https://github.com/btx0424/OmniDrones) — rotor dynamics and the Hummingbird model ([MIT](licenses/OmniDrones.txt)).
 - [SRU](https://github.com/leggedrobotics/sru-pytorch-spatial-learning) — optional SRU-LSTM-Gated cell ([MIT](licenses/SRU.txt)).
 
