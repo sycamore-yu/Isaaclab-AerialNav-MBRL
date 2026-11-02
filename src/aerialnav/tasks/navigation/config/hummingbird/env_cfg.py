@@ -183,7 +183,7 @@ class NavigationEnvCfg(DirectRLEnvCfg):
     training_stage: str | None = DEFAULT_STAGE
     training_stage_config: dict | None = None
     training_report_episodes: int | None = None
-    wait_before_truncate: float = 10.0
+    wait_before_truncate: float = 5.0
     sim_to_real: SimToRealCfg = SimToRealCfg()
     events = NavigationEventsCfg()
     terrain_seed: int = 0

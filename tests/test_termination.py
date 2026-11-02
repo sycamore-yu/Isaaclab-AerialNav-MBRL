@@ -1,5 +1,8 @@
 """Arrival waiting, failure priority and episode termination."""
 
+import json
+from pathlib import Path
+
 import pytest
 import torch
 
@@ -137,12 +140,13 @@ def test_wait_default_and_validation():
     from aerialnav.tasks.navigation.config.hummingbird.env_cfg import DiffNavEnvCfg
 
     cfg = DiffNavEnvCfg()
-    assert cfg.wait_before_truncate == 10.0
+    assert cfg.wait_before_truncate == 5.0
+    baseline = json.loads((Path(__file__).parents[1] / "configs/baseline_direct.json").read_text())
+    assert baseline["wait_before_truncate_s"] == cfg.wait_before_truncate
     first_arrival = torch.tensor([1.0])
-    assert cfg.wait_before_truncate > 150 * 0.05
-    assert not arrival_wait_timeout(torch.tensor([True]), first_arrival, torch.tensor([8.5]), cfg.wait_before_truncate)
-    assert not arrival_wait_timeout(torch.tensor([True]), first_arrival, torch.tensor([11.0]), cfg.wait_before_truncate)
-    assert arrival_wait_timeout(torch.tensor([True]), first_arrival, torch.tensor([11.05]), cfg.wait_before_truncate)
+    assert not arrival_wait_timeout(torch.tensor([True]), first_arrival, torch.tensor([5.99]), cfg.wait_before_truncate)
+    assert not arrival_wait_timeout(torch.tensor([True]), first_arrival, torch.tensor([6.0]), cfg.wait_before_truncate)
+    assert arrival_wait_timeout(torch.tensor([True]), first_arrival, torch.tensor([6.05]), cfg.wait_before_truncate)
     for invalid in (-1.0, float("nan"), float("inf")):
         cfg.wait_before_truncate = invalid
         with pytest.raises(ValueError, match="wait_before_truncate"):

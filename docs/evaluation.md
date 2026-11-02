@@ -13,7 +13,7 @@ For pretraining difficulty comparisons, select `pretrain_s0`, `pretrain_s1`, or 
 
 ## Episode outcomes
 
-First entry within 0.5 m of the goal records the arrival time. Leaving or re-entering keeps that timestamp. After strictly more than 10 seconds, current goal occupancy triggers reset. Collision, bounds, invalid state and the stage time limit also end episodes. Success requires final goal occupancy without failure.
+First entry within 0.5 m of the goal records the arrival time. Leaving or re-entering keeps that timestamp. After strictly more than 5 seconds, current goal occupancy triggers reset. Collision, bounds, invalid state and the stage time limit also end episodes. Success requires final goal occupancy without failure.
 
 The output contains one result per initial episode and a summary of success, collision, bounds, invalid state and timeout. Record the checkpoint, stage, seeds and speed range alongside comparisons. Use different terrain seeds for independent maps.
 

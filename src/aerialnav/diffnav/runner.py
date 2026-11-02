@@ -382,7 +382,7 @@ class DiffNavTrainer:
                     ),
                     "episode_end_contract": EPISODE_END_CONTRACT,
                     "previous_wait_before_truncate_s": payload["environment"].get("wait_before_truncate_s"),
-                    "wait_before_truncate_s": getattr(self.env.cfg, "wait_before_truncate", 10.0),
+                    "wait_before_truncate_s": getattr(self.env.cfg, "wait_before_truncate", 5.0),
                     "restored": [
                         "model",
                         "optimizer",
@@ -444,7 +444,7 @@ class DiffNavTrainer:
                 "sim_to_real": asdict(self.env.cfg.sim_to_real),
                 "observation_contract": OBSERVATION_CONTRACT,
                 "episode_end_contract": EPISODE_END_CONTRACT,
-                "wait_before_truncate_s": getattr(self.env.cfg, "wait_before_truncate", 10.0),
+                "wait_before_truncate_s": getattr(self.env.cfg, "wait_before_truncate", 5.0),
             },
             "torch_rng_state": torch.get_rng_state(),
             "curriculum": self.env.curriculum.state_dict() if self.env.curriculum is not None else None,
@@ -556,7 +556,7 @@ class DiffNavTrainer:
         result = {
             "method": "diffnav",
             "episode_end_contract": EPISODE_END_CONTRACT,
-            "wait_before_truncate_s": getattr(self.env.cfg, "wait_before_truncate", 10.0),
+            "wait_before_truncate_s": getattr(self.env.cfg, "wait_before_truncate", 5.0),
             "physics": self.cfg.physics,
             **runtime_metadata(self.env),
             "variant": self.cfg.variant,
