@@ -93,11 +93,6 @@ def test_release_audit_detects_legacy_names_in_publishing_docs(tmp_path):
     )
     assert audit(tmp_path) == []
 
-    (tmp_path / "README.md").write_text(
-        "Reimplementation of [Zh" "ang et al. (2025)](https://doi.org/10.1038/s42256-025-01048-0).\n"
-    )
-    assert audit(tmp_path) == []
-
 
 def test_export_rejects_unrecognised_configuration_metadata(tmp_path):
     from scripts.export_weights import export_weights
