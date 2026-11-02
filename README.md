@@ -42,7 +42,7 @@ PYTHONPATH=src .venv/bin/python scripts/train_diffnav.py \
   --seed 0 --terrain_seed 0
 ```
 
-The default task has a 120 × 40 m world, 480 static and 32 dynamic obstacles, randomized dynamics, and target speeds of 1–6 m/s. 
+The current `finetune_s1` task has a 120 × 40 m world, 320 static and 160 dynamic obstacles (480 total), randomized dynamics, and target speeds of 1–6 m/s. The packaged `baseline_direct.pt` policy was originally trained under the **historical** 480/32 distribution; testing it with the command above evaluates it on the new distribution, not its original training distribution.
 
 GRU is the default. For optional [SRU-LSTM-Gated](https://github.com/leggedrobotics/sru-pytorch-spatial-learning) BPTT training, add `--recurrent_model sru_lstm_gated`; start from fresh weights rather than a GRU checkpoint.
 
