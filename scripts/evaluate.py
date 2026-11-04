@@ -51,6 +51,8 @@ def main():
     task = "Isaac-AerialNav-Depth-v0" if args.method == "diffnav" else "Isaac-AerialNav-PPO-v0"
     cfg, _ = resolve_navigation_config(task, args)
     pointnet = args.method == "diffnav" and cfg.perception_cfg.mode == "pointnet"
+    if pointnet:
+        cfg.variant = "step"
     if args.geometry_backend is not None:
         if args.method != "diffnav":
             parser.error("--geometry_backend requires --method diffnav")
@@ -98,6 +100,7 @@ def main():
             result = {
                 "method": "pointnet" if pointnet else args.method,
                 "preset": "pointnet" if pointnet else "default",
+                "variant": getattr(cfg, "variant", None),
                 "physics": args.physics_preset,
                 **runtime_metadata(env),
                 **({"recurrent_model": policy.cfg.recurrent_model} if args.method == "diffnav" else {}),

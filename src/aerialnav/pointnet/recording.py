@@ -9,29 +9,58 @@ import warp as wp
 from pxr import Usd, UsdGeom
 
 
+def terrain_mesh_parts(vertices, faces):
+    # Match main's existing recording palette; only reindex triangles, never change geometry.
+    raised = np.max(vertices[faces, 2], axis=1) > 0.05
+    for name, selected, color in (
+        ("ground", ~raised, [58, 73, 86, 255]),
+        ("static_obstacles", raised, [215, 225, 235, 255]),
+    ):
+        if selected.any():
+            used, indices = np.unique(faces[selected], return_inverse=True)
+            yield name, vertices[used], indices.reshape(-1, 3).astype(np.uint32), color
+
+
 def recording_blueprint():
     return rrb.Blueprint(
         rrb.Horizontal(
-            rrb.Spatial3DView(
-                origin="world/vehicle", contents=["/world/**"],
-                name="Flight · body-fixed chase · actual hits",
-                eye_controls=rrb.EyeControls3D(
-                    position=(3, -7, 4), look_target=(0, 0, 0), eye_up=(0, 0, 1),
+            rrb.Tabs(
+                rrb.Spatial3DView(
+                    origin="world/follow",
+                    contents=["/world/**", "- /world/trajectory"],
+                    name="Flight · translation-only follow · actual hits",
+                    line_grid=False,
+                    eye_controls=rrb.EyeControls3D(
+                        position=(-1.6, -2.2, 1.6),
+                        look_target=(0, 0, 0),
+                        eye_up=(0, 0, 1),
+                    ),
                 ),
+                rrb.Spatial3DView(
+                    origin="world",
+                    name="Overview · flown path",
+                    eye_controls=rrb.EyeControls3D(position=(85, -80, 90), look_target=(0, 0, 1)),
+                ),
+                active_tab=0,
             ),
             rrb.Vertical(
                 rrb.Spatial3DView(
-                    origin="body_frame", name="Body XYZ · valid hits only",
+                    origin="body_frame",
+                    name="Body XYZ · valid hits only",
                     eye_controls=rrb.EyeControls3D(
-                        position=(-4, -6, 5), look_target=(4, 0, 0), eye_up=(0, 0, 1),
+                        position=(-4, -6, 5),
+                        look_target=(4, 0, 0),
+                        eye_up=(0, 0, 1),
                     ),
                 ),
                 rrb.TimeSeriesView(origin="metrics", name="Speed / clearance / hit fraction"),
                 rrb.TextDocumentView(origin="status", name="Policy / outcome"),
                 row_shares=[3, 2, 1],
-            ), column_shares=[3, 2],
+            ),
+            column_shares=[3, 2],
         ),
-        rrb.TimePanel(timeline="sim_time", expanded=True), collapse_panels=True,
+        rrb.TimePanel(timeline="sim_time", expanded=True),
+        collapse_panels=True,
     )
 
 
@@ -46,18 +75,27 @@ class PointCloudRecording:
         self.stream.log("body_frame", rr.ViewCoordinates.RIGHT_HAND_Z_UP, static=True)
         sensor = env.scene["point_lidar"]
         mesh = sensor.meshes[(sensor.cfg.mesh_prim_paths[0], env.device)]
-        self.stream.log(
-            "world/obstacles",
-            rr.Mesh3D(
-                vertex_positions=wp.to_torch(mesh.points).cpu().numpy(),
-                triangle_indices=wp.to_torch(mesh.indices).cpu().numpy().reshape(-1, 3),
-                albedo_factor=[105, 119, 133, 255],
-            ),
-            static=True,
-        )
+        vertices = wp.to_torch(mesh.points).cpu().numpy()
+        faces = wp.to_torch(mesh.indices).cpu().numpy().reshape(-1, 3)
+        for name, points, triangles, color in terrain_mesh_parts(vertices, faces):
+            self.stream.log(
+                "world/terrain/" + name,
+                rr.Mesh3D(vertex_positions=points, triangle_indices=triangles, albedo_factor=color),
+                static=True,
+            )
+        for x, label, color in [(60, "map_bounds", [150, 150, 150]), (54, "safe_end_boundary", [235, 200, 65])]:
+            self.stream.log(
+                "world/" + label,
+                rr.LineStrips3D(
+                    [[[-x, -20, 0.03], [x, -20, 0.03], [x, 20, 0.03], [-x, 20, 0.03], [-x, -20, 0.03]]],
+                    colors=[color],
+                    radii=0.025,
+                ),
+                static=True,
+            )
         self.stream.log(
             "world/goal",
-            rr.Points3D(env.target_pos.cpu().numpy(), radii=0.25, colors=[255, 209, 76], labels=["Goal"]),
+            rr.Points3D(env.target_pos.cpu().numpy(), radii=0.5, colors=[250, 220, 60], labels=["Goal"]),
             static=True,
         )
         self.stream.log("body_frame/origin", rr.Points3D([[0, 0, 0]], radii=0.12, colors=[90, 175, 255]), static=True)
@@ -73,7 +111,12 @@ class PointCloudRecording:
             vertices = np.column_stack((points, np.ones(len(points)))) @ np.asarray(
                 cache.GetLocalToWorldTransform(prim)
             )
-            color = [65, 165, 235] if "/base_link/" in str(prim.GetPath()) else [245, 130, 85]
+            path = str(prim.GetPath())
+            if "/base_link/" in path:
+                color = [65, 185, 245]
+            else:
+                rotor = int(path.split("/rotor_")[1].split("/")[0])
+                color = [250, 98, 72] if rotor == 0 else [245, 220, 100] if rotor == 2 else [232, 238, 242]
             self.stream.log(
                 "world/vehicle/" + str(prim.GetPath()).strip("/"),
                 rr.Mesh3D(vertex_positions=vertices[:, :3], triangle_indices=faces, albedo_factor=color),
@@ -102,6 +145,7 @@ class PointCloudRecording:
         self.body_hits.append(packed[:3, valid].T.copy())
         self.offsets.append(self.offsets[-1] + len(hits))
         self.stream.set_time("sim_time", duration=time_s)
+        self.stream.log("world/follow", rr.Transform3D(translation=position))
         self.stream.log("world/vehicle", rr.Transform3D(translation=position, rotation=rr.Quaternion(xyzw=quaternion)))
         self.stream.log(
             "world/trajectory", rr.LineStrips3D([np.asarray(self.positions)], colors=[255, 184, 90], radii=0.035)
@@ -125,12 +169,13 @@ class PointCloudRecording:
 
     def close(self, result):
         self.stream.log(
-            "status", rr.TextDocument(
+            "status",
+            rr.TextDocument(
                 f"Episode: {result['outcome']}\n"
                 f"Static S0 · {len(self.times)} frames\n"
                 f"Minimum recorded clearance: {min(self.clearances):.3f} m\n"
                 "Cyan: actual hits only · Orange: flown trajectory"
-            )
+            ),
         )
         self.stream.flush()
         np.savez_compressed(

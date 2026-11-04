@@ -89,9 +89,14 @@ The output directory must be new. The RRD contains the actual queried static mes
 vehicle pose, flown trajectory, world hits and body XYZ hits. Only finite measured
 hits are shown; miss-ray endpoints are omitted. `trace.npz` retains those same hits,
 poses and validity offsets; `result.json` records the checkpoint, scene and outcome.
-The follow-drone view and body-frame view share simulation time. The trajectory
+The default main palette separates dark ground (58, 73, 86) from light obstacles
+(215, 225, 235), using the original 0.05 m raised-triangle threshold without
+changing geometry. The follow view tracks translation only; the overview tab
+retains the full trajectory. The follow and body-frame views share simulation time. The trajectory
 stops before the automatic terminal reset, rather than drawing a reset teleport.
 The SDK is pinned to 0.30.0 to avoid newer SDKs' psutil conflict with Isaac Sim.
 
 For ordinary playback/evaluation, use the same `presets=pointnet` selector with
 `scripts/evaluate.py --method diffnav --checkpoint PATH --output RESULT.json`.
+
+Latest [S1/F1 checkpoint tests and default-style recording](results/pointnet-s1-f1-transfer-20261104.md).

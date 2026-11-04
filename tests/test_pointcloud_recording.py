@@ -8,7 +8,7 @@ import torch
 import warp as wp
 
 pytest.importorskip("rerun")
-from aerialnav.pointnet.recording import PointCloudRecording  # noqa: E402
+from aerialnav.pointnet.recording import PointCloudRecording, terrain_mesh_parts  # noqa: E402
 
 
 def test_recording_preserves_only_valid_world_and_body_hits(tmp_path):
@@ -43,3 +43,13 @@ def test_recording_preserves_only_valid_world_and_body_hits(tmp_path):
     np.testing.assert_array_equal(trace["hits_body"], [[1.0, 0.0, 0.0]])
     np.testing.assert_array_equal(trace["hit_offsets"], [0, 1])
     assert (tmp_path / "navigation.rrd").stat().st_size > 1000
+
+
+def test_terrain_palette_matches_main_without_changing_any_triangle():
+    vertices = np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0], [1, 0, 2]], dtype=np.float32)
+    faces = np.array([[0, 1, 2], [0, 1, 3], [1, 2, 3]], dtype=np.int32)
+    parts = list(terrain_mesh_parts(vertices, faces))
+    assert [p[0] for p in parts] == ["ground", "static_obstacles"]
+    assert [p[3] for p in parts] == [[58, 73, 86, 255], [215, 225, 235, 255]]
+    restored = np.concatenate([points[triangles] for _, points, triangles, _ in parts])
+    np.testing.assert_array_equal(restored, vertices[faces])
