@@ -20,6 +20,7 @@ from isaaclab_tasks.utils import PresetCfg
 
 from isaaclab_navrl.control import make_drone_cfg
 from isaaclab_navrl.physics import DEFAULT_PHYSICS
+from isaaclab_navrl.pointnet.presets import NavigationPerceptionPresets
 from isaaclab_navrl.terrain import build_terrain_cfg
 from isaaclab_navrl.training import DEFAULT_STAGE, STAGE_CONFIG
 
@@ -80,6 +81,7 @@ class SharedNavigationSceneCfg(InteractiveSceneCfg):
     )
     dynamic_obstacles: RigidObjectCollectionCfg | None = None
     depth_camera: MultiMeshRayCasterCameraCfg | None = None
+    point_lidar: RayCasterCfg | None = None
 
 
 def make_dynamic_cfg(count: int, seed: int) -> RigidObjectCollectionCfg | None:
@@ -335,6 +337,7 @@ class ZhangEventsCfg(NavigationEventsCfg):
 
 @configclass
 class ZhangNavRLEnvCfg(NavRLEnvCfg):
+    policy_observation = NavigationPerceptionPresets()
     method = "zhang"
     training_stage: str | None = DEFAULT_STAGE
     num_static_obstacles: int = STAGE_CONFIG[DEFAULT_STAGE]["static_obstacles"]
@@ -356,6 +359,10 @@ class ZhangNavRLEnvCfg(NavRLEnvCfg):
         self.sim.dt = 0.01
         self.sim.render_interval = 10
         super().__post_init__()
+
+    @property
+    def perception_cfg(self):
+        return self.policy_observation.default if isinstance(self.policy_observation, PresetCfg) else self.policy_observation
 
     def configure_scene(self):
         if self.variant not in ("step", "continuous", "dcol"):
@@ -382,3 +389,8 @@ class ZhangNavRLEnvCfg(NavRLEnvCfg):
             UsdPhysicsCollisionCfg(collision_enabled=False) if self.variant == "continuous" else None
         )
         self.scene.lidar.update_period = self.sim.dt
+        sensor = self.perception_cfg.point_lidar
+        self.scene.point_lidar = sensor.copy() if sensor is not None else None
+        if self.scene.point_lidar is not None:
+            self.scene.point_lidar.class_type = self.scene.lidar.class_type
+            self.scene.point_lidar.update_period = period

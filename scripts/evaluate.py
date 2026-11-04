@@ -9,7 +9,13 @@ from pathlib import Path
 
 from isaaclab.app import add_launcher_args, launch_simulation
 
-from isaaclab_navrl.physics import create_navigation_env, parse_physics_args, runtime_metadata, select_physics
+from isaaclab_navrl.physics import (
+    create_navigation_env,
+    parse_physics_args,
+    resolve_navigation_config,
+    runtime_metadata,
+    select_physics,
+)
 
 
 def main():
@@ -26,7 +32,7 @@ def main():
     parser.add_argument("--stage", choices=("pretrain_s0", "pretrain_s1", "finetune_s1"))
     add_launcher_args(parser)
     parser.set_defaults(visualizer=["none"])
-    args = parse_physics_args(parser)
+    args = parse_physics_args(parser, allow_presets=True)
     if args.episodes < 1:
         parser.error("--episodes must be positive")
     if not args.checkpoint.is_file():
@@ -38,10 +44,11 @@ def main():
 
     import isaaclab_navrl.tasks  # noqa: F401
     from isaaclab_navrl.evaluation import EpisodeEvaluation
-    from isaaclab_navrl.tasks.navigation.config.hummingbird.env_cfg import NavRLEnvCfg, ZhangNavRLEnvCfg
     from isaaclab_navrl.training import EPISODE_END_CONTRACT
 
-    cfg = (ZhangNavRLEnvCfg if args.method == "zhang" else NavRLEnvCfg)()
+    task = "Isaac-NavRL-Zhang-Hummingbird-Direct-v0" if args.method == "zhang" else "Isaac-NavRL-Hummingbird-Direct-v0"
+    cfg, _ = resolve_navigation_config(task, args)
+    pointnet = args.method == "zhang" and cfg.perception_cfg.mode == "pointnet"
     if args.geometry_backend is not None:
         if args.method != "zhang":
             parser.error("--geometry_backend requires --method zhang")
@@ -68,7 +75,12 @@ def main():
             else:
                 from isaaclab_navrl.zhang.inference import load_zhang_policy
 
-                policy = load_zhang_policy(env, args.checkpoint)
+                if pointnet:
+                    from isaaclab_navrl.pointnet.inference import load_pointnet_policy
+
+                    policy = load_pointnet_policy(env, args.checkpoint)
+                else:
+                    policy = load_zhang_policy(env, args.checkpoint)
             observation, _ = env.reset()
             evaluation = EpisodeEvaluation(
                 env.root_state()[:, :3].cpu().tolist(), env.target_pos.cpu().tolist(), args.seed
@@ -82,7 +94,8 @@ def main():
                     if evaluation.complete:
                         break
             result = {
-                "method": args.method,
+                "method": "pointnet" if pointnet else args.method,
+                "preset": "pointnet" if pointnet else "default",
                 "physics": args.physics_preset,
                 **runtime_metadata(env),
                 **({"recurrent_model": policy.cfg.recurrent_model} if args.method == "zhang" else {}),

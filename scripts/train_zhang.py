@@ -3,13 +3,20 @@
 import argparse
 import hashlib
 import os
+import sys
 import time
 from dataclasses import asdict, fields
 from pathlib import Path
 
 from isaaclab.app import add_launcher_args, launch_simulation
 
-from isaaclab_navrl.physics import create_navigation_env, parse_physics_args, runtime_metadata, select_physics
+from isaaclab_navrl.physics import (
+    create_navigation_env,
+    parse_physics_args,
+    resolve_navigation_config,
+    runtime_metadata,
+    select_physics,
+)
 from isaaclab_navrl.source import verify_training_import
 from isaaclab_navrl.training import (
     DEFAULT_STAGE,
@@ -46,12 +53,35 @@ def main(*, reference_dcol=False):
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--terrain_seed", type=int, default=0)
     add_train_args(parser)
+    parser.add_argument("--point_microbatch_envs", type=int, choices=(16, 32, 64, 128))
+    parser.add_argument("--point_precision", choices=("fp32", "bf16"))
+    parser.add_argument("--point_encoder_backend", choices=("torch", "compile", "triton"))
     add_launcher_args(parser)
     parser.set_defaults(visualizer=["none"])
-    args = parse_physics_args(parser)
+    args = parse_physics_args(parser, allow_presets=True)
+    import isaaclab_navrl.tasks  # noqa: F401
+
+    cfg, recipe = resolve_navigation_config("Isaac-NavRL-Zhang-Hummingbird-Direct-v0", args, training=True)
+    pointnet = cfg.perception_cfg.mode == "pointnet"
+    if pointnet and reference_dcol:
+        parser.error("The reference DCOL trainer does not support presets=pointnet")
+    if pointnet:
+        explicit = {token.split("=", 1)[0].removeprefix("--") for token in sys.argv[1:] if token.startswith("--")}
+        for name, value in asdict(recipe).items():
+            if name not in explicit and name not in ("physics", "frontend") and hasattr(args, name):
+                setattr(args, name, value)
+        if "num_envs" not in explicit:
+            args.num_envs = 128
+    elif any(
+        getattr(args, name) is not None
+        for name in ("point_microbatch_envs", "point_precision", "point_encoder_backend")
+    ):
+        parser.error("PointNet execution options require presets=pointnet")
     if args.stage is None:
-        args.stage = DEFAULT_STAGE
-        args.fresh_stage = args.fresh_stage or (args.checkpoint is None and args.resume_checkpoint is None)
+        args.stage = "pretrain_s0" if pointnet else DEFAULT_STAGE
+        args.fresh_stage = args.fresh_stage or (
+            args.stage != "pretrain_s0" and args.checkpoint is None and args.resume_checkpoint is None
+        )
     overrides = {
         key: getattr(args, key)
         for key in ("num_dynamic_obstacles", "target_speed_min", "target_speed_max")
@@ -109,12 +139,9 @@ def main(*, reference_dcol=False):
 
     import torch
 
-    import isaaclab_navrl.tasks  # noqa: F401
-    from isaaclab_navrl.tasks.navigation.config.hummingbird.env_cfg import ZhangNavRLEnvCfg
     from isaaclab_navrl.tasks.navigation.depth_history import OBSERVATION_CONTRACT
-    from isaaclab_navrl.zhang.config import ZhangTrainCfg
 
-    config_type = ZhangTrainCfg
+    config_type = type(recipe)
     if reference_dcol:
         from isaaclab_navrl.reference.config import DcolReferenceTrainCfg
 
@@ -122,7 +149,6 @@ def main(*, reference_dcol=False):
     stage = STAGE_CONFIG[args.stage].copy()
     if args.num_dynamic_obstacles is not None:
         stage["dynamic_obstacles"] = args.num_dynamic_obstacles
-    cfg = ZhangNavRLEnvCfg()
     cfg.variant = args.variant
     cfg.height_bounds_reset = bool(args.height_bounds_reset)
     cfg.geometry_backend = args.geometry_backend
@@ -140,9 +166,7 @@ def main(*, reference_dcol=False):
     cfg.depth_camera_batch_size = args.camera_batch_size
     select_physics(cfg, args.physics_preset)
     cfg.configure_scene()
-    train_values = {
-        field.name: getattr(args, field.name) for field in fields(ZhangTrainCfg) if hasattr(args, field.name)
-    }
+    train_values = {field.name: getattr(args, field.name) for field in fields(config_type) if hasattr(args, field.name)}
     if reference_dcol:
         train_values["collision_metric"] = "dcol"
         train_values["geometry_backend"] = "native"
@@ -158,7 +182,7 @@ def main(*, reference_dcol=False):
     torch.manual_seed(args.seed)
     args.log_dir.mkdir(parents=True, exist_ok=True)
     run_config = {
-        "method": "zhang",
+        "method": "pointnet" if pointnet else "zhang",
         "physics": args.physics_preset,
         "frontend": args.frontend,
         "variant": args.variant,
@@ -199,7 +223,7 @@ def main(*, reference_dcol=False):
             "collision_terminates": args.variant != "continuous",
             "height_bounds_reset": cfg.height_bounds_reset,
             "geometry_backend": cfg.geometry_backend,
-            "perception": "depth",
+            "perception": cfg.perception_cfg.mode,
             "bounds_terminates": args.variant != "continuous",
             "physics_dt": cfg.sim.dt,
             "policy_dt": cfg.sim.dt * cfg.decimation,
@@ -215,7 +239,7 @@ def main(*, reference_dcol=False):
                 "pixel_noise_std": cfg.scene.depth_camera.pixel_noise_std,
             },
             "sim_to_real": asdict(cfg.sim_to_real),
-            "observation_contract": OBSERVATION_CONTRACT,
+            "observation_contract": "body_xyz_lidar_validity_v2" if pointnet else OBSERVATION_CONTRACT,
             "episode_end_contract": EPISODE_END_CONTRACT,
             "wait_before_truncate_s": cfg.wait_before_truncate,
         },
@@ -238,11 +262,17 @@ def main(*, reference_dcol=False):
             write_json(args.log_dir / "config.json", run_config)
             write_json(args.log_dir / "nominal_dynamics.json", env.nominal_dynamics)
             trainer_type = ZhangTrainer
+            if pointnet:
+                from isaaclab_navrl.pointnet.runner import PointNetTrainer
+
+                trainer_type = PointNetTrainer
             if reference_dcol:
                 from isaaclab_navrl.reference.runner import DcolReferenceTrainer
 
                 trainer_type = DcolReferenceTrainer
             trainer = trainer_type(env, train_cfg, args.log_dir)
+            run_config.update(trainer.checkpoint_metadata())
+            write_json(args.log_dir / "config.json", run_config)
             if cfg.geometry_backend == "curobo_v2":
                 write_json(args.log_dir / "geometry_backend.json", env.terrain_distance.metadata())
             initialize_rollout = trainer._initialize_rollout
@@ -294,7 +324,7 @@ def main(*, reference_dcol=False):
                 if args.checkpoint is not None:
                     trainer.load_stage_checkpoint(args.checkpoint)
                 elif args.resume_checkpoint is not None:
-                    trainer.load_stage_checkpoint(args.resume_checkpoint, resume=True)
+                    trainer.load_stage_checkpoint(args.resume_checkpoint, resume=True, allow_num_envs_change=pointnet)
                 initial_hash = hashlib.sha256()
                 for name, parameter in trainer.model.state_dict().items():
                     initial_hash.update(name.encode())

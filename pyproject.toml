@@ -10,6 +10,9 @@ readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = ["isaaclab[isaacsim,rsl-rl]==3.0.0", "tensorboard>=2.21", "pyyaml>=6.0"]
 
+[project.optional-dependencies]
+recording = ["rerun-sdk==0.30.0"]
+
 [project.entry-points."isaaclab.tasks"]
 isaaclab_navrl = "isaaclab_navrl.tasks"
 

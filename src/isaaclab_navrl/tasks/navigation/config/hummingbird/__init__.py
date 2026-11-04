@@ -19,6 +19,7 @@ gym.register(
     disable_env_checker=True,
     kwargs={
         "env_cfg_entry_point": f"{__name__}.env_cfg:ZhangNavRLEnvCfg",
+        "bptt_cfg_entry_point": "isaaclab_navrl.pointnet.presets:training_presets",
         "warp_entry_point": "isaaclab_navrl.tasks.navigation.navrl_warp_env:ZhangNavRLWarpEnv",
     },
 )

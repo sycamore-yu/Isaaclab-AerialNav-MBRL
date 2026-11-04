@@ -143,3 +143,10 @@ TensorBoard 使用统一的 `Train/success_rate`、`Train/episodes` 等标签。
 - [相机批量位姿读取经验](docs/migration/CAMERA_POSE_AGGREGATION_EXPERIENCE.md)
 
 最初迁移基线为 `2456a5b`；新机制前冻结基线为 `f6d5fd4`，归档与相机经验提交为 `1597ffe`。历史 NavRL 在 350 静态、60 动态场景的最高训练首次到达率为 49.28%，未通过旧验收。正式结果以本轮真实训练记录为准。
+
+## PointNet point-cloud navigation
+
+Use `scripts/train_zhang.py presets=pointnet` for body-frame LiDAR XYZ and the
+PointNet–GRU192 BPTT recipe on the existing navigation environment. No extra RL
+environment is needed. See [usage and Rerun recording](docs/pointnet.md) and
+[integration acceptance](docs/results/pointnet-preset-20261104.md).

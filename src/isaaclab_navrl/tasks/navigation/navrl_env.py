@@ -447,7 +447,7 @@ class NavRLEnv(DirectRLEnv):
                 (age > 0)[:, None, None, None], compensated_depth_features(warped, known), policy_depth
             )
             known_fraction = torch.where(age > 0, known.float().mean((1, 2, 3)), known_fraction)
-        return {
+        observation = {
             "depth_features": depth,
             "position": state[:, :3],
             "quaternion": state[:, 3:7],
@@ -465,6 +465,13 @@ class NavRLEnv(DirectRLEnv):
             "depth_known_fraction": known_fraction,
             "input_delay_steps": self.perturbation.observation_buffer.time_lags.clone(),
         }
+        if self.cfg.perception_cfg.mode == "pointnet":
+            from .pointcloud import pack_body_points
+
+            observation["policy_points"] = pack_body_points(
+                self.scene["point_lidar"].data.ray_hits_w.torch, observation["position"], observation["quaternion"]
+            )
+        return observation
 
 
 class ZhangNavRLEnv(NavRLEnv):

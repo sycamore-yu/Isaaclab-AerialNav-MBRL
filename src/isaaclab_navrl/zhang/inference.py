@@ -10,19 +10,29 @@ from .normalization import PolicyObservationNormalizer
 
 
 class ZhangInference:
+    method = "zhang"
+    checkpoint_methods = ("zhang",)
+    checkpoint_observation_contracts = (OBSERVATION_CONTRACT,)
+    config_type = ZhangTrainCfg
+    model_type = ZhangPolicy
+
+    def validate_checkpoint(self, payload):
+        pass
+
     def __init__(self, env, checkpoint):
         payload = torch.load(checkpoint, map_location=env.device, weights_only=True)
-        if payload["method"] != "zhang" or payload["format_version"] not in (2, 3):
+        if payload["method"] not in self.checkpoint_methods or payload["format_version"] not in (2, 3):
             raise ValueError("Not a supported Zhang checkpoint")
         if (
             env.cfg.sim_to_real.enabled
             and env.cfg.sim_to_real.input_delay
-            and payload.get("environment", {}).get("observation_contract") != OBSERVATION_CONTRACT
+            and payload.get("environment", {}).get("observation_contract") not in self.checkpoint_observation_contracts
         ):
             raise ValueError("Observation timing changed; evaluate the old delayed-input policy with its frozen source")
+        self.checkpoint_train_cfg = payload["train_cfg"]
         self.training_collision_metric = payload["train_cfg"].get("collision_metric", "dcol")
         self.training_geometry_backend = payload["train_cfg"].get("geometry_backend", "native")
-        self.cfg = ZhangTrainCfg(
+        self.cfg = self.config_type(
             **(
                 payload["train_cfg"]
                 | {
@@ -35,7 +45,8 @@ class ZhangInference:
         )
         self.cfg.validate()
         self.env = env
-        self.model = ZhangPolicy(self.cfg.recurrent_model).to(env.device).eval()
+        self.validate_checkpoint(payload)
+        self.model = self.model_type(self.cfg.recurrent_model).to(env.device).eval()
         self.model.load_state_dict(payload["model_state_dict"], strict=True)
         self.normalizer = PolicyObservationNormalizer(
             self.cfg.observation_normalization, self.cfg.normalization_variance_floor, device=env.device
@@ -72,12 +83,15 @@ class ZhangInference:
             observation["policy_target"],
             parameters["max_speed"],
             parameters["margin"],
+            body_frame=getattr(self.model, "body_frame", False),
             goal_speed_profile=self.cfg.goal_speed_profile,
             goal_approach_time_s=self.cfg.goal_approach_time_s,
             goal_clear_weight=goal_weight,
         )
         depth, state = self.normalizer.normalize(
-            observation["policy_depth_features"], state, self.normalization_snapshot
+            observation["policy_points" if self.cfg.perception == "lidar" else "policy_depth_features"],
+            state,
+            self.normalization_snapshot,
         )
         output, self.hidden = self.model(depth, state, self.hidden)
         command, _ = decode_action(output, heading, parameters["thr_est_error"])
