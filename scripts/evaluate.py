@@ -49,6 +49,8 @@ def main():
     task = "Isaac-NavRL-Zhang-Hummingbird-Direct-v0" if args.method == "zhang" else "Isaac-NavRL-Hummingbird-Direct-v0"
     cfg, _ = resolve_navigation_config(task, args)
     pointnet = args.method == "zhang" and cfg.perception_cfg.mode == "pointnet"
+    if pointnet:
+        cfg.variant = "step"
     if args.geometry_backend is not None:
         if args.method != "zhang":
             parser.error("--geometry_backend requires --method zhang")
@@ -96,6 +98,7 @@ def main():
             result = {
                 "method": "pointnet" if pointnet else args.method,
                 "preset": "pointnet" if pointnet else "default",
+                "variant": getattr(cfg, "variant", None),
                 "physics": args.physics_preset,
                 **runtime_metadata(env),
                 **({"recurrent_model": policy.cfg.recurrent_model} if args.method == "zhang" else {}),
