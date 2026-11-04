@@ -71,3 +71,4 @@ We would like to express our gratitude to the following projects and research wo
 - [NavRL](https://github.com/Zhefan-Xu/NavRL) — Learning safe flight in dynamic environments using reinforcement learning.
 - [Zhang et al. (2025)](https://doi.org/10.1038/s42256-025-01048-0) — Vision-based agile quadrotor flight through differentiable physics training.
 - [Song et al.](https://proceedings.mlr.press/v270/song25a.html) — Differentiable policy learning with state alignment in non-differentiable physics simulation.
+- Liu et al. (IROS 2026) — *Learning to Fly from Point Clouds via Differentiable Simulation*. Our PointNet-based navigation implementation adapts the proposed method to Isaac Lab.
