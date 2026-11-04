@@ -47,6 +47,22 @@ The default task has a 120 × 40 m world, 480 static and 32 dynamic obstacles, r
 GRU is the default. For optional [SRU-LSTM-Gated](https://github.com/leggedrobotics/sru-pytorch-spatial-learning) BPTT training, add `--recurrent_model sru_lstm_gated`; start from fresh weights rather than a GRU checkpoint.
 
 
+## Point-cloud navigation (PointNet)
+
+In addition to depth-based navigation, this repository supports **LiDAR-based navigation with a PointNet–GRU policy**.
+
+Train the PointNet policy using the `pointnet` preset:
+
+```bash
+PYTHONPATH=src .venv/bin/python scripts/train_diffnav.py presets=pointnet \
+  --stage pretrain_s0 --num_envs 128 \
+  --log_dir runs/pointnet_s0 \
+  physics=newton_mjwarp --frontend warp
+```
+
+See [PointNet documentation](docs/pointnet.md) for implementation details.
+
+
 ## Acknowledgements
 
 We would like to express our gratitude to the following projects and research works, which have provided significant support and inspiration for our work:
@@ -55,10 +71,3 @@ We would like to express our gratitude to the following projects and research wo
 - [NavRL](https://github.com/Zhefan-Xu/NavRL) — Learning safe flight in dynamic environments using reinforcement learning.
 - [Zhang et al. (2025)](https://doi.org/10.1038/s42256-025-01048-0) — Vision-based agile quadrotor flight through differentiable physics training.
 - [Song et al.](https://proceedings.mlr.press/v270/song25a.html) — Differentiable policy learning with state alignment in non-differentiable physics simulation.
-
-## PointNet point-cloud navigation
-
-Use `scripts/train_diffnav.py presets=pointnet` for body-frame LiDAR XYZ and the
-PointNet–GRU192 BPTT recipe on the existing navigation environment. No extra RL
-environment is needed. See [usage and Rerun recording](docs/pointnet.md) and
-[integration acceptance](docs/results/pointnet-preset-20261104.md).
