@@ -21,7 +21,9 @@ def validate_runtime(physics: str, frontend: str) -> None:
         raise ValueError("--frontend warp requires physics=newton_mjwarp")
 
 
-def parse_physics_args(parser: argparse.ArgumentParser, argv: list[str] | None = None) -> argparse.Namespace:
+def parse_physics_args(
+    parser: argparse.ArgumentParser, argv: list[str] | None = None, *, allow_presets=False
+) -> argparse.Namespace:
     """Parse runtime selectors even when they follow ``--train_args``.
 
     Keep runtime options out of the training-parameter remainder. A separate
@@ -33,12 +35,14 @@ def parse_physics_args(parser: argparse.ArgumentParser, argv: list[str] | None =
     )
     parser.epilog = f"{parser.epilog}\n{selector_help}" if parser.epilog else selector_help
     tokens = list(sys.argv[1:] if argv is None else argv)
-    physics_selectors, frontend_selectors, remaining = [], [], []
+    physics_selectors, frontend_selectors, domain_tokens, remaining = [], [], [], []
     index = 0
     while index < len(tokens):
         token = tokens[index]
         if token.startswith("physics="):
             physics_selectors.append(token.partition("=")[2])
+        elif token.startswith("presets="):
+            domain_tokens.append(token)
         elif token == "--frontend":
             index += 1
             if index == len(tokens):
@@ -51,6 +55,8 @@ def parse_physics_args(parser: argparse.ArgumentParser, argv: list[str] | None =
         index += 1
     if len(physics_selectors) > 1 or len(frontend_selectors) > 1:
         parser.error("Specify physics=NAME and --frontend at most once each")
+    if domain_tokens and not allow_presets:
+        parser.error("This entry point does not support domain presets; use the preset-aware BPTT or evaluation entry")
     physics = physics_selectors[0] if physics_selectors else DEFAULT_PHYSICS
     args = parser.parse_args(remaining)
     # An explicit PhysX physics preset selects its only supported frontend.
@@ -64,6 +70,7 @@ def parse_physics_args(parser: argparse.ArgumentParser, argv: list[str] | None =
         parser.error(str(exc))
     # The launcher reserves args.physics and would replace our resolved task preset.
     args.physics_preset = physics
+    args.preset_overrides = domain_tokens
     return args
 
 
@@ -103,3 +110,14 @@ def create_navigation_env(task: str, cfg, args):
             f"({metadata['frontend']})"
         )
     return env
+
+
+def resolve_navigation_config(task, args, *, training=False):
+    """Compose environment and custom BPTT recipe through Isaac Lab's resolver."""
+    from isaaclab_tasks.utils.hydra import resolve_task_config
+
+    return resolve_task_config(
+        task,
+        "bptt_cfg_entry_point" if training else None,
+        overrides=[f"physics={args.physics_preset}", *args.preset_overrides],
+    )

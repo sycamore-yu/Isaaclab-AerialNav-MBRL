@@ -57,7 +57,21 @@ def audit(root: Path, *, weights=False) -> list[str]:
                 name == "README.md"
                 and "[Zhang et al. (2025)](https://doi.org/10.1038/s42256-025-01048-0)" in line
             )
-            if obsolete_identifier.search(line) and not license_text and not cited_zhang_paper:
+            checkpoint_metadata = name == "src/aerialnav/pointnet/config.py" and line.startswith(
+                ("CHECKPOINT_METHODS =", "OBSERVATION_CONTRACTS =")
+            )
+            cited_pointcloud_paper = (
+                name == "docs/pointnet.md"
+                and line.startswith("Source:")
+                and "Learning to Fly from Point Clouds via Differentiable Simulation" in line
+            )
+            if (
+                obsolete_identifier.search(line)
+                and not license_text
+                and not cited_zhang_paper
+                and not checkpoint_metadata
+                and not cited_pointcloud_paper
+            ):
                 markers.append("obsolete project or personal identifier")
             # The origin of third-party components is a factual attribution,
             # not an internal method/package identifier.

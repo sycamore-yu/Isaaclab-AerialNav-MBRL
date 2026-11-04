@@ -394,10 +394,11 @@ class _NavigationRayCasterMixin:
         # The official yaw path already rotates starts and supplies the tracked
         # orientation. Navigation also rotates directions by that same yaw.
         super()._update_ray_infos(env_mask)
-        wp.launch(
-            rotate_directions_with_yaw,
-            dim=(self._num_envs, self.num_rays),
-            inputs=[self._data._quat_w, env_mask, self.ray_directions.warp],
-            outputs=[self._ray_directions_w],
-            device=self._device,
-        )
+        if self.cfg.ray_alignment == "yaw":
+            wp.launch(
+                rotate_directions_with_yaw,
+                dim=(self._num_envs, self.num_rays),
+                inputs=[self._data._quat_w, env_mask, self.ray_directions.warp],
+                outputs=[self._ray_directions_w],
+                device=self._device,
+            )

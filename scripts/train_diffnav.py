@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import os
+import sys
 import time
 from dataclasses import asdict, fields
 from pathlib import Path
@@ -10,7 +11,13 @@ from pathlib import Path
 from isaaclab.app import add_launcher_args, launch_simulation
 
 from aerialnav.diffnav.cli import add_train_args, parse_train_args
-from aerialnav.physics import create_navigation_env, parse_physics_args, runtime_metadata, select_physics
+from aerialnav.physics import (
+    create_navigation_env,
+    parse_physics_args,
+    resolve_navigation_config,
+    runtime_metadata,
+    select_physics,
+)
 from aerialnav.source import verify_training_import
 from aerialnav.training import (
     DEFAULT_STAGE,
@@ -46,12 +53,33 @@ def main():
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--terrain_seed", type=int, default=0)
     add_train_args(parser)
+    parser.add_argument("--point_microbatch_envs", type=int, choices=(16, 32, 64, 128))
+    parser.add_argument("--point_precision", choices=("fp32", "bf16"))
+    parser.add_argument("--point_encoder_backend", choices=("torch", "compile", "triton"))
     add_launcher_args(parser)
     parser.set_defaults(visualizer=["none"])
-    args = parse_physics_args(parser)
+    args = parse_physics_args(parser, allow_presets=True)
+    import aerialnav.tasks  # noqa: F401
+
+    cfg, recipe = resolve_navigation_config("Isaac-AerialNav-Depth-v0", args, training=True)
+    pointnet = cfg.perception_cfg.mode == "pointnet"
+    if pointnet:
+        explicit = {token.split("=", 1)[0].removeprefix("--") for token in sys.argv[1:] if token.startswith("--")}
+        for name, value in asdict(recipe).items():
+            if name not in explicit and name not in ("physics", "frontend") and hasattr(args, name):
+                setattr(args, name, value)
+        if "num_envs" not in explicit:
+            args.num_envs = 128
+    elif any(
+        getattr(args, name) is not None
+        for name in ("point_microbatch_envs", "point_precision", "point_encoder_backend")
+    ):
+        parser.error("PointNet execution options require presets=pointnet")
     if args.stage is None:
-        args.stage = DEFAULT_STAGE
-        args.fresh_stage = args.fresh_stage or (args.checkpoint is None and args.resume_checkpoint is None)
+        args.stage = "pretrain_s0" if pointnet else DEFAULT_STAGE
+        args.fresh_stage = args.fresh_stage or (
+            args.stage != "pretrain_s0" and args.checkpoint is None and args.resume_checkpoint is None
+        )
     overrides = {
         key: getattr(args, key)
         for key in ("num_dynamic_obstacles", "target_speed_min", "target_speed_max")
@@ -99,15 +127,11 @@ def main():
 
     import torch
 
-    import aerialnav.tasks  # noqa: F401
-    from aerialnav.diffnav.config import DiffNavTrainCfg
-    from aerialnav.tasks.navigation.config.hummingbird.env_cfg import DiffNavEnvCfg
     from aerialnav.tasks.navigation.depth_history import OBSERVATION_CONTRACT
 
     stage = STAGE_CONFIG[args.stage].copy()
     if args.num_dynamic_obstacles is not None:
         stage["dynamic_obstacles"] = args.num_dynamic_obstacles
-    cfg = DiffNavEnvCfg()
     cfg.variant = args.variant
     cfg.height_bounds_reset = bool(args.height_bounds_reset)
     cfg.geometry_backend = args.geometry_backend
@@ -126,9 +150,9 @@ def main():
     select_physics(cfg, args.physics_preset)
     cfg.configure_scene()
     train_values = {
-        field.name: getattr(args, field.name) for field in fields(DiffNavTrainCfg) if hasattr(args, field.name)
+        field.name: getattr(args, field.name) for field in fields(type(recipe)) if hasattr(args, field.name)
     }
-    train_cfg = DiffNavTrainCfg(
+    train_cfg = type(recipe)(
         **train_values,
         physics=args.physics_preset,
         physics_dt=cfg.sim.dt,
@@ -139,7 +163,7 @@ def main():
     torch.manual_seed(args.seed)
     args.log_dir.mkdir(parents=True, exist_ok=True)
     run_config = {
-        "method": "diffnav",
+        "method": "pointnet" if pointnet else "diffnav",
         "physics": args.physics_preset,
         "frontend": args.frontend,
         "variant": args.variant,
@@ -180,7 +204,7 @@ def main():
             "collision_terminates": args.variant != "continuous",
             "height_bounds_reset": cfg.height_bounds_reset,
             "geometry_backend": cfg.geometry_backend,
-            "perception": "depth",
+            "perception": cfg.perception_cfg.mode,
             "bounds_terminates": args.variant != "continuous",
             "physics_dt": cfg.sim.dt,
             "policy_dt": cfg.sim.dt * cfg.decimation,
@@ -196,7 +220,7 @@ def main():
                 "pixel_noise_std": cfg.scene.depth_camera.pixel_noise_std,
             },
             "sim_to_real": asdict(cfg.sim_to_real),
-            "observation_contract": OBSERVATION_CONTRACT,
+            "observation_contract": "body_xyz_lidar_validity_v2" if pointnet else OBSERVATION_CONTRACT,
             "episode_end_contract": EPISODE_END_CONTRACT,
             "wait_before_truncate_s": cfg.wait_before_truncate,
         },
@@ -218,7 +242,14 @@ def main():
             run_config["environment"].update(runtime_metadata(env))
             write_json(args.log_dir / "config.json", run_config)
             write_json(args.log_dir / "nominal_dynamics.json", env.nominal_dynamics)
-            trainer = DiffNavTrainer(env, train_cfg, args.log_dir)
+            if pointnet:
+                from aerialnav.pointnet.runner import PointNetTrainer
+
+                trainer = PointNetTrainer(env, train_cfg, args.log_dir)
+            else:
+                trainer = DiffNavTrainer(env, train_cfg, args.log_dir)
+            run_config.update(trainer.checkpoint_metadata())
+            write_json(args.log_dir / "config.json", run_config)
             if cfg.geometry_backend == "curobo_v2":
                 write_json(args.log_dir / "geometry_backend.json", env.terrain_distance.metadata())
             initialize_rollout = trainer._initialize_rollout
@@ -270,7 +301,7 @@ def main():
                 if args.checkpoint is not None:
                     trainer.load_stage_checkpoint(args.checkpoint)
                 elif args.resume_checkpoint is not None:
-                    trainer.load_stage_checkpoint(args.resume_checkpoint, resume=True)
+                    trainer.load_stage_checkpoint(args.resume_checkpoint, resume=True, allow_num_envs_change=pointnet)
                 initial_hash = hashlib.sha256()
                 for name, parameter in trainer.model.state_dict().items():
                     initial_hash.update(name.encode())

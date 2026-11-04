@@ -80,14 +80,17 @@ def quaternion_matrix(quaternion):
     ).reshape(*quaternion.shape[:-1], 3, 3)
 
 
-def policy_state(position, velocity, quaternion, target, max_speed, margin):
+def policy_state(position, velocity, quaternion, target, max_speed, margin, *, body_frame=False):
     rotation = quaternion_matrix(quaternion.detach())
-    forward = rotation[:, :, 0].clone()
-    forward[:, 2] = 0
-    forward = torch.nn.functional.normalize(forward, dim=-1)
-    up = torch.zeros_like(forward)
-    up[:, 2] = 1
-    heading = torch.stack((forward, torch.cross(up, forward, dim=-1), up), dim=-1)
+    if body_frame:
+        heading = rotation
+    else:
+        forward = rotation[:, :, 0].clone()
+        forward[:, 2] = 0
+        forward = torch.nn.functional.normalize(forward, dim=-1)
+        up = torch.zeros_like(forward)
+        up[:, 2] = 1
+        heading = torch.stack((forward, torch.cross(up, forward, dim=-1), up), dim=-1)
     target_raw = target.detach() - position.detach()
     target_norm = target_raw.norm(dim=-1, keepdim=True)
     target_velocity = target_raw / target_norm.clamp_min(1e-6) * torch.minimum(target_norm, max_speed)
@@ -98,7 +101,10 @@ def policy_state(position, velocity, quaternion, target, max_speed, margin):
 
 
 def decode_action(output, heading, thrust_error):
-    acceleration, velocity_prediction = (heading @ output.reshape(-1, 3, 2)).unbind(-1)
     gravity = output.new_tensor((0.0, 0.0, -9.80665))
+    if output.shape[-1] == 3:
+        acceleration = torch.einsum("bij,bj->bi", heading, output)
+        return (acceleration - gravity) * thrust_error + gravity, torch.zeros_like(acceleration)
+    acceleration, velocity_prediction = (heading @ output.reshape(-1, 3, 2)).unbind(-1)
     command = (acceleration - velocity_prediction - gravity) * thrust_error + gravity
     return command, velocity_prediction

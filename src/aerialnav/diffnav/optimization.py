@@ -45,10 +45,11 @@ class OptimizerStepMonitor:
             layer = name.rsplit(".", 1)[0] if "." in name else name
             self.groups.setdefault(f"Optim/layers/{layer}", []).append((offset, end))
             if name in ("fc.weight", "fc.bias"):
-                if parameter.shape[0] != len(self.head_names):
+                head_names = ("ax", "ay", "az") if parameter.shape[0] == 3 else self.head_names
+                if parameter.shape[0] != len(head_names):
                     raise ValueError("Expected the six interleaved DiffNav FC outputs")
-                row_width = parameter.numel() // len(self.head_names)
-                for row, label in enumerate(self.head_names):
+                row_width = parameter.numel() // len(head_names)
+                for row, label in enumerate(head_names):
                     self.groups.setdefault(f"Optim/head/{label}", []).append(
                         (offset + row * row_width, offset + (row + 1) * row_width)
                     )

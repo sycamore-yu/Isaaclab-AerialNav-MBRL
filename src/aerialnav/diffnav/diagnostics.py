@@ -65,20 +65,24 @@ class GradientDiagnostic:
                     "flat_offset": offset,
                 }
             )
-            if name.startswith(("stem.", "v_proj.", "gru.", "sru.")):
+            if name.startswith(("stem.", "point_encoder.", "perception_projection.", "v_proj.", "gru.", "sru.")):
                 trunk.append((offset, end))
             if name == "fc.weight":
-                if parameter.ndim != 2 or parameter.shape[0] != 6:
-                    raise ValueError("DiffNav gradient diagnostics require the interleaved six-row fc head")
-                z_head.append((offset + 4 * parameter.shape[1], end))
+                if parameter.ndim != 2 or parameter.shape[0] not in (3, 6):
+                    raise ValueError("DiffNav gradient diagnostics require a three-axis or interleaved six-row fc head")
+                z_head.append((offset + (2 if parameter.shape[0] == 3 else 4) * parameter.shape[1], end))
             offset = end
         if not trunk or not z_head:
             raise ValueError("DiffNav gradient diagnostics require the policy trunk and fc z rows")
         self._groups = {"all": [(0, offset)], "trunk": trunk, "z_head": z_head}
         vectors = []
         for name in self.term_names:
-            gradients = torch.autograd.grad(
-                losses[name], self._parameters, retain_graph=True, create_graph=False, allow_unused=True
+            gradients = (
+                torch.autograd.grad(
+                    losses[name], self._parameters, retain_graph=True, create_graph=False, allow_unused=True
+                )
+                if losses[name].requires_grad
+                else (None,) * len(self._parameters)
             )
             vectors.append(self._flatten(gradients))
         self._gradients = torch.stack(vectors).detach()

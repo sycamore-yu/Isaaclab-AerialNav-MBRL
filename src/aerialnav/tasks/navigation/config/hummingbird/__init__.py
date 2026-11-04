@@ -19,6 +19,7 @@ gym.register(
     disable_env_checker=True,
     kwargs={
         "env_cfg_entry_point": f"{__name__}.env_cfg:DiffNavEnvCfg",
+        "bptt_cfg_entry_point": "aerialnav.pointnet.presets:training_presets",
         "warp_entry_point": "aerialnav.tasks.navigation.navigation_warp_env:DiffNavWarpEnv",
     },
 )

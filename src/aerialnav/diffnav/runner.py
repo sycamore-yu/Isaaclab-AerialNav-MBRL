@@ -73,6 +73,18 @@ def rollout_diagnostics(history):
 
 
 class DiffNavTrainer:
+    method = "diffnav"
+    checkpoint_methods = ("diffnav",)
+    model_type = DiffNavPolicy
+    observation_contract = OBSERVATION_CONTRACT
+    checkpoint_observation_contracts = (OBSERVATION_CONTRACT,)
+
+    def checkpoint_metadata(self):
+        return {}
+
+    def validate_checkpoint(self, payload):
+        pass
+
     def transition_costs(self, history, cfg, velocity_history=None):
         if cfg.loss_timing == "pre_reset":
             if self.step_loss.steps != len(history["velocity"]):
@@ -149,7 +161,7 @@ class DiffNavTrainer:
             raise ValueError("The environment and trainer must use the same episode target height range")
         self.env, self.cfg = env, cfg
         self.log_dir = Path(log_dir).resolve()
-        self.model = DiffNavPolicy(cfg.recurrent_model).to(env.device)
+        self.model = self.model_type(cfg.recurrent_model).to(env.device)
         optimizer_type = torch.optim.AdamW if cfg.optimizer == "adamw" else torch.optim.Adam
         self.optimizer = optimizer_type(self.model.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)
         self.normalizer = PolicyObservationNormalizer(
@@ -290,13 +302,14 @@ class DiffNavTrainer:
             - radius
         )
 
-    def load_stage_checkpoint(self, path, *, resume=False):
+    def load_stage_checkpoint(self, path, *, resume=False, allow_num_envs_change=False):
         """Load the preceding stage or explicitly resume saved same-stage learning state."""
         payload = torch.load(path, map_location=self.env.device, weights_only=True)
-        if payload["format_version"] != 3 or payload["method"] != "diffnav":
+        if payload["format_version"] != 3 or payload["method"] not in self.checkpoint_methods:
             raise ValueError("Stage transitions require this experiment's DiffNav checkpoint")
-        if payload["environment"].get("observation_contract") != OBSERVATION_CONTRACT:
+        if payload["environment"].get("observation_contract") not in self.checkpoint_observation_contracts:
             raise ValueError("Observation timing changed; resume the old experiment with its frozen source")
+        self.validate_checkpoint(payload)
         # Version-3 persisted configs predate optional failure-cost and target-rate fields.
         saved_config = asdict(
             type(self.cfg)(
@@ -312,6 +325,7 @@ class DiffNavTrainer:
             )
         )
         allowed_stage_changes = {"lr", "max_iterations", "stop_after_acceptance", "gradient_diagnostic_updates"}
+        allowed_stage_changes.update(getattr(self.cfg, "resume_runtime_fields", ()))
         if resume:
             allowed_stage_changes.remove("lr")
         for name, value in asdict(self.cfg).items():
@@ -330,7 +344,7 @@ class DiffNavTrainer:
                 "sim_to_real": asdict(self.env.cfg.sim_to_real),
                 "target_speed_range": getattr(self.env.cfg, "target_speed_range", None),
             }
-            if payload["num_envs"] != self.env.num_envs or any(
+            if (not allow_num_envs_change and payload["num_envs"] != self.env.num_envs) or any(
                 saved_env[key] != value for key, value in expected.items()
             ):
                 raise ValueError("Same-stage continuation requires matching environment, seed and num_envs")
@@ -373,6 +387,16 @@ class DiffNavTrainer:
                 self.log_dir / "continuation.json",
                 {
                     "checkpoint": self.parent_checkpoint,
+                    "runtime_changes": {
+                        name: {
+                            "from": payload["train_cfg"].get(name, "legacy source default"),
+                            "to": getattr(self.cfg, name),
+                        }
+                        for name in getattr(self.cfg, "resume_runtime_fields", ())
+                        if name not in payload["train_cfg"] or saved_config[name] != getattr(self.cfg, name)
+                    },
+                    "previous_num_envs": payload["num_envs"],
+                    "num_envs": self.env.num_envs,
                     "completed_updates": self.completed_updates,
                     "stage_updates": self.stage_updates,
                     "schedule_updates": self.schedule_updates,
@@ -399,7 +423,7 @@ class DiffNavTrainer:
     def _checkpoint(self, path):
         payload = {
             "format_version": 3,
-            "method": "diffnav",
+            "method": self.method,
             "physics": self.cfg.physics,
             **runtime_metadata(self.env),
             "variant": self.cfg.variant,
@@ -442,10 +466,11 @@ class DiffNavTrainer:
                 "training_stage": self.env.cfg.training_stage,
                 "variant": self.cfg.variant,
                 "sim_to_real": asdict(self.env.cfg.sim_to_real),
-                "observation_contract": OBSERVATION_CONTRACT,
+                "observation_contract": self.observation_contract,
                 "episode_end_contract": EPISODE_END_CONTRACT,
                 "wait_before_truncate_s": getattr(self.env.cfg, "wait_before_truncate", 5.0),
             },
+            **self.checkpoint_metadata(),
             "torch_rng_state": torch.get_rng_state(),
             "curriculum": self.env.curriculum.state_dict() if self.env.curriculum is not None else None,
         }
@@ -464,14 +489,15 @@ class DiffNavTrainer:
         payload = torch.load(path, map_location=self.env.device, weights_only=True)
         if (
             payload.get("format_version") != 3
-            or payload.get("method") != "diffnav"
+            or payload.get("method") != self.method
             or payload.get("stage_log_dir") != str(self.log_dir)
             or payload["environment"]["training_stage"] != self.env.cfg.training_stage
             or payload["environment"]["dynamic_obstacles"] != self.env.cfg.num_dynamic_obstacles
             or payload["train_cfg"] != asdict(self.cfg)
-            or payload["environment"].get("observation_contract") != OBSERVATION_CONTRACT
+            or payload["environment"].get("observation_contract") != self.observation_contract
         ):
             raise ValueError("Stable recovery requires the exact same run, stage and configuration")
+        self.validate_checkpoint(payload)
         current_lrs = [group["lr"] for group in self.optimizer.param_groups]
         self.model.load_state_dict(payload["model_state_dict"], strict=True)
         self.optimizer.load_state_dict(payload["optimizer_state_dict"])
@@ -554,7 +580,7 @@ class DiffNavTrainer:
 
     def _result(self, status, checkpoint=None, error=None):
         result = {
-            "method": "diffnav",
+            "method": self.method,
             "episode_end_contract": EPISODE_END_CONTRACT,
             "wait_before_truncate_s": getattr(self.env.cfg, "wait_before_truncate", 5.0),
             "physics": self.cfg.physics,
@@ -763,9 +789,14 @@ class DiffNavTrainer:
                         observation["policy_target"],
                         parameters["max_speed"],
                         parameters["margin"],
+                        body_frame=getattr(self.model, "body_frame", False),
                     )
                     # Camera output is a reused buffer and must not overwrite saved CNN inputs.
-                    depth = observation["policy_depth_features"].detach().clone()
+                    depth = (
+                        observation["policy_points" if self.cfg.perception == "lidar" else "policy_depth_features"]
+                        .detach()
+                        .clone()
+                    )
                     normalized_depth, normalized_features = self.normalizer.normalize(
                         depth, features, normalization_snapshot
                     )
@@ -900,6 +931,7 @@ class DiffNavTrainer:
                     if self.cfg.resolved_velocity_loss_mode == "truncated_window":
                         history["timeout"].append(transition["timeout"])
                         history["invalid"].append(transition["invalid"])
+                    if self.cfg.resolved_velocity_loss_mode == "truncated_window" or self.method == "pointnet":
                         history["episode_step"].append(transition["step"])
                     history["executed_command"].append(transition["executed_action"])
                     history["model_velocity_delta"].append(prediction.velocity.detach() - transition["velocity"])
@@ -1158,6 +1190,8 @@ class DiffNavTrainer:
                 metrics.update(optimizer_metrics)
                 metrics.update(algorithm_metrics)
                 metrics.update(rollout_metrics)
+                if hasattr(self.model, "execution_metrics"):
+                    metrics.update(self.model.execution_metrics())
                 metrics.update(
                     update=self.completed_updates,
                     learning_rate=learning_rate,

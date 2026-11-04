@@ -9,7 +9,13 @@ from pathlib import Path
 
 from isaaclab.app import add_launcher_args, launch_simulation
 
-from aerialnav.physics import create_navigation_env, parse_physics_args, runtime_metadata, select_physics
+from aerialnav.physics import (
+    create_navigation_env,
+    parse_physics_args,
+    resolve_navigation_config,
+    runtime_metadata,
+    select_physics,
+)
 
 
 def main():
@@ -28,7 +34,7 @@ def main():
     )
     add_launcher_args(parser)
     parser.set_defaults(visualizer=["none"])
-    args = parse_physics_args(parser)
+    args = parse_physics_args(parser, allow_presets=True)
     if args.episodes < 1:
         parser.error("--episodes must be positive")
     if not args.checkpoint.is_file():
@@ -40,10 +46,11 @@ def main():
 
     import aerialnav.tasks  # noqa: F401
     from aerialnav.evaluation import EpisodeEvaluation
-    from aerialnav.tasks.navigation.config.hummingbird.env_cfg import DiffNavEnvCfg, NavigationEnvCfg
     from aerialnav.training import EPISODE_END_CONTRACT
 
-    cfg = (DiffNavEnvCfg if args.method == "diffnav" else NavigationEnvCfg)()
+    task = "Isaac-AerialNav-Depth-v0" if args.method == "diffnav" else "Isaac-AerialNav-PPO-v0"
+    cfg, _ = resolve_navigation_config(task, args)
+    pointnet = args.method == "diffnav" and cfg.perception_cfg.mode == "pointnet"
     if args.geometry_backend is not None:
         if args.method != "diffnav":
             parser.error("--geometry_backend requires --method diffnav")
@@ -70,7 +77,12 @@ def main():
             else:
                 from aerialnav.diffnav.inference import load_diffnav_policy
 
-                policy = load_diffnav_policy(env, args.checkpoint)
+                if pointnet:
+                    from aerialnav.pointnet.inference import load_pointnet_policy
+
+                    policy = load_pointnet_policy(env, args.checkpoint)
+                else:
+                    policy = load_diffnav_policy(env, args.checkpoint)
             observation, _ = env.reset()
             evaluation = EpisodeEvaluation(
                 env.root_state()[:, :3].cpu().tolist(), env.target_pos.cpu().tolist(), args.seed
@@ -84,7 +96,8 @@ def main():
                     if evaluation.complete:
                         break
             result = {
-                "method": args.method,
+                "method": "pointnet" if pointnet else args.method,
+                "preset": "pointnet" if pointnet else "default",
                 "physics": args.physics_preset,
                 **runtime_metadata(env),
                 **({"recurrent_model": policy.cfg.recurrent_model} if args.method == "diffnav" else {}),

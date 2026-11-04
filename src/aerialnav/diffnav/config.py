@@ -12,6 +12,7 @@ DIFFNAV_ALGORITHMS = ("bptt", "shac", "ahac")
 
 @dataclass
 class DiffNavTrainCfg:
+    supported_perceptions = ("depth",)
     variant: Literal["step", "continuous", "terminal"] = "terminal"
     algorithm: Literal["bptt", "shac", "ahac"] = "bptt"
     recurrent_model: Literal["gru", "sru_lstm_gated"] = "gru"
@@ -129,7 +130,7 @@ class DiffNavTrainCfg:
             raise ValueError("cuRoboV2 requires SDF and finite_difference approach mode")
         if self.position_integration not in ("original", "trapezoid"):
             raise ValueError("position_integration must be original or trapezoid")
-        if self.perception != "depth":
+        if self.perception not in self.supported_perceptions:
             raise ValueError("Original DiffNav uses depth observations")
         if self.loss_timing not in ("deferred", "pre_reset"):
             raise ValueError("loss_timing must be deferred or pre_reset")

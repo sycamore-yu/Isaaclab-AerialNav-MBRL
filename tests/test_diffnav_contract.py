@@ -951,6 +951,30 @@ def test_same_stage_resume_preserves_learning_state_and_cumulative_counts(tmp_pa
         other.load_stage_checkpoint(checkpoint, resume=True)
 
 
+def test_same_stage_env_resize_requires_explicit_opt_in_and_keeps_counters(tmp_path):
+    cfg = DiffNavTrainCfg(physics_dt=0.01, policy_dt=0.1, variant="step", timesteps=4, max_iterations=1)
+    initial_env = AnalyticEnv()
+    initial_env.cfg.training_stage = "pretrain_s0"
+    first = DiffNavTrainer(initial_env, cfg, tmp_path / "first")
+    first.completed_updates, first.environment_steps = 8, 655360
+    checkpoint = tmp_path / "saved.pt"
+    first._checkpoint(checkpoint)
+    env = AnalyticEnv()
+    env.num_envs = 1
+    env.cfg.training_stage = "pretrain_s0"
+    second = DiffNavTrainer(env, cfg, tmp_path / "resized")
+    with pytest.raises(ValueError, match="matching environment"):
+        second.load_stage_checkpoint(checkpoint, resume=True)
+    second.load_stage_checkpoint(checkpoint, resume=True, allow_num_envs_change=True)
+    assert second.completed_updates == 8 and second.environment_steps == 655360
+    assert second.optimizer.state_dict() == first.optimizer.state_dict()
+    receipt = json.loads((tmp_path / "resized" / "continuation.json").read_text())
+    assert receipt["num_envs"] == 1 and receipt["previous_num_envs"] == first.env.num_envs
+    env.cfg.terrain_seed = 1
+    with pytest.raises(ValueError, match="matching environment"):
+        second.load_stage_checkpoint(checkpoint, resume=True, allow_num_envs_change=True)
+
+
 def test_stage_handoff_rejects_another_comparison_variant(tmp_path):
     env = AnalyticEnv()
     env.cfg.training_stage = "pretrain_s1"
@@ -1114,3 +1138,59 @@ def test_exact_first_window_collision_is_scored_once_without_duplicate_later_win
     torch.testing.assert_close(later["velocity"], torch.tensor(1.5))
     assert later["velocity_valid_samples"] == 1
     assert later["velocity_short_terminal_samples"] == 0
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_pointnet_checkpoint_rename_retains_weights_optimizer_and_counters(tmp_path, legacy):
+    from aerialnav.pointnet.config import CHECKPOINT_METHODS, OBSERVATION_CONTRACTS, PointNetTrainCfg
+    from aerialnav.pointnet.runner import PointNetTrainer
+
+    cfg = PointNetTrainCfg(
+        physics_dt=0.01, policy_dt=0.1, timesteps=4, point_precision="fp32", point_encoder_backend="torch"
+    )
+    env = AnalyticEnv()
+    from isaaclab_tasks.utils.hydra import resolve_presets
+
+    from aerialnav.tasks.navigation.config.hummingbird.env_cfg import DiffNavEnvCfg
+
+    env.cfg = DiffNavEnvCfg()
+    resolve_presets(env.cfg, selected=("pointnet", "newton_mjwarp"))
+    env.cfg.variant = "step"
+    env.cfg.apply_training_stage("pretrain_s0")
+    env.cfg.configure_scene()
+    first = PointNetTrainer(env, cfg, tmp_path / "first")
+    points = torch.randn(2, 4, 11)
+    points[:, -1] = 1
+    output, _ = first.model(points, torch.zeros(2, 10))
+    output.square().mean().backward()
+    first.optimizer.step()
+    first.completed_updates = first.stage_updates = first.schedule_updates = 8251
+    first.environment_steps = 45527040
+    path = tmp_path / "saved.pt"
+    first._checkpoint(path)
+    saved = torch.load(path, map_location="cpu", weights_only=True)
+    saved["method"] = CHECKPOINT_METHODS[int(legacy)]
+    saved["environment"]["observation_contract"] = OBSERVATION_CONTRACTS[int(legacy)]
+    if legacy:
+        from aerialnav.pointnet.checkpoint import VERIFIED_LEGACY_SOURCE
+
+        source = tmp_path / "source"
+        source.mkdir()
+        (source / "source_identity.json").write_text(json.dumps({"commit": VERIFIED_LEGACY_SOURCE}))
+        saved["stage_log_dir"] = str(tmp_path / "train")
+        saved.pop("policy_contract")
+    torch.save(saved, path)
+    second = PointNetTrainer(env, cfg, tmp_path / "continued")
+    second.load_stage_checkpoint(path, resume=True)
+    assert second.completed_updates == second.stage_updates == second.schedule_updates == 8251
+    assert second.environment_steps == 45527040
+    for name, tensor in saved["model_state_dict"].items():
+        torch.testing.assert_close(second.model.state_dict()[name], tensor, rtol=0, atol=0)
+    for a, b in zip(first.optimizer.state.values(), second.optimizer.state.values(), strict=True):
+        for name in a:
+            torch.testing.assert_close(a[name], b[name], rtol=0, atol=0)
+    technical = tmp_path / "technical.pt"
+    second._checkpoint(technical)
+    payload = torch.load(technical, map_location="cpu", weights_only=True)
+    assert payload["method"] == "pointnet"
+    assert payload["environment"]["observation_contract"] == OBSERVATION_CONTRACTS[0]
