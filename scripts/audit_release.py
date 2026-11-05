@@ -19,6 +19,18 @@ def audit(root: Path, *, weights=False) -> list[str]:
     )
     text_extensions = {".py", ".json", ".md", ".yaml", ".yml", ".toml", ".cff", ".usd", ".txt"}
     obsolete_identifier = re.compile(r"(?i:isaaclab[-_]navrl|zhang|\bliu(?:[_-]|\b)|diffphysdrone)")
+    # Remove only a known citation span, never the rest of its line. This keeps
+    # obsolete identifiers beside a valid attribution visible to the audit.
+    pointcloud_citations = {
+        "README.md": re.compile(
+            r"^- Liu et al\. \(IROS 2026\) — "
+            r"\*Learning to Fly from Point Clouds via Differentiable Simulation\*\."
+        ),
+        "docs/pointnet.md": re.compile(
+            r"^Source: Liu et al\., "
+            r"\*Learning to Fly from Point Clouds via Differentiable Simulation\*,"
+        ),
+    }
     legacy_project = re.compile(r"(?i:navrl)")
     workstation_path = re.compile(
         r"(?i:/home/[^/\s]+/|/Users/[^/\s]+/|[A-Z]:\\\\Users\\\\|/tongworkspace/|reference_repos/)"
@@ -60,17 +72,13 @@ def audit(root: Path, *, weights=False) -> list[str]:
             checkpoint_metadata = name == "src/aerialnav/pointnet/config.py" and line.startswith(
                 ("CHECKPOINT_METHODS =", "OBSERVATION_CONTRACTS =")
             )
-            cited_pointcloud_paper = (
-                name == "docs/pointnet.md"
-                and line.startswith("Source:")
-                and "Learning to Fly from Point Clouds via Differentiable Simulation" in line
-            )
+            citation = pointcloud_citations.get(name)
+            identifier_text = citation.sub("", line, count=1) if citation else line
             if (
-                obsolete_identifier.search(line)
+                obsolete_identifier.search(identifier_text)
                 and not license_text
                 and not cited_zhang_paper
                 and not checkpoint_metadata
-                and not cited_pointcloud_paper
             ):
                 markers.append("obsolete project or personal identifier")
             # The origin of third-party components is a factual attribution,
