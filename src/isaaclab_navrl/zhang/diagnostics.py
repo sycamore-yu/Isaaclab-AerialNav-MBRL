@@ -265,7 +265,7 @@ def critic_vertical_probe(critic, features, heights, terminated):
 def collision_records(env, transition):
     """Classify failure at its first collision substep, before autoreset.
 
-    Static class uses the task's heightfield proxy, not a PhysX contact ID.
+    Static class uses the task's heightfield proxy, not a simulator contact ID.
     """
     from isaaclab_navrl.tasks.navigation.geometry import primitive_signed_distance
 

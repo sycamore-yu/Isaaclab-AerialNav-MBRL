@@ -19,8 +19,8 @@ class ZhangTrainCfg:
     timesteps: int = 150
     max_iterations: int | None = None
     stop_after_acceptance: bool = False
-    physics: Literal["isaacsim_physx", "newton_mjwarp"] = DEFAULT_PHYSICS
-    frontend: Literal["torch", "warp"] = DEFAULT_FRONTEND
+    physics: Literal["newton_mjwarp"] = DEFAULT_PHYSICS
+    frontend: Literal["warp"] = DEFAULT_FRONTEND
     physics_dt: float = 0.05
     policy_dt: float = 0.05
     velocity_loss_mode: Literal["variant_default", "per_step", "truncated_window", "full_window", "ema"] | None = None

@@ -1,9 +1,9 @@
 """Reset independent aircraft without resetting the shared world."""
 
-from isaaclab.scene import InteractiveScene
+from isaaclab_experimental.envs.interactive_scene_warp import InteractiveSceneWarp
 
 
-class SharedNavigationScene(InteractiveScene):
+class SharedNavigationScene(InteractiveSceneWarp):
     def reset(self, env_ids=None):
         self.articulations["drone"].reset(env_ids)
         for sensor in self.sensors.values():

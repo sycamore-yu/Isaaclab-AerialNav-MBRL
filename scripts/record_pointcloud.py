@@ -8,7 +8,7 @@ from isaaclab.app import add_launcher_args, launch_simulation
 
 from isaaclab_navrl.physics import (
     create_navigation_env,
-    parse_physics_args,
+    parse_runtime_args,
     resolve_navigation_config,
     runtime_metadata,
 )
@@ -22,7 +22,7 @@ def main():
     parser.add_argument("--terrain_seed", type=int, default=0)
     add_launcher_args(parser)
     parser.set_defaults(visualizer=["none"])
-    args = parse_physics_args(parser, allow_presets=True)
+    args = parse_runtime_args(parser, allow_presets=True)
     if args.output.exists():
         parser.error("Use a new output directory; existing recordings are never overwritten")
     import torch
@@ -72,7 +72,6 @@ def main():
             result.update(
                 checkpoint=str(args.checkpoint.resolve()),
                 checkpoint_update=torch.load(args.checkpoint, map_location="cpu", weights_only=True)["completed_updates"],
-                physics=args.physics_preset,
                 seed=args.seed,
                 terrain_seed=args.terrain_seed,
                 static_obstacles=cfg.num_static_obstacles,

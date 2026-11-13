@@ -1,16 +1,11 @@
 """SDF escape gradients, immediate control/position Jacobian, and paired inputs."""
 
-import json
-import runpy
-from dataclasses import asdict
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 import torch
 from test_zhang_contract import nominal_parameters
 
-from isaaclab_navrl.reference.config import DcolReferenceTrainCfg
 from isaaclab_navrl.zhang.config import ZhangTrainCfg
 from isaaclab_navrl.zhang.dynamics import PointMassState, align_transition, point_mass_step, policy_transition
 from isaaclab_navrl.zhang.losses import zhang_transition_costs
@@ -125,58 +120,13 @@ def test_trapezoid_matches_requested_local_control_jacobian_and_survives_measure
     )
 
 
-def test_current_metric_is_sdf_and_historical_dcol_requires_its_explicit_reference():
+def test_current_metric_is_sdf_and_rejects_other_metrics():
     assert ZhangTrainCfg().collision_metric == "sdf"
     assert ZhangTrainCfg().loss_timing == "pre_reset"
     with pytest.raises(ValueError, match="SDF only"):
         ZhangTrainCfg(collision_metric="dcol").validate()
-    DcolReferenceTrainCfg().validate()
-    assert DcolReferenceTrainCfg().collision_metric == "dcol"
     with pytest.raises(ValueError, match="position_integration"):
         ZhangTrainCfg(position_integration="invalid").validate()
-
-
-def test_four_cell_factorial_rejects_changed_initial_world(tmp_path, monkeypatch):
-    root = Path(__file__).resolve().parents[1]
-    monkeypatch.syspath_prepend(str(root / "scripts"))
-    driver = runpy.run_path(str(root / "scripts/run_zhang_loss_timing.py"))
-    plan = json.loads((root / "configs/experiments/zhang_collision_integration_512_20261031.json").read_text())
-    assert {(r["collision_metric"], r["position_integration"]) for r in driver["matrix"](plan)} == {
-        (m, i) for m in ("dcol", "sdf") for i in ("original", "trapezoid")
-    }
-    for run in plan["runs"]:
-        directory = tmp_path / run["name"]
-        directory.mkdir()
-        config_type = DcolReferenceTrainCfg if run["collision_metric"] == "dcol" else ZhangTrainCfg
-        cfg = config_type(
-            position_integration=run["position_integration"], geometry_backend="native", max_iterations=512
-        )
-        config = {
-            "train": asdict(cfg),
-            "environment": {"num_envs": 256, "height_bounds_reset": True},
-            "parent_checkpoint": None,
-        }
-        (directory / "config.json").write_text(json.dumps(config))
-        (directory / "initialization.json").write_text(
-            json.dumps({"model_sha256": "same", "policy_class": "ZhangPolicy", "perception": "depth", "fresh": True})
-        )
-        (directory / "initial_rollout.json").write_text(json.dumps({"world_sha256": "same"}))
-    assert driver["verify_factorial"](tmp_path, plan)["cells"] == 4
-    (tmp_path / plan["runs"][-1]["name"] / "initial_rollout.json").write_text(json.dumps({"world_sha256": "different"}))
-    with pytest.raises(ValueError, match="worlds"):
-        driver["verify_factorial"](tmp_path, plan)
-
-
-def test_factorial_progress_names_the_two_actual_factors(tmp_path):
-    root = Path(__file__).resolve().parents[1]
-    analyzer = runpy.run_path(str(root / "scripts/analyze_liu_loss_timing.py"))
-    plan = json.loads((root / "configs/experiments/zhang_collision_integration_512_20261031.json").read_text())
-    (tmp_path / "plan.json").write_text(json.dumps(plan))
-    (tmp_path / "study.json").write_text(json.dumps({"status": "controls", "source_commit": "fixture", "runs": {}}))
-    result = analyzer["summarize"](tmp_path)
-    assert result["title"] == plan["title"] and len(result["rows"]) == 4
-    assert "height reset=True are fixed" in result["limits"]
-    assert "Training reset rules differ" not in result["limits"]
 
 
 def test_selected_default_is_sdf_trapezoid_with_pre_reset_loss():

@@ -5,21 +5,18 @@ from __future__ import annotations
 import math
 
 import isaaclab.sim as sim_utils
-from isaaclab.assets import AssetBaseCfg, RigidObjectCfg, RigidObjectCollectionCfg
+from isaaclab.assets import AssetBaseCfg
 from isaaclab.envs import DirectRLEnvCfg
 from isaaclab.managers import EventTermCfg, SceneEntityCfg
 from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sensors import MultiMeshRayCasterCameraCfg, MultiMeshRayCasterCfg, RayCasterCfg, patterns
-from isaaclab.sim.schemas import MassCfg, UsdPhysicsCollisionCfg, UsdPhysicsRigidBodyCfg
+from isaaclab.sim.schemas import UsdPhysicsCollisionCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.string import ResolvableString
 from isaaclab_newton.physics import MJWarpSolverCfg, NewtonCfg
-from isaaclab_physx.physics import PhysxCfg
-from isaaclab_physx.sim.schemas import PhysxRigidBodyCfg
 from isaaclab_tasks.utils import PresetCfg
 
 from isaaclab_navrl.control import make_drone_cfg
-from isaaclab_navrl.physics import DEFAULT_PHYSICS
 from isaaclab_navrl.pointnet.presets import NavigationPerceptionPresets
 from isaaclab_navrl.terrain import build_terrain_cfg
 from isaaclab_navrl.training import DEFAULT_STAGE, STAGE_CONFIG
@@ -27,28 +24,6 @@ from isaaclab_navrl.training import DEFAULT_STAGE, STAGE_CONFIG
 from ...depth_camera_cfg import BatchedDepthCameraCfg
 from ...randomization import SimToRealCfg
 from ...task_logic import dynamic_layout
-
-
-@configclass
-class NavigationPhysicsCfg(PresetCfg):
-    """Named physics choices used by both navigation tasks."""
-
-    isaacsim_physx = PhysxCfg(
-        enable_stabilization=True,
-        bounce_threshold_velocity=0.2,
-        gpu_max_rigid_contact_count=524288,
-        gpu_max_rigid_patch_count=163840,
-        gpu_found_lost_pairs_capacity=4194304,
-        gpu_found_lost_aggregate_pairs_capacity=33554432,
-        gpu_total_aggregate_pairs_capacity=4194304,
-    )
-    newton_mjwarp = NewtonCfg(
-        # MuJoCo mesh contacts use a convex hull. Newton's triangle contacts
-        # preserve the original non-convex forest mesh and its free corridors.
-        solver_cfg=MJWarpSolverCfg(integrator="implicitfast", disable_sensors=True, use_mujoco_contacts=False),
-        load_visual_shapes=True,
-    )
-    default = {"isaacsim_physx": isaacsim_physx, "newton_mjwarp": newton_mjwarp}[DEFAULT_PHYSICS]
 
 
 @configclass
@@ -68,7 +43,7 @@ class SharedNavigationSceneCfg(InteractiveSceneCfg):
         spawn=sim_utils.DistantLightCfg(color=(0.75, 0.75, 0.75), intensity=3000.0),
     )
     lidar = RayCasterCfg(
-        class_type="isaaclab_navrl.tasks.navigation.lidar:NavRLRayCaster",
+        class_type="isaaclab_navrl.tasks.navigation.newton_sensors:NewtonNavRLRayCaster",
         prim_path="{ENV_REGEX_NS}/Hummingbird/base_link",
         spawn=None,
         offset=RayCasterCfg.OffsetCfg(pos=(0.0, 0.0, 0.0)),
@@ -79,35 +54,8 @@ class SharedNavigationSceneCfg(InteractiveSceneCfg):
         update_period=0.016,
         debug_vis=False,
     )
-    dynamic_obstacles: RigidObjectCollectionCfg | None = None
     depth_camera: MultiMeshRayCasterCameraCfg | None = None
     point_lidar: RayCasterCfg | None = None
-
-
-def make_dynamic_cfg(count: int, seed: int) -> RigidObjectCollectionCfg | None:
-    if count == 0:
-        return None
-    positions, sizes = dynamic_layout(count, seed)
-    root = "/World/Dynamic"
-    objects = {}
-    for index, (position, size) in enumerate(zip(positions, sizes, strict=True)):
-        properties = {
-            "rigid_props": [UsdPhysicsRigidBodyCfg(kinematic_enabled=True), PhysxRigidBodyCfg(disable_gravity=True)],
-            "mass_props": MassCfg(mass=1.0),
-            "collision_props": UsdPhysicsCollisionCfg(collision_enabled=False),
-            "visual_material": sim_utils.PreviewSurfaceCfg(diffuse_color=(0.0, 1.0, 0.0), metallic=0.2),
-        }
-        if size[2] > 1:
-            spawn = sim_utils.CylinderCfg(radius=float(size[0] / 2), height=5.0, **properties)
-        else:
-            spawn = sim_utils.CuboidCfg(size=tuple(float(x) for x in size), **properties)
-        objects[f"obstacle_{index:03d}"] = RigidObjectCfg(
-            prim_path=f"{root}/obstacle_{index:03d}",
-            spawn=spawn,
-            init_state=RigidObjectCfg.InitialStateCfg(pos=tuple(float(x) for x in position)),
-            collision_group=-1,
-        )
-    return RigidObjectCollectionCfg(rigid_objects=objects)
 
 
 def make_shared_dynamic_geometry(count: int, seed: int) -> dict[str, AssetBaseCfg]:
@@ -196,12 +144,15 @@ class NavRLEnvCfg(DirectRLEnvCfg):
         dt=0.016,
         render_interval=1,
         use_newton_actuators=False,
-        physics=NavigationPhysicsCfg(),
+        physics=NewtonCfg(
+            solver_cfg=MJWarpSolverCfg(integrator="implicitfast", disable_sensors=True, use_mujoco_contacts=False),
+            load_visual_shapes=True,
+        ),
     )
     scene = SharedNavigationSceneCfg(
         num_envs=1024,
-        env_spacing=8.0,
-        replicate_physics=False,
+        env_spacing=0.0,
+        replicate_physics=True,
         filter_collisions=True,
     )
 
@@ -236,15 +187,10 @@ class NavRLEnvCfg(DirectRLEnvCfg):
         stage = self.training_stage_config or STAGE_CONFIG.get(self.training_stage)
         if stage is not None:
             self.episode_length_s = stage["episode_length_s"]
-        newton = isinstance(self.sim.physics, NewtonCfg)
         # Newton's global geometry is read by one camera BVH; movement comes
         # from shared GPU tensors. No dynamic rigid body enters any MJWarp world.
-        self.scene.replicate_physics = newton
-        self.scene.env_spacing = 0.0 if newton else 8.0
         self.scene.lidar.class_type = ResolvableString(
             "isaaclab_navrl.tasks.navigation.newton_sensors:NewtonNavRLRayCaster"
-            if newton
-            else "isaaclab_navrl.tasks.navigation.lidar:NavRLRayCaster"
         )
         self.events = ZhangEventsCfg() if self.method == "zhang" else NavigationEventsCfg()
         active = self.sim_to_real.enabled and not self.evaluation
@@ -257,15 +203,13 @@ class NavRLEnvCfg(DirectRLEnvCfg):
         else:
             self.events.inertia = None
         self.scene.terrain = build_terrain_cfg(self.scene.num_envs, self.num_static_obstacles, self.terrain_seed)
-        self.scene.dynamic_obstacles = None if newton else make_dynamic_cfg(self.dynamic_capacity(), self.terrain_seed)
         # configure_scene is idempotent, including when preset resolution runs
         # before the final CLI/backend selection.
         for name in list(vars(self.scene)):
             if name.startswith("dynamic_visual_"):
                 delattr(self.scene, name)
-        if newton:
-            for name, asset_cfg in make_shared_dynamic_geometry(self.dynamic_capacity(), self.terrain_seed).items():
-                setattr(self.scene, name, asset_cfg)
+        for name, asset_cfg in make_shared_dynamic_geometry(self.dynamic_capacity(), self.terrain_seed).items():
+            setattr(self.scene, name, asset_cfg)
         self.scene.lidar.update_period = self.sim.dt * self.decimation
 
         # NavRL ros1/map_manager/cfg/dynamic_map_param.yaml and quadcopter.urdf.
@@ -276,15 +220,10 @@ class NavRLEnvCfg(DirectRLEnvCfg):
         ]
         dynamic_root = "/World/Dynamic"
         meshes.extend(
-            target(prim_expr=f"{dynamic_root}/obstacle_{i:03d}", is_shared=True, track_mesh_transforms=not newton)
+            target(prim_expr=f"{dynamic_root}/obstacle_{i:03d}", is_shared=True, track_mesh_transforms=False)
             for i in range(self.dynamic_capacity())
         )
         self.scene.depth_camera = BatchedDepthCameraCfg(
-            class_type=(
-                "isaaclab_navrl.tasks.navigation.newton_sensors:NewtonBatchedDepthCamera"
-                if newton
-                else "isaaclab_navrl.tasks.navigation.depth_camera:BatchedDepthCamera"
-            ),
             prim_path="{ENV_REGEX_NS}/Hummingbird/base_link",
             spawn=None,
             batch_size=self.depth_camera_batch_size,
@@ -362,7 +301,11 @@ class ZhangNavRLEnvCfg(NavRLEnvCfg):
 
     @property
     def perception_cfg(self):
-        return self.policy_observation.default if isinstance(self.policy_observation, PresetCfg) else self.policy_observation
+        return (
+            self.policy_observation.default
+            if isinstance(self.policy_observation, PresetCfg)
+            else self.policy_observation
+        )
 
     def configure_scene(self):
         if self.variant not in ("step", "continuous", "dcol"):

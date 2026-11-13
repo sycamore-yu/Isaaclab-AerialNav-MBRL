@@ -21,14 +21,20 @@ def isolated_methods(filename, class_name, names, namespace=None):
 
 
 def test_static_only_camera_initializes_and_skips_dynamic_transform_fetch():
-    methods = isolated_methods("sensor_mixins.py", "_BatchedDepthCameraMixin", ("_clear_shared_mesh_tracking",))
-    methods.update(
-        isolated_methods(
-            "depth_camera.py", "BatchedDepthCamera", ("_initialize_shared_mesh_tracking", "_update_mesh_transforms")
-        )
+    import warp as wp
+
+    methods = isolated_methods(
+        "newton_sensors.py",
+        "NewtonBatchedDepthCamera",
+        ("_initialize_shared_mesh_tracking", "_update_mesh_transforms"),
+        {"wp": wp},
     )
     camera = SimpleNamespace(
-        _mesh_views=[None, None],
+        _mesh_ids_wp=wp.zeros((2, 2), dtype=wp.uint64, device="cpu"),
+        _mesh_positions_w=wp.zeros((2, 2), dtype=wp.vec3f, device="cpu"),
+        _mesh_orientations_w=wp.zeros((2, 2), dtype=wp.quatf, device="cpu"),
+        _clear_shared_mesh_tracking=lambda: None,
+        _shared_motion_positions=None,
         _raycast_targets_cfg=[
             SimpleNamespace(prim_expr="/World/ground", track_mesh_transforms=False),
             SimpleNamespace(prim_expr="/World/defaultGroundPlane", track_mesh_transforms=False),
@@ -37,11 +43,11 @@ def test_static_only_camera_initializes_and_skips_dynamic_transform_fetch():
     )
     for name, method in methods.items():
         setattr(camera, name, MethodType(method, camera))
-    # No PhysX view creator, torch or Warp objects are available in this fixture.
     camera._initialize_shared_mesh_tracking()
     camera._update_mesh_transforms()
     assert camera._shared_mesh_tracking_ready
-    assert camera._shared_mesh_view is None and camera._shared_mesh_count == 0
+    assert camera._shared_mesh_count == 0
+    assert camera._mesh_ids_wp.shape == (1, 2)
     assert camera.mesh_transform_info["body_count"] == 0
     assert camera.mesh_transform_info["mapping"] == []
 
@@ -88,7 +94,7 @@ def test_setting_zero_active_obstacles_does_not_require_a_dynamic_pose_buffer():
     methods = isolated_methods(
         "navrl_env.py",
         "NavRLEnv",
-        ("set_active_obstacles", "_write_dynamic_obstacles"),
+        ("set_active_obstacles",),
         {
             "torch": torch,
             "active_obstacle_indices": active_obstacle_indices,
@@ -106,7 +112,7 @@ def test_setting_zero_active_obstacles_does_not_require_a_dynamic_pose_buffer():
         device="cpu",
         physics_dt=0.01,
         step_dt=0.1,
-        dynamic_collection=None,
+        _bind_shared_dynamic_geometry=lambda: None,
     )
     for name, method in methods.items():
         setattr(env, name, MethodType(method, env))

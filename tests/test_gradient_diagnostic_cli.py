@@ -183,10 +183,11 @@ class GradientDiagnosticCliTests(unittest.TestCase):
             def __init__(self, values):
                 self.values = values
 
-        def capture_configuration(**values):
-            raise CapturedConfiguration(values)
+        class CaptureConfiguration(ZhangTrainCfg):
+            def __init__(self, **values):
+                raise CapturedConfiguration(values)
 
-        capture_configuration.__dataclass_fields__ = ZhangTrainCfg.__dataclass_fields__
+        recipe = object.__new__(CaptureConfiguration)
 
         environment = types.SimpleNamespace(
             scene=types.SimpleNamespace(),
@@ -194,17 +195,22 @@ class GradientDiagnosticCliTests(unittest.TestCase):
             decimation=10,
             sim_to_real=types.SimpleNamespace(),
             configure_scene=lambda: None,
+            apply_training_stage=lambda *_args, **_kwargs: None,
+            perception_cfg=types.SimpleNamespace(mode="depth"),
         )
         imports = {
             "gymnasium": types.SimpleNamespace(),
             "torch": types.SimpleNamespace(),
             "isaaclab_navrl.tasks": types.SimpleNamespace(),
+            "isaaclab_navrl.tasks.navigation.depth_history": types.SimpleNamespace(
+                OBSERVATION_CONTRACT="delayed_depth_current_odometry_ego_reprojection_v1"
+            ),
             "isaaclab_navrl.tasks.navigation.config.hummingbird.env_cfg": types.SimpleNamespace(
                 ZhangNavRLEnvCfg=lambda: environment
             ),
             "isaaclab_navrl.tasks.navigation.curriculum": types.SimpleNamespace(STAGE_CONFIG=acceptance.STAGE_CONFIG),
             "isaaclab_navrl.training": types.SimpleNamespace(write_json=None),
-            "isaaclab_navrl.zhang.config": types.SimpleNamespace(ZhangTrainCfg=capture_configuration),
+            "isaaclab_navrl.zhang.config": types.SimpleNamespace(ZhangTrainCfg=CaptureConfiguration),
             "isaaclab_navrl.zhang.runner": types.SimpleNamespace(ZhangTrainer=None),
             "isaaclab_tasks.utils.hydra": types.SimpleNamespace(resolve_presets=lambda *_args, **_kwargs: None),
         }
@@ -230,7 +236,11 @@ class GradientDiagnosticCliTests(unittest.TestCase):
                         "2",
                     ]
                     with self.subTest(algorithm=algorithm, mode=mode):
-                        with patch.object(sys, "argv", tokens), patch("builtins.__import__", side_effect=intercept):
+                        with (
+                            patch.object(sys, "argv", tokens),
+                            patch("builtins.__import__", side_effect=intercept),
+                            patch.object(trainer, "resolve_navigation_config", return_value=(environment, recipe)),
+                        ):
                             with self.assertRaises(CapturedConfiguration) as captured:
                                 trainer.main()
                         self.assertEqual(captured.exception.values["velocity_loss_mode"], mode)
@@ -271,7 +281,11 @@ class GradientDiagnosticCliTests(unittest.TestCase):
                         "height_priority",
                     ]
                     with self.subTest(height=height, patience=patience):
-                        with patch.object(sys, "argv", tokens), patch("builtins.__import__", side_effect=intercept):
+                        with (
+                            patch.object(sys, "argv", tokens),
+                            patch("builtins.__import__", side_effect=intercept),
+                            patch.object(trainer, "resolve_navigation_config", return_value=(environment, recipe)),
+                        ):
                             with self.assertRaises(CapturedConfiguration) as captured:
                                 trainer.main()
                         values = captured.exception.values
@@ -329,6 +343,29 @@ class GradientDiagnosticCliTests(unittest.TestCase):
                         with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as error:
                             module.main()
                     self.assertEqual(error.exception.code, 2)
+
+    def test_default_pointnet_s0_rejects_stage_checkpoint_before_loading(self):
+        from isaaclab_navrl.pointnet.config import PointNetTrainCfg
+
+        environment = types.SimpleNamespace(perception_cfg=types.SimpleNamespace(mode="pointnet"))
+        tokens = [
+            "train_zhang.py", "presets=pointnet", "--log_dir", "/unused/unit-test",
+            "--checkpoint", "/unit/previous-stage.pt",
+        ]
+        with (
+            patch.object(sys, "argv", tokens),
+            patch.object(trainer, "resolve_navigation_config", return_value=(environment, PointNetTrainCfg())) as resolve,
+            patch("torch.load") as load,
+            patch.object(trainer, "launch_simulation") as launch,
+            contextlib.redirect_stderr(io.StringIO()) as stderr,
+            self.assertRaises(SystemExit) as error,
+        ):
+            trainer.main()
+        self.assertEqual(error.exception.code, 2)
+        self.assertIn("Pretraining S0 must start from random initialization", stderr.getvalue())
+        self.assertEqual(resolve.call_args.args[1].preset_overrides, ["presets=pointnet"])
+        load.assert_not_called()
+        launch.assert_not_called()
 
     def test_finite_later_stage_smoke_is_allowed_before_training_imports(self):
         class ReachedSimulationBoundary(Exception):

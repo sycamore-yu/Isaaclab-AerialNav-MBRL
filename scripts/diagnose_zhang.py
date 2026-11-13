@@ -8,6 +8,7 @@ from pathlib import Path
 
 from isaaclab.app import add_launcher_args, launch_simulation
 
+from isaaclab_navrl.physics import create_navigation_env, parse_runtime_args, runtime_metadata
 from isaaclab_navrl.training import write_json
 
 
@@ -20,12 +21,11 @@ def main():
     parser.add_argument("--updates", type=int, default=4)
     add_launcher_args(parser)
     parser.set_defaults(visualizer=["none"])
-    args = parser.parse_args()
+    args = parse_runtime_args(parser)
     if min(args.num_envs, args.updates) < 1:
         parser.error("num_envs and updates must be positive")
     args.output.mkdir(parents=True, exist_ok=False)
 
-    import gymnasium as gym
     import torch
     from profile_step import instrument_methods
 
@@ -42,6 +42,7 @@ def main():
         raise ValueError("Diagnostic forks require a version-3 Zhang checkpoint")
     saved_env = payload["environment"]
     train = ZhangTrainCfg(**payload["train_cfg"])
+    train.validate()
     train.max_iterations, train.stop_after_acceptance = args.updates, False
     train.gradient_diagnostic_updates = tuple(
         range(payload["completed_updates"] + 1, payload["completed_updates"] + args.updates + 1)
@@ -84,8 +85,11 @@ def main():
     write_json(args.output / "diagnostic_identity.json", identity)
     torch.manual_seed(cfg.seed)
     with launch_simulation(cfg, args):
-        env = gym.make("Isaac-NavRL-Zhang-Hummingbird-Direct-v0", cfg=cfg).unwrapped
+        env = create_navigation_env("Isaac-NavRL-Zhang-Hummingbird-Direct-v0", cfg, args)
         try:
+            runtime = runtime_metadata(env)
+            identity.update(runtime)
+            write_json(args.output / "diagnostic_identity.json", identity)
             trainer = ZhangTrainer(env, train, args.output)
             trainer.process_started_at = process_started
             trainer.model.load_state_dict(payload["model_state_dict"], strict=True)
@@ -128,7 +132,10 @@ def main():
                     env.motion.size,
                 ),
             )
-            result.update(purpose="checkpoint_diagnostic_fork", acceptance_passed=False)
+            result.update(
+                purpose="checkpoint_diagnostic_fork", acceptance_passed=False,
+                **runtime,
+            )
             write_json(args.output / "diagnostic_result.json", result)
             write_json(args.output / "training_result.json", result)
         finally:

@@ -1,7 +1,5 @@
 """Scene controls reach training commands, reset sampling and episode reports."""
 
-import argparse
-import json
 import runpy
 from pathlib import Path
 from types import SimpleNamespace
@@ -11,50 +9,10 @@ import torch
 
 from isaaclab_navrl.tasks.navigation.curriculum import TrainingCurriculum
 from isaaclab_navrl.training import STAGE_CONFIG
-from isaaclab_navrl.zhang.cli import add_train_args, parse_train_args
+from isaaclab_navrl.zhang.cli import parse_train_args
 from isaaclab_navrl.zhang.events import randomize_zhang_parameters
 
 ROOT = Path(__file__).resolve().parents[1]
-
-
-def test_controls_preserve_baseline_and_reach_trainer(tmp_path):
-    queue = runpy.run_path(str(ROOT / "scripts/run_comparison_queue.py"))
-    protocol = runpy.run_path(str(ROOT / "scripts/run_acceptance.py"))
-    plan = json.loads((ROOT / "configs/experiments/zhang_baseline_scene_controls_20261030.json").read_text())
-    baseline = json.loads((ROOT / "configs/experiments/zhang_finetune_s1.json").read_text())["runs"][0]["train_args"]
-    expected = [
-        ("finetune_s1", {"target_speed_min": 2.0, "target_speed_max": 6.0, "num_dynamic_obstacles": 60}),
-        ("pretrain_s0", {}),
-        ("pretrain_s1", {"num_dynamic_obstacles": 40}),
-        ("finetune_s1", {"num_dynamic_obstacles": 40}),
-    ]
-    for run, (stage, overrides) in zip(plan["runs"], expected, strict=True):
-        assert run["train_args"] == {**baseline, **overrides}
-        assert run["start_stage"] == stage and plan["fixed_stage"]
-        command = queue["command_for"](ROOT, tmp_path / run["name"], plan, run, "cuda:0")
-        tokens = command[command.index("--train_args") + 1 :]
-        values = parse_train_args(tokens)
-        child = protocol["build_command"](
-            method="zhang",
-            stage=stage,
-            log_dir=tmp_path,
-            scripts_dir=ROOT / "scripts",
-            num_envs=256,
-            seed=0,
-            device="cuda:0",
-            finetune_lr=5e-5,
-            train_args=values,
-            parent_checkpoint=None,
-            fixed_stage=True,
-            fresh_stage=stage != "pretrain_s0",
-            report_episodes=1024,
-        )
-        parser = argparse.ArgumentParser()
-        add_train_args(parser)
-        args = parser.parse_args(tokens)
-        for key, value in overrides.items():
-            assert getattr(args, key) == value
-            assert child[child.index("--" + key) + 1] == str(value)
 
 
 @pytest.mark.parametrize(
@@ -137,6 +95,7 @@ def test_reconfiguring_scene_preserves_speed_event_parameters():
     cfg.geometry_backend = "native"
     cfg.height_target_range, cfg.target_speed_range = (0.5, 2.5), (2, 6)
     cfg.sim = SimpleNamespace()
+    cfg.perception_cfg = SimpleNamespace(point_lidar=None)
     cfg.scene = SimpleNamespace(drone=SimpleNamespace(spawn=SimpleNamespace()), lidar=SimpleNamespace())
     for _ in range(2):
         cfg.configure_scene()

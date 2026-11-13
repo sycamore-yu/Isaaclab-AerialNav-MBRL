@@ -12,10 +12,9 @@ from isaaclab.app import add_launcher_args, launch_simulation
 
 from isaaclab_navrl.physics import (
     create_navigation_env,
-    parse_physics_args,
+    parse_runtime_args,
     resolve_navigation_config,
     runtime_metadata,
-    select_physics,
 )
 from isaaclab_navrl.source import verify_training_import
 from isaaclab_navrl.training import (
@@ -31,7 +30,7 @@ from isaaclab_navrl.training import (
 from isaaclab_navrl.zhang.cli import add_train_args, parse_train_args
 
 
-def main(*, reference_dcol=False):
+def main():
     process_started = float(os.environ.get("NAVRL_STAGE_STARTED_MONOTONIC", time.monotonic()))
     verify_training_import()
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
@@ -58,13 +57,19 @@ def main(*, reference_dcol=False):
     parser.add_argument("--point_encoder_backend", choices=("torch", "compile", "triton"))
     add_launcher_args(parser)
     parser.set_defaults(visualizer=["none"])
-    args = parse_physics_args(parser, allow_presets=True)
+    args = parse_runtime_args(parser, allow_presets=True)
+    if args.num_envs < 1 or (args.max_iterations is not None and args.max_iterations < 1):
+        parser.error("num_envs and max_iterations must be positive")
+    if args.camera_batch_size < 1:
+        parser.error("camera_batch_size must be positive")
+    if args.report_episodes is not None and args.report_episodes < 1:
+        parser.error("report_episodes must be positive")
+    if args.algorithm == "bptt" and args.critic_value_transform != "linear":
+        parser.error("--critic_value_transform softplus requires --algorithm shac or ahac")
     import isaaclab_navrl.tasks  # noqa: F401
 
     cfg, recipe = resolve_navigation_config("Isaac-NavRL-Zhang-Hummingbird-Direct-v0", args, training=True)
     pointnet = cfg.perception_cfg.mode == "pointnet"
-    if pointnet and reference_dcol:
-        parser.error("The reference DCOL trainer does not support presets=pointnet")
     if pointnet:
         explicit = {token.split("=", 1)[0].removeprefix("--") for token in sys.argv[1:] if token.startswith("--")}
         for name, value in asdict(recipe).items():
@@ -82,6 +87,20 @@ def main(*, reference_dcol=False):
         args.fresh_stage = args.fresh_stage or (
             args.stage != "pretrain_s0" and args.checkpoint is None and args.resume_checkpoint is None
         )
+    if args.stage == "pretrain_s0" and args.checkpoint is not None:
+        parser.error("Pretraining S0 must start from random initialization")
+    if (
+        args.stage != "pretrain_s0"
+        and args.checkpoint is None
+        and args.resume_checkpoint is None
+        and args.max_iterations is None
+        and not args.fresh_stage
+    ):
+        parser.error("Later stages require the previous checkpoint or explicit --fresh_stage comparison")
+    if args.fresh_stage and (
+        args.stage == "pretrain_s0" or args.checkpoint is not None or args.resume_checkpoint is not None
+    ):
+        parser.error("--fresh_stage requires a later stage without --checkpoint")
     overrides = {
         key: getattr(args, key)
         for key in ("num_dynamic_obstacles", "target_speed_min", "target_speed_max")
@@ -93,28 +112,6 @@ def main(*, reference_dcol=False):
         parser.error(str(exc))
     if args.velocity_loss_mode is None:
         args.velocity_loss_mode = "per_step" if args.algorithm in ("shac", "ahac") else "full_window"
-    if args.num_envs < 1 or (args.max_iterations is not None and args.max_iterations < 1):
-        parser.error("num_envs and max_iterations must be positive")
-    if args.camera_batch_size < 1:
-        parser.error("camera_batch_size must be positive")
-    if args.report_episodes is not None and args.report_episodes < 1:
-        parser.error("report_episodes must be positive")
-    if args.algorithm == "bptt" and args.critic_value_transform != "linear":
-        parser.error("--critic_value_transform softplus requires --algorithm shac or ahac")
-    if args.stage == "pretrain_s0" and args.checkpoint is not None:
-        parser.error("Pretraining S0 must start from random initialization")
-    if args.fresh_stage and (
-        args.stage == "pretrain_s0" or args.checkpoint is not None or args.resume_checkpoint is not None
-    ):
-        parser.error("--fresh_stage requires a later stage without --checkpoint")
-    if (
-        args.stage != "pretrain_s0"
-        and args.checkpoint is None
-        and args.resume_checkpoint is None
-        and args.max_iterations is None
-        and not args.fresh_stage
-    ):
-        parser.error("Later stages require the previous checkpoint or explicit --fresh_stage comparison")
     if args.log_dir.exists() and any(args.log_dir.iterdir()):
         parser.error("Each training stage requires a new or empty --log_dir")
     saved_train = None
@@ -142,10 +139,6 @@ def main(*, reference_dcol=False):
     from isaaclab_navrl.tasks.navigation.depth_history import OBSERVATION_CONTRACT
 
     config_type = type(recipe)
-    if reference_dcol:
-        from isaaclab_navrl.reference.config import DcolReferenceTrainCfg
-
-        config_type = DcolReferenceTrainCfg
     stage = STAGE_CONFIG[args.stage].copy()
     if args.num_dynamic_obstacles is not None:
         stage["dynamic_obstacles"] = args.num_dynamic_obstacles
@@ -164,16 +157,16 @@ def main(*, reference_dcol=False):
     cfg.training_curriculum = True
     cfg.sim.device = args.device
     cfg.depth_camera_batch_size = args.camera_batch_size
-    select_physics(cfg, args.physics_preset)
     cfg.configure_scene()
-    train_values = {field.name: getattr(args, field.name) for field in fields(config_type) if hasattr(args, field.name)}
-    if reference_dcol:
-        train_values["collision_metric"] = "dcol"
-        train_values["geometry_backend"] = "native"
-        cfg.geometry_backend = "native"
+    train_values = {
+        field.name: getattr(args, field.name)
+        for field in fields(config_type)
+        if field.name not in ("physics", "frontend") and hasattr(args, field.name)
+    }
     train_cfg = config_type(
         **train_values,
         physics=args.physics_preset,
+        frontend=args.frontend,
         physics_dt=cfg.sim.dt,
         policy_dt=cfg.sim.dt * cfg.decimation,
         height_target_range=cfg.height_target_range,
@@ -254,7 +247,7 @@ def main(*, reference_dcol=False):
     with launch_simulation(cfg, args):
         env = create_navigation_env("Isaac-NavRL-Zhang-Hummingbird-Direct-v0", cfg, args)
         try:
-            # TensorBoard's native dependencies must load after the PhysX Kit app.
+            # Load TensorBoard after the simulator's native dependencies.
             from isaaclab_navrl.zhang.runner import ZhangTrainer
 
             run_config.update(runtime_metadata(env))
@@ -266,10 +259,6 @@ def main(*, reference_dcol=False):
                 from isaaclab_navrl.pointnet.runner import PointNetTrainer
 
                 trainer_type = PointNetTrainer
-            if reference_dcol:
-                from isaaclab_navrl.reference.runner import DcolReferenceTrainer
-
-                trainer_type = DcolReferenceTrainer
             trainer = trainer_type(env, train_cfg, args.log_dir)
             run_config.update(trainer.checkpoint_metadata())
             write_json(args.log_dir / "config.json", run_config)

@@ -5,10 +5,10 @@ build-backend = "uv_build"
 [project]
 name = "isaaclab_navrl"
 version = "0.1.0"
-description = "NavRL and Zhang training with Isaac Lab 3.0 PhysX/Newton backends and Torch/Warp frontends."
+description = "NavRL, Zhang and PointNet navigation with Isaac Lab 3.0 Newton/MJWarp and Warp."
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
-dependencies = ["isaaclab[isaacsim,rsl-rl]==3.0.0", "tensorboard>=2.21", "pyyaml>=6.0"]
+dependencies = ["isaaclab[rsl-rl]==3.0.0", "tensorboard>=2.21", "pyyaml>=6.0"]
 
 [project.optional-dependencies]
 recording = ["rerun-sdk==0.30.0"]
@@ -32,10 +32,6 @@ override-dependencies = [
 
 [tool.uv.sources]
 isaaclab = { index = "nvidia" }
-omniverseclient = { index = "pypi-public" }
-ovphysx = { index = "pypi-public" }
-ovrtx = { index = "pypi-public" }
-ovstage = { index = "pypi-public" }
 torch = { index = "pytorch-cu130" }
 torchvision = { index = "pytorch-cu130" }
 
@@ -53,17 +49,12 @@ ignore = ["E501"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
-markers = ["integration: launches Isaac Sim"]
+markers = ["integration: launches the Newton simulator"]
 
 [[tool.uv.index]]
 name = "nvidia"
 url = "https://pypi.nvidia.com"
 explicit = false
-
-[[tool.uv.index]]
-name = "pypi-public"
-url = "https://pypi.org/simple"
-explicit = true
 
 [[tool.uv.index]]
 name = "pytorch-cu130"

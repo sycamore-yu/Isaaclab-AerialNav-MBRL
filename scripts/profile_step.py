@@ -17,6 +17,8 @@ from pathlib import Path
 
 from isaaclab.app import add_launcher_args, launch_simulation
 
+from isaaclab_navrl.physics import create_navigation_env, parse_runtime_args, runtime_metadata
+
 
 @contextmanager
 def instrument_methods(methods, synchronize):
@@ -60,14 +62,13 @@ def main():
     parser.add_argument("--warmup", type=int, default=5)
     parser.add_argument("--measured", type=int, default=10)
     parser.add_argument("--camera_batch_size", type=int, default=16)
-    parser.add_argument("--output", type=Path, default=Path("logs/profile/step.json"))
+    parser.add_argument("--output", type=Path, required=True)
     add_launcher_args(parser)
     parser.set_defaults(visualizer=["none"])
-    args = parser.parse_args()
+    args = parse_runtime_args(parser)
     if args.num_envs < 1 or args.warmup < 0 or args.measured < 1 or args.camera_batch_size < 1:
         parser.error("num_envs, measured and camera_batch_size must be positive; warmup must be nonnegative")
 
-    import gymnasium as gym
     import torch
 
     import isaaclab_navrl.tasks  # noqa: F401
@@ -83,8 +84,9 @@ def main():
         cfg.scene.depth_camera.batch_size = args.camera_batch_size
     task = "Isaac-NavRL-Zhang-Hummingbird-Direct-v0" if args.method == "zhang" else "Isaac-NavRL-Hummingbird-Direct-v0"
     with launch_simulation(cfg, args):
-        env = gym.make(task, cfg=cfg).unwrapped
+        env = create_navigation_env(task, cfg, args)
         try:
+            runtime = runtime_metadata(env)
             env.reset()
             command = torch.zeros(args.num_envs, 3, device=env.device)
 
@@ -135,6 +137,7 @@ def main():
                 }
             result = {
                 "method": args.method,
+                **runtime,
                 "num_envs": args.num_envs,
                 "device": str(env.device),
                 "warmup_policy_steps": args.warmup,

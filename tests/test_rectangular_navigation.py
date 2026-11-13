@@ -119,24 +119,6 @@ def test_avoidance_reshaping_keeps_collision_loss_and_forward_cost_unchanged():
     assert avoidance[..., 1].abs().sum() > avoidance[..., 0].abs().sum()
 
 
-def test_four_arm_commands_have_mixed_curricula_and_unlimited_final_stage(monkeypatch):
-    import json
-    import runpy
-    from pathlib import Path
-
-    root = Path(__file__).resolve().parents[1]
-    monkeypatch.syspath_prepend(str(root / "scripts"))
-    queue = runpy.run_path(str(root / "scripts/run_comparison_queue.py"))
-    launcher = runpy.run_path(str(root / "scripts/launch_rectangular_comparison.py"))
-    plan = json.loads((root / "configs/experiments/zhang_rectangular_gradient_2x2.json").read_text())
-    assert launcher["four_fit"](4000, 22000)
-    assert not launcher["four_fit"](5000, 22000)
-    for row in plan["runs"]:
-        command = queue["command_for"](root, root / "unused", plan, row, "cuda:0")
-        assert "--max_iterations" not in command and "--continue_final_stage" in command
-        assert ("--fixed_stage" in command) == row["name"].endswith("_direct")
-
-
 def test_warp_frontend_enforces_the_same_rectangular_map_boundaries():
     import warp as wp
 

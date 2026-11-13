@@ -1,40 +1,34 @@
 """Original LiDAR layout and the full yaw-only ray transform, without PhysX."""
 
-import ast
-import subprocess
-from types import SimpleNamespace
-
 import numpy as np
 import torch
 import warp as wp
 from isaaclab.sensors.ray_caster import patterns
 from isaaclab.sensors.ray_caster.kernels import update_ray_caster_kernel
 from isaaclab.utils.math import quat_apply_yaw, quat_from_euler_xyz
-from reference_repo import NAVRL
 
 from isaaclab_navrl.tasks.navigation.lidar_kernels import rotate_directions_with_yaw
 
 
-def test_bpearl_angles_and_flattening_match_original():
-    root = NAVRL
-    path = "isaac-training/third_party/orbit/source/extensions/omni.isaac.orbit/omni/isaac/orbit/sensors/ray_caster/patterns/patterns.py"
-    source = subprocess.check_output(["git", "show", f"HEAD:{path}"], cwd=root, text=True)
-    original = next(
-        node for node in ast.parse(source).body if isinstance(node, ast.FunctionDef) and node.name == "bpearl_pattern"
+def test_bpearl_scan_has_36_horizontal_directions_and_four_vertical_angles():
+    import math
+
+    cfg = patterns.BpearlPatternCfg(horizontal_res=10.0, vertical_ray_angles=(-10.0, 0.0, 10.0, 20.0))
+    starts, directions = patterns.bpearl_pattern(cfg, "cpu")
+    expected = torch.tensor(
+        [
+            [
+                -math.cos(math.radians(v)) * math.cos(math.radians(h)),
+                -math.cos(math.radians(v)) * math.sin(math.radians(h)),
+                math.sin(math.radians(v)),
+            ]
+            for h in range(-180, 180, 10)
+            for v in (-10, 0, 10, 20)
+        ]
     )
-    tree = ast.Module(
-        body=[ast.ImportFrom(module="__future__", names=[ast.alias(name="annotations")], level=0), original],
-        type_ignores=[],
-    )
-    namespace = {"torch": torch}
-    exec(compile(ast.fix_missing_locations(tree), path, "exec"), namespace)
-    cfg = SimpleNamespace(horizontal_fov=360.0, horizontal_res=10.0, vertical_ray_angles=torch.linspace(-10.0, 20.0, 4))
-    old_start, old_direction = namespace["bpearl_pattern"](cfg, "cpu")
-    new_cfg = patterns.BpearlPatternCfg(horizontal_res=10.0, vertical_ray_angles=(-10.0, 0.0, 10.0, 20.0))
-    new_start, new_direction = patterns.bpearl_pattern(new_cfg, "cpu")
-    assert new_direction.shape == (144, 3)
-    torch.testing.assert_close(new_start, old_start, rtol=0, atol=0)
-    torch.testing.assert_close(new_direction, old_direction, rtol=0, atol=0)
+    assert directions.shape == (144, 3)
+    torch.testing.assert_close(starts, torch.zeros_like(directions), rtol=0, atol=0)
+    torch.testing.assert_close(directions, expected, rtol=1e-6, atol=1e-6)
 
 
 def test_yaw_rotates_both_origins_and_directions_without_roll_or_pitch():

@@ -2,8 +2,7 @@
 
 Fixed physical-unit scales are not running normalization. Velocity-window and
 pending-action memory retain derivatives inside a rollout. Scene occlusion and
-the unobserved PhysX contact state still make this an approximate value state;
-no exact Markov or differentiable-contact claim is made.
+unobserved simulator contact state make this an approximate value state.
 """
 
 import torch

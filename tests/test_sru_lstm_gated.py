@@ -1,9 +1,6 @@
 """SRU numerical provenance, complete memory lifecycle, and experiment identity."""
 
 import argparse
-import importlib.util
-import json
-import os
 from pathlib import Path
 
 import pytest
@@ -28,37 +25,30 @@ def cpu_threads():
     torch.set_num_threads(previous)
 
 
-def test_cell_initialization_multistep_outputs_and_gradients_match_upstream():
-    root = Path(
-        os.environ.get("SRU_REFERENCE_ROOT", "/home/tong/tongworkspace/reference_repos/sru-pytorch-spatial-learning")
+def test_cell_recurrent_equation_and_gradients_are_self_contained():
+    torch.manual_seed(37)
+    cell = LSTMSRUGateCell(5, 7).double()
+    x = torch.randn(3, 5, dtype=torch.float64, requires_grad=True)
+    h = torch.randn(3, 7, dtype=torch.float64, requires_grad=True)
+    c = torch.randn(3, 7, dtype=torch.float64, requires_grad=True)
+    leaves = (x, h, c, *cell.parameters())
+    gates = torch.nn.functional.linear(torch.cat((x, h), dim=-1), cell.linear_all.weight, cell.linear_all.bias)
+    i, f, o, g = gates.chunk(4, dim=-1)
+    i, f, o = i.sigmoid(), f.sigmoid(), o.sigmoid()
+    refined = i * (1 - (1 - f).square()) + (1 - i) * f.square()
+    transformed = torch.nn.functional.linear(x, cell.transform_gate.weight, cell.transform_gate.bias)
+    expected_c = refined * c + (1 - refined) * torch.tanh(transformed * g)
+    expected_h = o * expected_c.tanh()
+    actual_h, actual_c = cell(x, h, c)
+    torch.testing.assert_close(actual_h, expected_h, rtol=0, atol=0)
+    torch.testing.assert_close(actual_c, expected_c, rtol=0, atol=0)
+    expected_grad = torch.autograd.grad(
+        expected_h.square().sum() + expected_c.square().sum(), leaves, retain_graph=True
     )
-    source = root / "network/lstm_sru_gate.py"
-    if not source.is_file():
-        pytest.skip("Set SRU_REFERENCE_ROOT to the pinned upstream checkout for numerical parity")
-    spec = importlib.util.spec_from_file_location("sru_gated_reference", source)
-    reference_module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(reference_module)
-    torch.manual_seed(37)
-    reference = reference_module.LSTMSRUGateCell(5, 7).double()
-    torch.manual_seed(37)
-    actual = LSTMSRUGateCell(5, 7).double()
-    for name, value in actual.state_dict().items():
-        torch.testing.assert_close(value, reference.state_dict()[name], rtol=0, atol=0)
-    inputs = (torch.randn(4, 3, 5, dtype=torch.float64), *[torch.randn(3, 7, dtype=torch.float64) for _ in range(2)])
-    outputs, gradients = [], []
-    for model in (reference, actual):
-        x, h, c = (value.clone().requires_grad_() for value in inputs)
-        leaves = (x, h, c, *model.parameters())
-        sequence = []
-        for step in x:
-            h, c = model(step, h, c)
-            sequence.append(h)
-        output = torch.stack(sequence)
-        outputs.append((output, h, c))
-        gradients.append(torch.autograd.grad(output.square().sum() + c.square().sum(), leaves))
-    for expected, measured in zip(outputs[0] + gradients[0], outputs[1] + gradients[1], strict=True):
-        assert torch.isfinite(measured).all()
-        torch.testing.assert_close(measured, expected, rtol=0, atol=0)
+    actual_grad = torch.autograd.grad(actual_h.square().sum() + actual_c.square().sum(), leaves)
+    for actual, expected in zip(actual_grad, expected_grad, strict=True):
+        assert torch.isfinite(actual).all()
+        torch.testing.assert_close(actual, expected, rtol=0, atol=0)
 
 
 def test_bptt_and_inference_reset_and_detach_both_states(tmp_path, monkeypatch):
@@ -187,13 +177,3 @@ def test_cli_and_stage_identity_preserve_recurrent_model():
         parent_checkpoint=None,
         recurrent_model="sru_lstm_gated",
     )
-
-
-def test_long_training_plan_only_changes_baseline_recurrent_model():
-    root = Path(__file__).resolve().parents[1]
-    baseline = json.loads((root / "configs/experiments/zhang_finetune_s1.json").read_text())
-    plan = json.loads((root / "configs/experiments/zhang_sru_lstm_gated.json").read_text())
-    for key in ("num_envs", "seed", "max_updates", "report_episodes", "start_stage", "fixed_stage", "screening"):
-        assert plan[key] == baseline[key]
-    assert len(plan["runs"]) == 1
-    assert plan["runs"][0]["train_args"] == {**baseline["runs"][0]["train_args"], "recurrent_model": "sru_lstm_gated"}

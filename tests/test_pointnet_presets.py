@@ -9,12 +9,12 @@ import pytest
 from isaaclab_tasks.utils.preset_cli import enumerate_task_presets
 
 import isaaclab_navrl.tasks  # noqa: F401
-from isaaclab_navrl.physics import parse_physics_args, resolve_navigation_config
+from isaaclab_navrl.physics import parse_runtime_args, resolve_navigation_config
 from isaaclab_navrl.pointnet.checkpoint import policy_contract, validate_checkpoint
 
 
 def compose(tokens=(), training=True, task="Isaac-NavRL-Zhang-Hummingbird-Direct-v0"):
-    args = parse_physics_args(argparse.ArgumentParser(), list(tokens), allow_presets=True)
+    args = parse_runtime_args(argparse.ArgumentParser(), list(tokens), allow_presets=True)
     env, recipe = resolve_navigation_config(task, args, training=training)
     env.configure_scene()
     return env, recipe
@@ -75,4 +75,4 @@ def test_invalid_runtime_action_contract_is_rejected_before_saving():
 
 def test_domain_selectors_are_not_silently_ignored_by_other_entrypoints():
     with pytest.raises(SystemExit):
-        parse_physics_args(argparse.ArgumentParser(), ["presets=pointnet"])
+        parse_runtime_args(argparse.ArgumentParser(), ["presets=pointnet"])

@@ -1,1 +1,1 @@
-"""Historical implementations used only by explicitly requested controls."""
+"""Geometry queries and collision diagnostics used by navigation training."""

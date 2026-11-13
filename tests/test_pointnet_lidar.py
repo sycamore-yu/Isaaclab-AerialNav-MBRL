@@ -1,20 +1,16 @@
 """PointNet's body-mounted scan and world-to-body XYZ contracts."""
 
-import pytest
 import torch
 from isaaclab.utils.math import quat_apply, quat_from_euler_xyz
 from isaaclab_tasks.utils.hydra import resolve_presets
 
-from isaaclab_navrl.physics import select_physics
 from isaaclab_navrl.tasks.navigation.config.hummingbird.env_cfg import ZhangNavRLEnvCfg
 from isaaclab_navrl.tasks.navigation.pointcloud import pack_body_points
 
 
-@pytest.mark.parametrize("physics", ["newton_mjwarp", "isaacsim_physx"])
-def test_pointnet_scan_is_body_mounted_without_changing_navigation_lidar(physics):
+def test_pointnet_scan_is_body_mounted_without_changing_navigation_lidar():
     cfg = ZhangNavRLEnvCfg()
-    resolve_presets(cfg, selected=("pointnet", physics))
-    select_physics(cfg, physics)
+    resolve_presets(cfg, selected=("pointnet",))
     for _ in range(2):
         cfg.configure_scene()
         assert cfg.scene.point_lidar.ray_alignment == "base"

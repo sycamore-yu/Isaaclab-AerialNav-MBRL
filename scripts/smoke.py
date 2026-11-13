@@ -9,7 +9,7 @@ from pathlib import Path
 
 from isaaclab.app import add_launcher_args, launch_simulation
 
-from isaaclab_navrl.physics import create_navigation_env, parse_physics_args, runtime_metadata, select_physics
+from isaaclab_navrl.physics import create_navigation_env, parse_runtime_args, runtime_metadata
 
 
 def main():
@@ -18,10 +18,10 @@ def main():
     parser.add_argument("--num_envs", type=int, default=16)
     parser.add_argument("--steps", type=int, default=128)
     parser.add_argument("--dynamic_obstacles", type=int, default=100)
-    parser.add_argument("--output", type=Path, default=Path("logs/smoke/result.json"))
+    parser.add_argument("--output", type=Path, required=True)
     add_launcher_args(parser)
     parser.set_defaults(visualizer=["none"])
-    args = parse_physics_args(parser)
+    args = parse_runtime_args(parser)
 
     import torch
 
@@ -33,7 +33,6 @@ def main():
     cfg.scene.num_envs = args.num_envs
     cfg.num_dynamic_obstacles = args.dynamic_obstacles
     cfg.sim.device = args.device
-    select_physics(cfg, args.physics_preset)
     cfg.configure_scene()
     task = "Isaac-NavRL-Zhang-Hummingbird-Direct-v0" if args.method == "zhang" else "Isaac-NavRL-Hummingbird-Direct-v0"
     with launch_simulation(cfg, args):
@@ -88,7 +87,6 @@ def main():
             assert env.motion.step_count == obstacle_steps
             result = {
                 "method": args.method,
-                "physics": args.physics_preset,
                 **runtime_metadata(env),
                 "num_envs": args.num_envs,
                 "steps": args.steps,

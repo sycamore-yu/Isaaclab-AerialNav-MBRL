@@ -1,4 +1,4 @@
-"""Cost-form SHAC/AHAC value learning, independent of the PhysX rollout.
+"""Cost-form SHAC/AHAC value learning, independent of the Newton rollout.
 
 The runner supplies Zhang's actual per-transition costs and augmented critic
 states. Both algorithms supply zero next values at absorbing terminals and the

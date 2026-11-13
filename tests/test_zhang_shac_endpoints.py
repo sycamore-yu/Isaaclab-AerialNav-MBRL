@@ -1,6 +1,7 @@
 """Exercise real runner bootstrap graphs with deliberately different reset states."""
 
 import copy
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -134,6 +135,10 @@ def _run_endpoint_case(tmp_path, trigger_step=1, algorithm="shac", failure_cost=
 
     trainer._initialize_critic = initialize
     result = trainer.run()
+    protocol = json.loads((tmp_path / "actor_critic_protocol.json").read_text())
+    geometry = json.loads((tmp_path / "collision_geometry.json").read_text())
+    assert protocol["simulator_contact_jacobian_verified"] is False
+    assert geometry["simulator_contact_jacobian"] is False
     assert result["completed_updates"] == 1 and result["nonfinite_grad_events"] == 0
     assert trainer.cfg.resolved_velocity_loss_mode == "per_step"
     return cfg, endpoints, values, targets

@@ -11,10 +11,9 @@ from isaaclab.app import add_launcher_args, launch_simulation
 
 from isaaclab_navrl.physics import (
     create_navigation_env,
-    parse_physics_args,
+    parse_runtime_args,
     resolve_navigation_config,
     runtime_metadata,
-    select_physics,
 )
 
 
@@ -32,7 +31,7 @@ def main():
     parser.add_argument("--stage", choices=("pretrain_s0", "pretrain_s1", "finetune_s1"))
     add_launcher_args(parser)
     parser.set_defaults(visualizer=["none"])
-    args = parse_physics_args(parser, allow_presets=True)
+    args = parse_runtime_args(parser, allow_presets=True)
     if args.episodes < 1:
         parser.error("--episodes must be positive")
     if not args.checkpoint.is_file():
@@ -64,7 +63,6 @@ def main():
     if args.stage:
         cfg.apply_training_stage(args.stage)
     cfg.sim.device = args.device
-    select_physics(cfg, args.physics_preset)
     cfg.configure_scene()
     task = "Isaac-NavRL-Zhang-Hummingbird-Direct-v0" if args.method == "zhang" else "Isaac-NavRL-Hummingbird-Direct-v0"
     with launch_simulation(cfg, args):
@@ -99,7 +97,6 @@ def main():
                 "method": "pointnet" if pointnet else args.method,
                 "preset": "pointnet" if pointnet else "default",
                 "variant": getattr(cfg, "variant", None),
-                "physics": args.physics_preset,
                 **runtime_metadata(env),
                 **({"recurrent_model": policy.cfg.recurrent_model} if args.method == "zhang" else {}),
                 "checkpoint": str(args.checkpoint.resolve()),

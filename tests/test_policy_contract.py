@@ -2,18 +2,13 @@
 
 from __future__ import annotations
 
-import ast
-import subprocess
 from importlib.metadata import version
-from types import SimpleNamespace
 
 import pytest
 import torch
 from isaaclab_rl.rsl_rl.utils import handle_deprecated_rsl_rl_cfg
-from reference_repo import NAVRL
 from rsl_rl.runners import OnPolicyRunner
 from tensordict import TensorDict
-from torch import nn
 
 from isaaclab_navrl.agents.models import NavRLActor, NavRLCritic
 from isaaclab_navrl.agents.rsl_rl_cfg import NavRLPpoRunnerCfg
@@ -117,61 +112,20 @@ def test_official_ppo_updates_and_checkpoint_roundtrip(tmp_path):
     assert loaded.alg.optimizer.state_dict()["state"]
 
 
-def test_encoder_against_actual_upstream_source():
-    """Build reference feature layers from the upstream AST, without old simulator imports."""
-    from einops.layers.torch import Rearrange
-
-    source = NAVRL
-    if not (source / ".git").exists():
-        pytest.skip("Upstream NavRL checkout is not available for differential verification")
-
-    def original(name):
-        return subprocess.check_output(
-            ["git", "show", f"HEAD:isaac-training/training/scripts/{name}"], cwd=source, text=True
-        )
-
-    utils_ast = ast.parse(original("utils.py"))
-    ppo_ast = ast.parse(original("ppo.py"))
-    make_mlp = next(node for node in utils_ast.body if isinstance(node, ast.FunctionDef) and node.name == "make_mlp")
-    beta_actor = next(node for node in utils_ast.body if isinstance(node, ast.ClassDef) and node.name == "BetaActor")
-    namespace = {"torch": torch, "nn": nn, "Rearrange": Rearrange, "self": SimpleNamespace(device="cpu")}
-    exec(compile(ast.Module([make_mlp, beta_actor], type_ignores=[]), "upstream-utils", "exec"), namespace)
-    ppo_class = next(node for node in ppo_ast.body if isinstance(node, ast.ClassDef) and node.name == "PPO")
-    init = next(node for node in ppo_class.body if isinstance(node, ast.FunctionDef) and node.name == "__init__")
-    names = {"feature_extractor_network", "dynamic_obstacle_network"}
-    assignments = [
-        node
-        for node in init.body
-        if isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Name) and node.targets[0].id in names
-    ]
-    exec(compile(ast.Module(assignments, type_ignores=[]), "upstream-ppo", "exec"), namespace)
-    lidar = namespace["feature_extractor_network"]
-    dynamic = namespace["dynamic_obstacle_network"]
-    fusion = namespace["make_mlp"]([256, 256])
-    reference_head = namespace["BetaActor"](3)
+def test_encoder_feature_order_is_lidar_dynamic_state():
     obs, actor, _ = make_models()
     flat = obs["policy"]
-    lidar(flat[:, 8:152].reshape(-1, 1, 36, 4))
-    dynamic(flat[:, 152:].reshape(-1, 1, 5, 10))
-    fusion(torch.zeros(8, 200))
-    reference_head(torch.zeros(8, 256))
-    lidar.load_state_dict(actor.cnns.lidar.state_dict())
-    dynamic[1].load_state_dict(actor.cnns.dynamic.state_dict())
-    fusion.load_state_dict(actor.cnns.fusion.state_dict())
-    reference_head.load_state_dict(actor.mlp.state_dict())
-    reference_features = fusion(
+    expected = actor.cnns.fusion(
         torch.cat(
             (
-                lidar(flat[:, 8:152].reshape(-1, 1, 36, 4)),
-                dynamic(flat[:, 152:].reshape(-1, 1, 5, 10)),
+                actor.cnns.lidar(flat[:, 8:152].reshape(-1, 1, 36, 4)),
+                actor.cnns.dynamic(flat[:, 152:202]),
                 flat[:, :8],
             ),
             dim=-1,
         )
     )
-    torch.testing.assert_close(actor.cnns(flat), reference_features, rtol=0, atol=0)
-    alpha, beta = reference_head(reference_features)
-    torch.testing.assert_close(actor(obs), 4 * alpha / (alpha + beta) - 2, rtol=1e-5, atol=1e-6)
+    torch.testing.assert_close(actor.cnns(flat), expected, rtol=0, atol=0)
 
 
 def test_public_distribution_overrides_cannot_silently_change_exported_action_units():

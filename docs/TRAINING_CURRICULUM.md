@@ -1,68 +1,110 @@
-# 训练课程与验收
+# 训练课程与恢复
 
-默认课程包含以下 5 个阶段。
-2026-10-30 新增直接从预训练 S1 和微调 S2 随机初始化的对照。
-两组对照跳过的阶段单独记录，不计作完整课程通过。
-配置与结论见 [EXP](EXP/20261030_20HZ_CONTROLS.md)。
+完整课程由 5 个阶段组成。
+每阶段使用自然结束的训练回合判断是否达到 80% 成功率。
 
-| 阶段 | 配置名 | 静态障碍 | 动态障碍 | 额外扰动 |
-|---|---|---:|---:|---|
-| 预训练 S0 | `pretrain_s0` | 240 | 0 | 关闭 |
-| 预训练 S1 | `pretrain_s1` | 240 | 120 | 关闭 |
-| 预训练 S2 | `pretrain_s2` | 180 | 180 | 关闭 |
-| 微调 S1 | `finetune_s1` | 320 | 160 | 开启 |
-| 微调 S2 | `finetune_s2` | 240 | 240 | 开启 |
+| 阶段 | 配置名 | 静态障碍 | 动态障碍 | 时限 | 额外扰动 |
+|---|---|---:|---:|---:|---|
+| 预训练 S0 | `pretrain_s0` | 240 | 0 | 30 s | 关闭 |
+| 预训练 S1 | `pretrain_s1` | 240 | 120 | 35 s | 关闭 |
+| 预训练 S2 | `pretrain_s2` | 180 | 180 | 40 s | 关闭 |
+| 微调 S1 | `finetune_s1` | 320 | 160 | 40 s | 开启 |
+| 微调 S2 | `finetune_s2` | 240 | 240 | 45 s | 开启 |
 
-## 晋级条件
+地图为 120 × 40 m。
+Zhang 每回合目标速度为 1–6 m/s。
+起终点水平距离满足 `d_xy = 18 s × v_target`。
+路线相对正、负 X 轴的偏角为 −8° 至 8°。
+X 两端各留 6 m 无障碍区域。
 
-每阶段训练回合成功率达到 0.8 后晋级。统计沿用原 NavRL `EpisodeStats` 的频率：累计至少 `num_envs` 个自然结束回合后汇总并清空。正式验收默认使用 1024 个并行无人机且要求至少 1024。显式 `--screening` 允许较小 N 做同课程比较；即使五阶段门槛全部通过，父结果仍为 `acceptance_passed=false`，仅标记 `stage_thresholds_passed=true`。没有独立评测环境，也不添加额外平滑晋级窗口。
+## 完整课程
 
-每回合只计一个最终结果。无人机距目标严格小于 0.5 m 时设置 `arrived=true` 并记录首次进入时间 `arrive_time`。训练与评测默认在首次到达后等待 `wait_before_truncate=5 s`；首次进入已超过 5 s 且当前仍在目标区时截断，或原有回合结束条件先触发时重置（`diffaero_arrival_wait_final_goal_v2`）。离开和重新进入均不重启计时。只有结束时仍在目标区且没有失败，才计成功；先到达后离开，即使超过 5 s 也继续，直到重入目标区或原有结束条件触发，等待中碰撞/越界按失败处理。首次到达本身不计成功。Zhang 每个物理步记录首次进入，最终成功判定使用回合结束时的位置。同一步事件优先级为无效状态、碰撞、越界、结束时在目标区、超时。
+在项目根目录使用已有 `.venv` 启动课程：
 
-旧版沿用上游 NavRL：`reach_goal` 仅统计，未加入 `terminated`，首次到达后继续运行到失败或时限。该规则在本仓库最初迁移提交 `183e572` 已存在；它不是 Isaac Lab 强制行为。本次对齐 DiffAero 的到达后等待门控及结束时目标占用判定，属于回合语义变更，旧报告与新报告分开保留。
+```bash
+export PYTHONPATH="$PWD/src"
+ARTIFACT_ROOT=/home/tong/tongworkspace/projects/aerial/.worktrees/isaaclab-navrl/archive-newton-cutover-20261113/artifacts
+.venv/bin/python scripts/run_acceptance.py \
+  --method zhang --num_envs 1024 --train_seed 0 \
+  --output "$ARTIFACT_ROOT/curriculum-$(date +%Y%m%d-%H%M%S)"
+```
 
-地图固定为 120 × 40 m（4800 m²）。S1 和 S2 的静动比分别为 2:1 与 1:1；对应的 F1 和 F2 保持该比例，总障碍物均为 480。按全地图计算，各阶段总密度分别为 5、7.5、7.5、10、10 个/100 m²。历史检查点和旧实验记录仍使用其当时的配置，不能将新计数追溯到旧结果。
+NavRL 使用 `--method navrl`。
+输出目录必须不存在，启动器从已提交源码创建独立快照。
+预训练 S0 从随机权重开始。
+后续阶段只加载本次课程上一阶段的检查点。
+阶段切换会重建地图、环境和时序历史。
 
-阶段通过必须由真实训练报告支持。最终验收还要求五个阶段依次完成，微调 S2 使用 240 个静态障碍、240 个动态障碍并开启共享扰动。有限步检查、合成结果和历史策略不用于验收。
+正式验收使用至少 1024 个环境。
+每份报告至少包含 1024 个完整回合。
+课程没有默认更新次数上限。
+五阶段按顺序达标后，才记录完整课程通过。
 
-## 模型与地图切换
+小规模检查使用 `--screening`。
+直接从某个阶段开始还需指定 `--start_stage`。
+这些运行保留跳过阶段的记录，并记录阶段阈值结果。
+正式课程通过条件仍要求完整的 5 阶段。
 
-预训练 S0 从随机初始化开始。后续阶段只读取本次实验前一阶段的检查点，保留网络和优化器。静态地形是合并三角网格，因此阶段边界通过重建仿真进程切换地图。传感器、物理碰撞和最近障碍查询随地图一起重建。
+## 回合如何计成功
 
-直接阶段对照显式使用 `run_acceptance.py --screening --start_stage <阶段>`。
-首次训练从随机权重开始，后续阶段只继承本组检查点。
-首次训练学习率为 `0.001`，包括直接从微调 S2 开始的实验。
-后续继承检查点进入微调阶段时，学习率为 `5e-5`。
-正式验收仍要求从 S0 开始并依次完成全部阶段。
+距目标严格小于 0.5 m 时，记录首次到达及其时间。
+首次到达超过 5 s，且无人机当前仍在目标区时，触发到达截断。
+离开或重新进入目标区不会重启计时。
+到达等待期间，碰撞、越界或无效状态仍计失败。
 
-同阶段继续训练使用 `run_acceptance.py --resume_checkpoint <checkpoint_stopped.pt> --start_stage <原阶段> --output <新目录>`；非 S0 继续运行仍需 `--screening`。恢复模型、优化器、归一化、学习率调度、Torch CPU/CUDA RNG、累计更新与样本数；重建环境和时序历史，重新统计报告、最佳成绩与恢复档位。新目录保留父检查点和新旧回合协议，不覆盖历史。到达等待时长可随协议调整，继续训练记录旧值与新值并重新累计报告。`train_zhang.py --resume_checkpoint` 可用于单阶段继续；`--checkpoint` 仍严格用于前一阶段交接。
+每个完整回合只计一个最终结果。
+成功要求回合结束时仍在目标区，且没有发生失败。
+同一步事件优先级为：无效状态、碰撞、越界、最终成功、超时。
+首次到达率与最终成功率分别记录。
 
-终点参考的新训练默认值为 `--goal_speed_profile smooth --goal_approach_time_s 2.0`。旧检查点的恢复、阶段交接和独立推理保留其保存的公式；缺少字段的历史检查点按 `linear` 读取。同阶段显式迁移允许修改这两个字段，`continuation.json` 记录新旧值，累计更新、优化器和学习率调度不重启。四组指定实验此次显式迁移并沿用各自原 TensorBoard 目录，在 `Protocol/goal_reference` 和 `Goal/profile_smooth` 标记变更步数；历史事件不改写。
+`Train/success_rate`、return 和失败率按自然完成的报告窗口计算。
+平均 return 按完成回合数加权。
+每步平均 reward 为同批回合总 return 除以总策略步数。
+`Evaluation/` 用于独立检查点评估。
 
-平滑曲线同时用于速度监督参考和原 10 维策略状态中的目标速度特征；最终通行门控复用完整地图距离查询，新机制的推理因此也需要该查询。它不改变现有 2 秒速度窗口、避障／碰撞损失和 10 秒到达等待。`Goal/goal_active_fraction`、`Goal/goal_smooth_weight` 记录每次展开中门控启用比例和平均权重，`Goal/goal_reference_speed_mps` 是局部避障修改前的名义目标参考速度，不是实测飞行速度。详见[设计及验证](SMOOTH_GOAL_APPROACH_20261101.md)。
+## 恢复与阶段交接
 
-每个阶段重置全部回合、循环网络状态、观测历史、动作历史和速度窗口。微调 S1 加载本次预训练 S2 的权重，重新开始低难度课程并开启扰动。正式运行没有更新次数上限；`--max_iterations` 只用于短检查。
+Zhang 和 PointNet 的同阶段继续训练使用新输出目录：
 
-同阶段性能恢复按 [分档恢复协议](migration/RECOVERY_LADDER_20261029.md) 执行：三份稳定报告建立5%起、每5个百分点一档的历史，连续退化先减半学习率，再观察三份仍退化才恢复同阶段最高稳定档。首次80%报告仍可晋级，未有三份稳定报告则不能标记stable80。恢复不会倒退累计样本、真实报告或晋级事实；恢复时重置环境、GRU、延迟和速度历史。它不允许加载别的实验或跨阶段的最好模型。
+```bash
+.venv/bin/python scripts/train_zhang.py \
+  --stage finetune_s1 --resume_checkpoint /absolute/checkpoint_stopped.pt \
+  --log_dir /absolute/new-run
+```
 
-## 指标与参数
+继续训练恢复以下学习状态：
 
-记录首次到达率、碰撞率、超时率、高度越界率、无效状态率和成功到达时间。平均 return 按完成回合数加权；每策略步平均 reward 等于同批回合总 return 除以总策略步数，包含终止步奖励。
+- 网络与 AdamW/Adam 状态。
+- 归一化与调度器。
+- 随机状态与累计计数。
 
-Zhang 使用独立损失训练，NavRL 环境奖励只用于日志对照。
-NavRL/PPO 优化原任务奖励。
-Zhang 默认将物理、策略和传感器频率统一为 20 Hz。
-BPTT 默认展开 150 步，使用完整 2 秒速度窗口。
-高度项默认 `navrl_range`，权重为 1。
-SHAC/AHAC 默认逐步速度监督，并区分真正终止、超时与普通时域末端。
-continuous 的碰撞与高度越界不重置。
-余弦调度周期为 400 次更新，继承检查点的微调默认学习率为 `5e-5`。
+环境、循环记忆、动作与观测历史、未完成的报告窗口重新初始化。
+跨恢复边界的窗口分别解释。
+PointNet 继续训练需同时指定 `presets=pointnet`。
 
-共享随机化参数、延迟语义、名义动力学读取及动作一致性要求见 [共享扰动说明](SIM_TO_REAL_TRAINING.md)。旧实现与结果由 Git 基线 `2456a5b` 及原日志保存。
+阶段交接使用 `--checkpoint`，载入本次课程上一阶段的检查点。
+微调交接学习率默认 `5e-5`。
+新初始化训练的学习率默认 `0.001`。
+PointNet 配方的学习率为 `1e-4`。
 
-## 来源
+同阶段恢复保留检查点保存的终点参考公式。
+Zhang 新训练默认使用 `smooth` 终点速度和 2 s 接近时间。
+平滑引导使用已知地图净空查询。
+首次到达后的截断等待仍为 5 s。
 
-- [上游 NavRL env.py，固定提交 3725bcc，583–587 行](https://github.com/Zhefan-Xu/NavRL/blob/3725bcc2e7c1be4ecf1455d922299ae85042603a/isaac-training/training/scripts/env.py#L583-L587)：`reach_goal` 与 `terminated` 分开计算，后者未包含成功。
-- [NavRL 论文](https://arxiv.org/html/2409.15634v2)：训练回合统计与原任务背景。
-- [NavRL++，IV-D](https://arxiv.org/html/2605.15559v1)：预训练后加入扰动微调。
-- 本轮用户指定五阶段障碍数量、80% 晋级阈值及按策略步计数的延迟。
+## 修改阶段配置
+
+`apply_training_stage()` 集中设置阶段名、障碍数量、扰动和时限：
+
+```python
+from isaaclab_navrl.tasks.navigation.config.hummingbird.env_cfg import ZhangNavRLEnvCfg
+
+cfg = ZhangNavRLEnvCfg()
+cfg.apply_training_stage("pretrain_s1")
+cfg.scene.num_envs = 64
+cfg.configure_scene()
+```
+
+显式覆盖使用 `stage_config`，并复制阶段表条目后修改。
+后续不带覆盖调用 `apply_training_stage()` 时，会清除上次覆盖。
+默认值以 `isaaclab_navrl.training.STAGE_CONFIG` 为准。

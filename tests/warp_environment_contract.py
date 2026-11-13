@@ -20,7 +20,7 @@ from pathlib import Path
 
 from isaaclab.app import add_launcher_args, launch_simulation
 
-from isaaclab_navrl.physics import create_navigation_env, parse_physics_args, runtime_metadata, select_physics
+from isaaclab_navrl.physics import create_navigation_env, parse_runtime_args, runtime_metadata
 
 
 def run_contract(env, steps):
@@ -381,17 +381,11 @@ def main():
     parser.add_argument("--timing", choices=("baseline", "unified_20hz", "unified_50hz"), default="baseline")
     parser.add_argument("--steps", type=int, default=6)
     parser.add_argument("--seed", type=int, default=17)
-    parser.add_argument("--output", type=Path)
+    parser.add_argument("--output", type=Path, required=True)
     add_launcher_args(parser)
     parser.set_defaults(visualizer=["none"])
     tokens = list(sys.argv[1:])
-    if not any(token.startswith("physics=") for token in tokens):
-        tokens.append("physics=newton_mjwarp")
-    if not any(token == "--frontend" or token.startswith("--frontend=") for token in tokens):
-        tokens.extend(("--frontend", "warp"))
-    args = parse_physics_args(parser, tokens)
-    if args.physics_preset != "newton_mjwarp" or args.frontend != "warp":
-        parser.error("This contract requires physics=newton_mjwarp --frontend warp")
+    args = parse_runtime_args(parser, tokens)
     if args.steps < 4:
         parser.error("At least four steps are needed to exercise graph replay, interval events, and delays")
 
@@ -408,14 +402,12 @@ def main():
     if args.method == "zhang":
         cfg.variant, cfg.timing = args.variant, args.timing
         cfg.capture_terminal_observation = True
-    select_physics(cfg, args.physics_preset)
     cfg.configure_scene()
     policy_dt = cfg.sim.dt * cfg.decimation
     cfg.sim_to_real.action_delay_range_s = (policy_dt, policy_dt)
     cfg.sim_to_real.input_delay_range_s = (policy_dt, policy_dt)
     cfg.episode_length_s = max(4.0, (args.steps + 4) * policy_dt)
-    suffix = args.method + (f"_{args.variant}" if args.method == "zhang" else "")
-    output = args.output or Path(f"logs/warp_environment_contract/{suffix}.json")
+    output = args.output
     result = {
         "method": args.method,
         "variant": args.variant if args.method == "zhang" else None,

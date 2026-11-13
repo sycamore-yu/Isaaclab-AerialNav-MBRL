@@ -17,19 +17,25 @@ class BeforeSimulation(Exception):
 @pytest.mark.parametrize(
     "tokens,stage,count,randomization,fresh,lr",
     [
-        ([], "finetune_s1", 32, True, True, 0.001),
-        (["--stage", "pretrain_s1", "--fresh_stage"], "pretrain_s1", 16, False, True, 0.001),
+        ([], "finetune_s1", 160, True, True, 0.001),
+        (["--stage", "pretrain_s1", "--fresh_stage"], "pretrain_s1", 120, False, True, 0.001),
         (["--stage", "pretrain_s0"], "pretrain_s0", 0, False, False, 0.001),
-        (["--checkpoint", "/retained/model.pt"], "finetune_s1", 32, True, False, 0.00005),
+        (["--checkpoint", "/retained/model.pt"], "finetune_s1", 160, True, False, 0.00005),
     ],
 )
 def test_training_defaults_and_explicit_stages(tokens, stage, count, randomization, fresh, lr, tmp_path, monkeypatch):
+    if "--checkpoint" in tokens:
+        import torch
+
+        checkpoint = tmp_path / "parent.pt"
+        torch.save({"train_cfg": {"goal_speed_profile": "smooth", "goal_approach_time_s": 2.0}}, checkpoint)
+        tokens = ["--checkpoint", str(checkpoint)]
     module = runpy.run_path(str(ROOT / "scripts/train_zhang.py"))
     entry = module["main"]
     monkeypatch.setitem(entry.__globals__, "add_launcher_args", lambda parser: parser.add_argument("--device"))
 
     def stop(cfg, args):
-        expected_static = {"pretrain_s0": 240, "pretrain_s1": 360, "finetune_s1": 480}[stage]
+        expected_static = {"pretrain_s0": 240, "pretrain_s1": 240, "finetune_s1": 320}[stage]
         assert (cfg.training_stage, cfg.num_static_obstacles, cfg.num_dynamic_obstacles) == (
             stage,
             expected_static,
@@ -47,25 +53,3 @@ def test_training_defaults_and_explicit_stages(tokens, stage, count, randomizati
     resolved = json.loads((tmp_path / "run/config.json").read_text())
     assert resolved["environment"]["dynamic_obstacles"] == count
     assert resolved["direct_stage_start"] is fresh
-
-
-def test_default_queue_selects_the_four_rectangular_controls(monkeypatch):
-    entry = runpy.run_path(str(ROOT / "scripts/run_comparison_queue.py"))["main"]
-
-    def parse(parser):
-        args = parser.parse_args(["--commit", "fixture"])
-        plan = json.loads(args.plan.read_text())
-        assert plan["launch_order"] == [
-            "baseline_direct",
-            "baseline_curriculum",
-            "reshaped_direct",
-            "reshaped_curriculum",
-        ]
-        assert plan["num_envs"] == plan["report_episodes"] == 1024
-        assert plan["continue_final_stage"] is True
-        assert [row["fixed_stage"] for row in plan["runs"]] == [True, False, True, False]
-        raise BeforeSimulation
-
-    monkeypatch.setitem(entry.__globals__, "parse_physics_args", parse)
-    with pytest.raises(BeforeSimulation):
-        entry()

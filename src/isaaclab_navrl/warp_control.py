@@ -1,7 +1,7 @@
 """Warp execution of the original Lee controller and RotorGroup motor response.
 
 The fused kernel consumes XYZW root states and the same per-environment motor
-parameters as ``LeeRotorController``. Input and output storage stays fixed across
+mechanical parameters as the original Lee controller. Input and output storage stays fixed across
 steps and resets. Public simulator writes remain outside CUDA graph capture.
 Equations adapted from OmniDrones; see LICENSE-OmniDrones.
 """
@@ -10,8 +10,9 @@ from __future__ import annotations
 
 import torch
 import warp as wp
+from isaaclab_experimental.utils.warp_graph_cache import WarpGraphCache
 
-from .control import GRAVITY, MASS, ROTOR_CONFIG, LeeRotorController, RotorGroup, rotor_allocation
+from .control import GRAVITY, MASS, ROTOR_CONFIG, RotorGroup, rotor_allocation
 from .warp_utils import torch_warp_stream
 
 _MASS = wp.constant(MASS)
@@ -293,5 +294,41 @@ class WarpLeeRotorController:
         self._launch_reset(self._all_ids, mask, True)
 
     def apply(self, drone, disturbance_acceleration_w=None):
-        """Write the same named-body wrench and rotor speeds outside graph capture."""
-        return LeeRotorController.apply(self, drone, disturbance_acceleration_w)
+        """Apply the RotorGroup wrench at the named base link's centre of mass."""
+        if self._base_body_ids is None:
+            self._base_body_ids = [drone.body_names.index("base_link")]
+            self._joint_order = [drone.joint_names.index(f"rotor_{i}_joint") for i in range(4)]
+        wrench = (self.allocation @ self.thrusts.T).T
+        force = wrench[:, :3]
+        if disturbance_acceleration_w is not None:
+            from isaaclab.utils.math import quat_apply_inverse
+
+            mass = drone.data.body_mass.torch.sum(-1, keepdim=True)
+            force = force + quat_apply_inverse(drone.data.root_quat_w.torch, disturbance_acceleration_w * mass)
+        drone.permanent_wrench_composer.set_forces_and_torques_index(
+            forces=force[:, None, :].contiguous(),
+            torques=wrench[:, None, 3:].contiguous(),
+            body_ids=self._base_body_ids,
+            is_global=False,
+        )
+        joint_velocity = drone.data.joint_vel.torch.clone()
+        joint_velocity[:, self._joint_order] = self.throttle * self.directions * self.rotation_velocities
+        drone.write_joint_velocity_to_sim_index(velocity=joint_velocity)
+
+
+class GraphedWarpController(WarpLeeRotorController):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.graphs = WarpGraphCache()
+
+    @torch.no_grad()
+    def compute(self, root_state_xyzw, velocity_world, acceleration_world=None, yaw_world=None):
+        self._copy_inputs(root_state_xyzw, velocity_world, acceleration_world, yaw_world)
+        self.advance_rng()
+        arguments = {"use_acceleration": acceleration_world is not None, "use_yaw": yaw_world is not None}
+        if str(self.device).startswith("cuda"):
+            stage = f"control_{arguments['use_acceleration']}_{arguments['use_yaw']}"
+            self.graphs.capture_or_replay(stage, self.launch, kwargs=arguments)
+        else:
+            self.launch(**arguments)
+        return self.commands

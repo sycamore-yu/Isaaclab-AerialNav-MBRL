@@ -57,7 +57,7 @@ class ZhangPolicy(nn.Module):
         return self.fc(self.act(h)), hidden
 
     def forward_checkpointed(self, depth_features, state, hidden):
-        """Recompute neural activations during backward; never replay PhysX."""
+        """Recompute neural activations during backward; never replay the physical simulation."""
         return checkpoint(self, depth_features, state, hidden, use_reentrant=False)
 
 

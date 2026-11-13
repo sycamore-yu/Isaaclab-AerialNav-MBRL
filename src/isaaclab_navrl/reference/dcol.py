@@ -4,7 +4,7 @@ DCOL minimizes a *shared* scale alpha of both primitives about their own
 centres.  Alpha is dimensionless: alpha > 1 means separation and alpha < 1
 means intersection.  ``radius * (alpha - 1)`` is a metre-scaled proxy, not an
 exact signed distance.  These queries provide geometric first derivatives;
-they do not differentiate PhysX contact impulses or termination times.
+they do not differentiate simulator contact impulses or termination times.
 
 For an axis-aligned box, the defining equation is
 

@@ -47,6 +47,14 @@ class EnvironmentConfig:
         self.decimation = 1
         self.episode_length_s = 35.2
 
+    def apply_training_stage(self, stage):
+        self.training_stage = stage
+        selected = STAGES[stage]
+        self.num_static_obstacles = selected["static_obstacles"]
+        self.num_dynamic_obstacles = selected["dynamic_obstacles"]
+        self.sim_to_real.enabled = selected["randomization"]
+        return selected
+
     def configure_scene(self):
         pass
 
@@ -170,7 +178,6 @@ class Harness:
         self.signal_during_final_save = signal_during_final_save
         self.events = []
         self.cfg = EnvironmentConfig()
-        self.selected_physics = None
         self.factory_calls = 0
         self.curriculum = Curriculum(self)
         self.env_closed = False
@@ -197,8 +204,6 @@ class Harness:
         stage="pretrain_s0",
         checkpoint=None,
         stop_after_acceptance=False,
-        physics="isaacsim_physx",
-        frontend="torch",
     ):
         tokens = [
             "train_navrl.py",
@@ -210,36 +215,26 @@ class Harness:
             str(max_iterations),
             "--stage",
             stage,
-            f"physics={physics}",
-            "--frontend",
-            frontend,
         ]
         if checkpoint is not None:
             tokens += ["--checkpoint", str(checkpoint)]
         if stop_after_acceptance:
             tokens += ["--stop_after_acceptance"]
 
-        def resolve_presets(cfg, *, selected):
-            assert cfg is self.cfg and selected == (physics,)
-            self.selected_physics = selected[0]
-
         def launch(cfg, args):
-            assert cfg is self.cfg and self.selected_physics == physics
+            assert cfg is self.cfg
             # A non-None launcher override would discard the resolved task preset.
             assert getattr(args, "physics", None) is None
             return contextlib.nullcontext()
 
-        def create_isaaclab_env(task, cfg, args, *, convert_marl_to_single_agent):
+        def create_navigation_env(task, cfg, args):
             assert task == "Isaac-NavRL-Hummingbird-Direct-v0"
-            assert cfg is self.cfg and self.selected_physics == physics
-            assert args.physics_preset == physics and args.frontend == frontend
-            assert convert_marl_to_single_agent is False
+            assert cfg is self.cfg
+            assert args.physics_preset == "newton_mjwarp" and args.frontend == "warp"
             self.factory_calls += 1
-            return types.SimpleNamespace(unwrapped=self.env)
+            return self.env
 
         imports = {
-            "isaaclab_tasks.utils.hydra": types.SimpleNamespace(resolve_presets=resolve_presets),
-            "isaaclab_rl.entrypoints.common": types.SimpleNamespace(create_isaaclab_env=create_isaaclab_env),
             "numpy": types.SimpleNamespace(random=types.SimpleNamespace(seed=lambda _seed: None)),
             "torch": types.SimpleNamespace(
                 manual_seed=lambda _seed: None,
@@ -273,7 +268,13 @@ class Harness:
         rng_state = random.getstate()
         try:
             with patch("builtins.__import__", side_effect=intercept), patch.object(sys, "argv", tokens):
-                with patch.object(trainer, "launch_simulation", side_effect=launch):
+                with (
+                    patch.object(trainer, "launch_simulation", side_effect=launch),
+                    patch.object(trainer, "create_navigation_env", side_effect=create_navigation_env),
+                    patch.object(trainer, "runtime_metadata", return_value={
+                        "frontend": "warp", "environment_class": "types.SimpleNamespace"
+                    }),
+                ):
                     with contextlib.redirect_stdout(io.StringIO()):
                         trainer.main()
         finally:
@@ -297,7 +298,7 @@ class NavrlGracefulStopTests(unittest.TestCase):
         self.assertEqual(list(harness.log_dir.glob("*.tmp.pt")), [])
         run_config = json.loads((harness.log_dir / "run_config.json").read_text())
         for metadata in (harness.result(), run_config):
-            self.assertEqual(metadata["frontend"], "torch")
+            self.assertEqual(metadata["frontend"], "warp")
             self.assertEqual(metadata["environment_class"], "types.SimpleNamespace")
 
     def test_sigint_and_sigterm_finish_the_current_update_and_report_before_saving(self):
@@ -321,7 +322,7 @@ class NavrlGracefulStopTests(unittest.TestCase):
                     self.assertEqual(payload["optimizer_updates"], 2)
                     self.assertEqual(payload["infos"]["completed_updates"], 2)
                     self.assertEqual(payload["infos"]["stop_requested"], str(signum))
-                    self.assertEqual(payload["infos"]["frontend"], "torch")
+                    self.assertEqual(payload["infos"]["frontend"], "warp")
                     self.assertEqual(payload["infos"]["environment_class"], "types.SimpleNamespace")
                     self.assertEqual(harness.runner.learn_calls, 2)
                     self.assertLess(harness.events.index(("learn_finished", 2)), harness.events.index(("report", 2)))
@@ -359,16 +360,16 @@ class NavrlGracefulStopTests(unittest.TestCase):
     def test_normal_update_limit_and_parent_handoff_keep_counts_and_stage_learning_rate(self):
         with tempfile.TemporaryDirectory(prefix="navrl_complete_") as temporary:
             first = Harness(Path(temporary) / "s0")
-            first.run(max_iterations=2, physics="newton_mjwarp")
+            first.run(max_iterations=2)
             parent = Path(first.result()["checkpoint"])
             second = Harness(Path(temporary) / "s1")
-            second.run(max_iterations=1, stage="pretrain_s1", checkpoint=parent, physics="newton_mjwarp")
+            second.run(max_iterations=1, stage="pretrain_s1", checkpoint=parent)
             for harness in (first, second):
                 self.assertEqual(harness.result()["status"], "completed")
                 self.assertEqual(harness.result()["physics"], "newton_mjwarp")
                 payload = json.loads(Path(harness.result()["checkpoint"]).read_text())
                 self.assertEqual(payload["infos"]["physics"], "newton_mjwarp")
-                self.assertEqual(payload["infos"]["frontend"], "torch")
+                self.assertEqual(payload["infos"]["frontend"], "warp")
                 self.assertEqual(payload["infos"]["environment_class"], "types.SimpleNamespace")
                 self.assertIsNone(harness.result()["stop_requested"])
                 self.assertEqual(Path(harness.result()["checkpoint"]).name, "checkpoint_final.pt")

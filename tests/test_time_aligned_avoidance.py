@@ -1,8 +1,5 @@
 """Moving geometry, horizontal steering, episode EMA and fixed-scene logging."""
 
-import json
-import runpy
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -158,36 +155,3 @@ def test_stage_independent_tags_and_shared_event_directory(tmp_path, monkeypatch
     assert not any("head" in tag for tag in tags)
     monkeypatch.setenv("NAVRL_TENSORBOARD_DIR", str(tmp_path / "shared"))
     assert tensorboard_directory(tmp_path / "finetune_s1") == tensorboard_directory(tmp_path / "finetune_s2")
-
-
-def test_six_comparisons_fix_finetune_s1_and_preserve_retention(tmp_path):
-    root = Path(__file__).resolve().parents[1]
-    queue = runpy.run_path(str(root / "scripts/run_comparison_queue.py"))
-    protocol = runpy.run_path(str(root / "scripts/run_acceptance.py"))
-    plan = json.loads((root / "configs/experiments/zhang_finetune_s1.json").read_text())
-    assert len(plan["runs"]) == 6
-    assert protocol["selected_stages"]("finetune_s1", screening=True, fixed_stage=True) == ("finetune_s1",)
-    with pytest.raises(ValueError, match="screening"):
-        protocol["selected_stages"](fixed_stage=True)
-    for run in plan["runs"]:
-        command = queue["command_for"](root, tmp_path, plan, run, "cuda:0")
-        assert command[command.index("--start_stage") + 1] == "finetune_s1" and "--fixed_stage" in command
-        values = protocol["parse_train_args"](queue["train_tokens"](run))
-        for name in ("timing",):
-            values.pop(name)
-        ZhangTrainCfg(**values).validate()
-        command = protocol["build_command"](
-            method="zhang",
-            stage="finetune_s1",
-            log_dir=tmp_path,
-            scripts_dir=root / "scripts",
-            num_envs=256,
-            seed=0,
-            device="cuda:0",
-            finetune_lr=5e-5,
-            train_args={},
-            parent_checkpoint=None,
-            fresh_stage=True,
-            fixed_stage=True,
-        )
-        assert "--stop_after_acceptance" not in command and "--fresh_stage" in command

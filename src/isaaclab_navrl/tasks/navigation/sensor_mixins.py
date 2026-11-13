@@ -1,6 +1,6 @@
 """Full-resolution Isaac Lab depth rays with bounded image working memory.
 
-Uses each backend's official multi-mesh sensor and unchanged local triangle geometry.
+Uses Newton's multi-mesh sensor and unchanged local triangle geometry.
 One top-level BVH conservatively selects candidate meshes, then the original
 local-frame mesh query computes depth. Every configured pixel is traced before
 the Zhang depth transform; only image working buffers are batched.

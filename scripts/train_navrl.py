@@ -13,7 +13,7 @@ from types import SimpleNamespace
 
 from isaaclab.app import add_launcher_args, launch_simulation
 
-from isaaclab_navrl.physics import create_navigation_env, parse_physics_args, runtime_metadata, select_physics
+from isaaclab_navrl.physics import create_navigation_env, parse_runtime_args, runtime_metadata
 from isaaclab_navrl.source import verify_training_import
 from isaaclab_navrl.training import STAGES, write_json
 
@@ -39,7 +39,7 @@ def main():
     parser.add_argument("--terrain_seed", type=int, default=0)
     add_launcher_args(parser)
     parser.set_defaults(visualizer=["none"])
-    args = parse_physics_args(parser)
+    args = parse_runtime_args(parser)
     if args.num_envs < 1 or (args.max_iterations is not None and args.max_iterations < 1):
         parser.error("num_envs and max_iterations must be positive")
     if args.lr is not None and not 0.0 < args.lr < float("inf"):
@@ -127,7 +127,6 @@ def main():
         cfg.training_report_episodes = args.report_episodes
         cfg.training_curriculum = True
         cfg.sim.device = args.device
-        select_physics(cfg, args.physics_preset)
         cfg.configure_scene()
         from importlib.metadata import version
 

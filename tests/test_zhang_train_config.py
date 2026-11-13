@@ -7,70 +7,43 @@ import json
 import unittest
 from dataclasses import asdict
 
-from isaaclab_navrl.physics import DEFAULT_FRONTEND, DEFAULT_PHYSICS, parse_physics_args
+from isaaclab_navrl.physics import DEFAULT_FRONTEND, DEFAULT_PHYSICS, parse_runtime_args
 from isaaclab_navrl.zhang.config import ZhangTrainCfg
 
 
 class ZhangTrainConfigTests(unittest.TestCase):
-    def test_runtime_selectors_preserve_training_remainder_and_checkpoint_identity(self):
+    def test_fixed_runtime_preserves_training_remainder_and_checkpoint_identity(self):
         parser = argparse.ArgumentParser(allow_abbrev=False)
         parser.add_argument("--train_args", nargs=argparse.REMAINDER, default=[])
-        defaults = parse_physics_args(parser, [])
-        self.assertEqual((defaults.physics_preset, defaults.frontend), (DEFAULT_PHYSICS, DEFAULT_FRONTEND))
-        self.assertEqual((ZhangTrainCfg().physics, ZhangTrainCfg().frontend), (DEFAULT_PHYSICS, DEFAULT_FRONTEND))
-        for selectors in (
-            ["physics=newton_mjwarp", "--frontend", "warp"],
-            ["--frontend=warp", "physics=newton_mjwarp"],
-        ):
-            with self.subTest(selectors=selectors):
-                args = parse_physics_args(parser, ["--train_args", "--timesteps", "150", *selectors])
-                self.assertEqual((args.physics_preset, args.frontend), ("newton_mjwarp", "warp"))
-                self.assertFalse(hasattr(args, "physics"))
-                self.assertEqual(args.train_args, ["--timesteps", "150"])
-                cfg = ZhangTrainCfg(physics=args.physics_preset, frontend=args.frontend)
-                cfg.validate()
-                restored = ZhangTrainCfg(**json.loads(json.dumps(asdict(cfg))))
-                restored.validate()
-                self.assertEqual((restored.physics, restored.frontend), ("newton_mjwarp", "warp"))
-                self.assertIsNone(restored.max_iterations)
-                self.assertFalse(restored.stop_after_acceptance)
+        args = parse_runtime_args(parser, ["--train_args", "--timesteps", "150"])
+        self.assertEqual((args.physics_preset, args.frontend), (DEFAULT_PHYSICS, DEFAULT_FRONTEND))
+        self.assertEqual(args.train_args, ["--timesteps", "150"])
+        cfg = ZhangTrainCfg()
+        cfg.validate()
+        restored = ZhangTrainCfg(**json.loads(json.dumps(asdict(cfg))))
+        restored.validate()
+        self.assertEqual((restored.physics, restored.frontend), ("newton_mjwarp", "warp"))
+        self.assertIsNone(restored.max_iterations)
+        self.assertFalse(restored.stop_after_acceptance)
 
-    def test_torch_frontend_accepts_both_physics_backends(self):
-        for physics in ("isaacsim_physx", "newton_mjwarp"):
-            with self.subTest(physics=physics):
-                args = parse_physics_args(argparse.ArgumentParser(), ["--frontend", "torch", f"physics={physics}"])
-                self.assertEqual((args.physics_preset, args.frontend), (physics, "torch"))
-                self.assertFalse(hasattr(args, "physics"))
-                ZhangTrainCfg(physics=args.physics_preset, frontend=args.frontend).validate()
-
-    def test_explicit_physx_without_frontend_uses_compatible_torch(self):
-        args = parse_physics_args(argparse.ArgumentParser(), ["physics=isaacsim_physx"])
-        self.assertEqual((args.physics_preset, args.frontend), ("isaacsim_physx", "torch"))
-        ZhangTrainCfg(physics=args.physics_preset, frontend=args.frontend).validate()
-
-    def test_invalid_physics_selector_cannot_silently_launch_physx(self):
-        for tokens in (["physics=newton"], ["physics=newton_mjwarp", "physics=isaacsim_physx"]):
-            with self.subTest(tokens=tokens), contextlib.redirect_stderr(io.StringIO()):
+    def test_runtime_selectors_are_rejected_even_in_training_remainder(self):
+        selectors = (
+            ["physics=newton_mjwarp"],
+            ["physics=isaacsim_physx"],
+            ["--frontend", "torch"],
+            ["--frontend=warp"],
+            ["--physics", "newton_mjwarp"],
+        )
+        for selector in selectors:
+            parser = argparse.ArgumentParser(allow_abbrev=False)
+            parser.add_argument("--train_args", nargs=argparse.REMAINDER, default=[])
+            with self.subTest(selector=selector), contextlib.redirect_stderr(io.StringIO()):
                 with self.assertRaises(SystemExit):
-                    parse_physics_args(argparse.ArgumentParser(), tokens)
+                    parse_runtime_args(parser, ["--train_args", "--timesteps", "150", *selector])
         with self.assertRaisesRegex(ValueError, "physics"):
-            ZhangTrainCfg(physics="newton").validate()
-
-    def test_invalid_frontend_cannot_silently_launch_torch(self):
-        for tokens in (
-            ["--frontend", "numpy"],
-            ["--frontend"],
-            ["--frontend=warp", "--frontend", "warp", "physics=newton_mjwarp"],
-            ["--frontend=torch", "--frontend", "warp", "physics=newton_mjwarp"],
-            ["--frontend", "warp", "physics=isaacsim_physx"],
-        ):
-            with self.subTest(tokens=tokens), contextlib.redirect_stderr(io.StringIO()):
-                with self.assertRaises(SystemExit):
-                    parse_physics_args(argparse.ArgumentParser(), tokens)
+            ZhangTrainCfg(physics="isaacsim_physx").validate()
         with self.assertRaisesRegex(ValueError, "frontend"):
-            ZhangTrainCfg(frontend="numpy").validate()
-        with self.assertRaisesRegex(ValueError, "requires physics=newton_mjwarp"):
-            ZhangTrainCfg(physics="isaacsim_physx", frontend="warp").validate()
+            ZhangTrainCfg(frontend="torch").validate()
 
     def test_restart_defaults_and_ahac_expansion_limit_are_explicit(self):
         cfg = ZhangTrainCfg()

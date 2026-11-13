@@ -1,4 +1,4 @@
-"""Source point-mass transition with PhysX state alignment.
+"""Point-mass transition aligned to Newton state measurements.
 
 The source CUDA adjoint omits the derivative of its airmode correction. Its
 value is retained and detached here. Position/velocity identity edges decay by
@@ -45,14 +45,14 @@ def _disturbance(velocity, rotation, parameters):
 
 
 def disturbance_acceleration(velocity, quaternion_xyzw, parameters):
-    """World acceleration from drag, wind and force bias for both simulators."""
+    """Shared drag, wind and force-bias acceleration for Newton and the point-mass model."""
     return _disturbance(velocity, quaternion_matrix(quaternion_xyzw), parameters)
 
 
 def point_mass_step(state, command, rotation, parameters, dt, grad_decay, *, position_integration="original"):
     response = parameters["pitch_ctl_delay"] * parameters.get("control_gain_scale", 1.0)
     # The point-mass adjoint approximates slower attitude response at higher inertia.
-    # PhysX uses the sampled inertia tensor directly; both use the same sampled scale.
+    # Newton uses the sampled inertia tensor directly; both use the same sampled scale.
     alpha = torch.exp(-response / parameters.get("inertia_scale", 1.0) * dt)
     actuator = command * (1 - alpha) + state.actuator * alpha
     with torch.no_grad():

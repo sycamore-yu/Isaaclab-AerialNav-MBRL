@@ -86,31 +86,3 @@ def test_shared_obstacle_snapshots_are_not_materialized_per_drone():
             dynamic_backend=backend,
         )
     assert shapes == [(8, 3), (1, 10, 8, 3)]
-
-
-def test_historical_dcol_metric_retains_time_and_gradient_contract():
-    from types import SimpleNamespace
-
-    from isaaclab_navrl.reference.dcol import hybrid_collision_gap
-    from isaaclab_navrl.reference.runner import DcolReferenceTrainer
-
-    trainer = DcolReferenceTrainer.__new__(DcolReferenceTrainer)
-    motion = SimpleNamespace(
-        position=torch.tensor([[2.0, 0.0, 2.0]]), velocity=torch.tensor([[-1.0, 0.0, 0.0]]), size=torch.ones(1, 3)
-    )
-    trainer.env = SimpleNamespace(motion=motion)
-    query = torch.tensor([[[0.0, 0.0, 2.0], [0.2, 0.0, 2.0]]], requires_grad=True)
-    static, radius, times = torch.full((1, 2), 100.0), torch.tensor([0.3]), torch.tensor([[0.0, 0.1]])
-    expected_positions = motion.position + times[..., None, None] * motion.velocity
-    expected = hybrid_collision_gap(query, radius[:, None], static, expected_positions, motion.size)
-    actual = trainer._collision_gap(query, radius, static_distance=static, query_time=times)
-    torch.testing.assert_close(actual, expected, rtol=0, atol=0)
-    actual_gradient = torch.autograd.grad(actual.sum(), query, retain_graph=True)[0]
-    expected_gradient = torch.autograd.grad(expected.sum(), query)[0]
-    torch.testing.assert_close(actual_gradient, expected_gradient, rtol=0, atol=0)
-    aligned = trainer._collision_gap(query, radius, expected_positions, static_distance=static)
-    torch.testing.assert_close(aligned, expected, rtol=0, atol=0)
-    motion.position = expected_positions
-    del motion.velocity
-    current = trainer._collision_gap(query, radius, static_distance=static)
-    torch.testing.assert_close(current, expected, rtol=0, atol=0)

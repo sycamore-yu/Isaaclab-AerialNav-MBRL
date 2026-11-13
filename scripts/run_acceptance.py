@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from isaaclab_navrl.physics import DEFAULT_FRONTEND, DEFAULT_PHYSICS, parse_physics_args, validate_runtime
+from isaaclab_navrl.physics import parse_runtime_args
 from isaaclab_navrl.source import freeze_source, verify_source
 from isaaclab_navrl.training import STAGE_CONFIG, STAGES, write_json
 from isaaclab_navrl.zhang.cli import TrainArgValue, parse_train_args
@@ -48,13 +48,8 @@ def build_command(
     report_episodes: int | None = None,
     fresh_stage: bool = False,
     fixed_stage: bool = False,
-    physics: str = DEFAULT_PHYSICS,
-    frontend: str | None = None,
     resume_checkpoint: Path | None = None,
 ) -> list[str]:
-    if frontend is None:
-        frontend = "torch" if physics == "isaacsim_physx" else DEFAULT_FRONTEND
-    validate_runtime(physics, frontend)
     command = [
         executable,
         str(scripts_dir / f"train_{method}.py"),
@@ -70,9 +65,6 @@ def build_command(
         str(seed),
         "--device",
         device,
-        f"physics={physics}",
-        "--frontend",
-        frontend,
     ]
     if not fixed_stage:
         command += ["--stop_after_acceptance"]
@@ -294,8 +286,6 @@ def run_pipeline(args: argparse.Namespace, train_args: dict[str, TrainArgValue])
                     report_episodes=getattr(args, "report_episodes", None),
                     fresh_stage=stage == start_stage and start_stage != STAGES[0] and resume_checkpoint is None,
                     fixed_stage=fixed_stage or (getattr(args, "continue_final_stage", False) and stage == STAGES[-1]),
-                    physics=args.physics_preset,
-                    frontend=args.frontend,
                     resume_checkpoint=resume_checkpoint if stage == start_stage else None,
                 )
                 current_stage = {
@@ -445,7 +435,7 @@ def main() -> int:
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--finetune_lr", type=float, default=5e-5)
     parser.add_argument("--train_args", nargs=argparse.REMAINDER, default=[])
-    args = parse_physics_args(parser)
+    args = parse_runtime_args(parser)
     try:
         selected_stages(args.start_stage, screening=args.screening, method=args.method, fixed_stage=args.fixed_stage)
     except ValueError as exc:

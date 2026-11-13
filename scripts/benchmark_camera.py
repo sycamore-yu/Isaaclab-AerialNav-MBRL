@@ -10,6 +10,8 @@ from pathlib import Path
 
 from isaaclab.app import add_launcher_args, launch_simulation
 
+from isaaclab_navrl.physics import create_navigation_env, parse_runtime_args, runtime_metadata
+
 
 def summarize(samples):
     ordered = sorted(samples)
@@ -38,16 +40,15 @@ def main():
     parser.add_argument("--dynamic_obstacles", type=int, default=100)
     parser.add_argument("--pixel_noise_std", type=float, default=0.02)
     parser.add_argument("--camera_batch_size", type=int, default=None)
-    parser.add_argument("--output", type=Path, default=Path("logs/benchmark/camera_16.json"))
+    parser.add_argument("--output", type=Path, required=True)
     add_launcher_args(parser)
     parser.set_defaults(visualizer=["none"])
-    args = parser.parse_args()
+    args = parse_runtime_args(parser)
     if args.samples < 1 or args.warmup < 1 or args.num_envs < 1:
         parser.error("num_envs, samples, and warmup must be positive")
     if args.camera_batch_size is not None and args.camera_batch_size < 1:
         parser.error("camera_batch_size must be positive")
 
-    import gymnasium as gym
     import torch
 
     import isaaclab_navrl.tasks  # noqa: F401
@@ -64,8 +65,9 @@ def main():
         cfg.depth_camera_batch_size = args.camera_batch_size
     cfg.configure_scene()
     with launch_simulation(cfg, args):
-        env = gym.make("Isaac-NavRL-Zhang-Hummingbird-Direct-v0", cfg=cfg).unwrapped
+        env = create_navigation_env("Isaac-NavRL-Zhang-Hummingbird-Direct-v0", cfg, args)
         try:
+            runtime = runtime_metadata(env)
             env.reset()
             camera = env.scene["depth_camera"]
             assert camera._batch_size == min(args.num_envs, cfg.depth_camera_batch_size)
@@ -98,7 +100,7 @@ def main():
                     torch.cuda.synchronize(env.device)
                     started = time.perf_counter()
                     last = operation()
-                    # PhysX and Warp may use several streams; wall time waits for all of them.
+                    # Wall time waits for all simulator and sensor streams.
                     torch.cuda.synchronize(env.device)
                     elapsed.append((time.perf_counter() - started) * 1000)
                 if check_output:
@@ -110,13 +112,14 @@ def main():
             # This in-place update returns None; time the same native sensor method.
             mesh_transform_stats = measure(camera._update_mesh_transforms, check_output=False)
             camera_stats = measure(refresh_camera)
-            # The transition measurement includes all ten physical steps, dynamic motion,
+            # The transition measurement includes the configured physical steps, dynamic motion,
             # collision checks, observations, and the synchronized depth-camera frame.
             env.reset()
             transition_stats = measure(complete_policy_transition)
             free_bytes, total_bytes = torch.cuda.mem_get_info(env.device)
             result = {
                 "method": "zhang",
+                **runtime,
                 "num_envs": env.num_envs,
                 "seed": cfg.seed,
                 "terrain_seed": cfg.terrain_seed,

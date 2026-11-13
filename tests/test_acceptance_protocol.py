@@ -26,9 +26,7 @@ def pipeline_args(**values):
     """Build orchestration fixtures through the real CLI defaults and validation."""
     tokens = ["run_acceptance.py"]
     for name, value in values.items():
-        if name == "physics":
-            tokens.append(f"physics={value}")
-        elif value is True:
+        if value is True:
             tokens.append(f"--{name}")
         elif value is not False and value is not None:
             tokens.extend((f"--{name}", str(value)))
@@ -547,21 +545,17 @@ class AcceptanceProtocolTests(unittest.TestCase):
 
     def test_all_five_stage_screening_completes_without_becoming_formal_acceptance(self):
         # Synthetic subprocess files verify orchestration, never policy quality.
-        for count, screening, physics in (
-            (128, True, "newton_mjwarp"),
-            (1024, False, "isaacsim_physx"),
-            (1024, True, "isaacsim_physx"),
-        ):
+        for count, screening in ((128, True), (1024, False), (1024, True)):
             visited = []
 
-            def unit_process(command, *, expected_count=count, expected_physics=physics, visits=visited, **kwargs):
+            def unit_process(command, *, expected_count=count, visits=visited, **kwargs):
                 stage = command[command.index("--stage") + 1]
                 method = Path(command[1]).stem.removeprefix("train_")
                 log_dir = Path(command[command.index("--log_dir") + 1])
                 parent = Path(command[command.index("--checkpoint") + 1]) if "--checkpoint" in command else None
                 self.assertEqual(int(command[command.index("--num_envs") + 1]), expected_count)
                 self.assertEqual(
-                    [token for token in command if token.startswith("physics=")], [f"physics={expected_physics}"]
+                    [token for token in command if token.startswith("physics=")], []
                 )
                 result = report_fixture(stage, parent, variant="dcol", num_envs=expected_count)
                 result["method"] = method
@@ -577,7 +571,6 @@ class AcceptanceProtocolTests(unittest.TestCase):
                     output=str(output),
                     num_envs=count,
                     screening=screening,
-                    physics=physics,
                     train_seed=0,
                     device="cuda:0",
                     finetune_lr=5e-5,
@@ -588,7 +581,8 @@ class AcceptanceProtocolTests(unittest.TestCase):
                 summary = json.loads((output / "training_result.json").read_text(encoding="utf-8"))
                 self.assertEqual(summary["purpose"], "training_comparison" if screening else "formal_acceptance")
                 self.assertEqual(summary["screening"], screening)
-                self.assertEqual(summary["physics"], physics)
+                self.assertEqual(summary["physics"], "newton_mjwarp")
+                self.assertEqual(summary["frontend"], "warp")
                 self.assertIsNone(summary["error"])
                 for result in (summary, *summary["methods"].values()):
                     self.assertEqual(result["status"], "completed")

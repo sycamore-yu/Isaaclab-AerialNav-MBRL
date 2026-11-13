@@ -682,7 +682,7 @@ class ZhangTrainer:
                     ),
                     "risk_aggregate": "worst_trajectory_temporal_peak" if self.horizon_controller else None,
                     "stability_diagnostics": ["actor_gradient_clip_ratio", "surrogate_velocity_error_mps"],
-                    "physx_contact_jacobian_verified": False,
+                    "simulator_contact_jacobian_verified": False,
                 },
             )
         lookahead = torch.linspace(0, self.cfg.policy_dt, 10, device=self.env.device)[None, :, None]
@@ -737,7 +737,7 @@ class ZhangTrainer:
                     "ground_gap": "query_height_minus_0.01_minus_radius",
                     "terminal_sample": "first_collision_substep_position_and_obstacles_or_policy_terminal_position",
                     "collision_gradient": "aligned_surrogate_at_the_same_physics_substep_before_reset",
-                    "physx_contact_jacobian": False,
+                    "simulator_contact_jacobian": False,
                 },
             )
         log = (self.log_dir / "updates.jsonl").open("w")
@@ -1100,7 +1100,7 @@ class ZhangTrainer:
                     raise FloatingPointError("Non-finite Zhang actor objective")
                 if float(execution_error) > 1e-6:
                     raise RuntimeError(
-                        f"PhysX and differentiable model executed different delayed actions: {execution_error}"
+                        f"Newton and differentiable model executed different delayed actions: {execution_error}"
                     )
                 learning_rate = self._learning_rate()
                 self.optimizer.zero_grad(set_to_none=True)

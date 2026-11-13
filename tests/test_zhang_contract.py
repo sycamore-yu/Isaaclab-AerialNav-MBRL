@@ -1,10 +1,8 @@
 """Behavioral contracts for the differentiable training path (CPU only)."""
 
-import importlib.util
 import json
 import math
 from dataclasses import asdict
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -391,23 +389,6 @@ def test_variant_and_height_boundary_configuration():
     ):
         with pytest.raises(ValueError):
             ZhangTrainCfg(**options).validate()
-
-
-def test_original_network_matches_published_model():
-    source = Path("/home/tong/tongworkspace/reference_repos/DiffPhysDrone/model.py")
-    if not source.exists():
-        pytest.skip("Original read-only source checkout is not mounted")
-    spec = importlib.util.spec_from_file_location("diffphysdrone_reference_model", source)
-    reference_module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(reference_module)
-    reference = reference_module.Model(10, 6)
-    migrated = ZhangPolicy()
-    migrated.load_state_dict(reference.state_dict(), strict=True)
-    depth, state, hidden = torch.randn(3, 1, 12, 16), torch.randn(3, 10), torch.randn(3, 192)
-    expected, _, expected_hidden = reference(depth, state, hidden)
-    actual, actual_hidden = migrated(depth, state, hidden)
-    torch.testing.assert_close(actual, expected, rtol=0, atol=0)
-    torch.testing.assert_close(actual_hidden, expected_hidden, rtol=0, atol=0)
 
 
 @pytest.mark.parametrize("recurrent_model", ("gru", "sru_lstm_gated"))

@@ -1,9 +1,8 @@
-"""Shared NavRL world with backend-selectable stepping and two action semantics."""
+"""Newton/Warp navigation with velocity and world-acceleration action semantics."""
 
 from __future__ import annotations
 
 import torch
-from isaaclab.envs import DirectRLEnv
 from isaaclab.utils.math import (
     convert_camera_frame_orientation_convention,
     matrix_from_quat,
@@ -13,7 +12,8 @@ from isaaclab.utils.math import (
 )
 from isaaclab_tasks.utils.hydra import resolve_presets
 
-from isaaclab_navrl.control import LeeRotorController
+from isaaclab_navrl.training import MAP_SIZE
+from isaaclab_navrl.warp_control import GraphedWarpController
 from isaaclab_navrl.zhang.termination import termination_mask
 
 from .context import ObservationContext
@@ -22,12 +22,14 @@ from .depth_history import compensated_depth_features, reproject_depth
 from .geometry import TerrainDistance, query_clearance
 from .randomization import PolicyPerturbation
 from .task import NavigationTask
-from .task_logic import DynamicObstacleMotion, goal_frame, navigation_terms, sample_navigation_route
+from .task_logic import DynamicObstacleMotion, goal_frame, sample_navigation_route
 from .transition import TransitionPublisher
+from .warp_loop import _NavigationWarpLoop
+from .warp_task_kernels import WarpFirstEvents, WarpNavigationTerms
 
 
-class NavRLEnv(DirectRLEnv):
-    """The original NavRL observation/reward task on Isaac Lab 3.0."""
+class NavRLEnv(_NavigationWarpLoop):
+    """NavRL velocity-command task on the Newton/Warp loop."""
 
     def __init__(self, cfg, render_mode=None, **kwargs):
         # Direct gym.make callers use the same task default as the public CLI.
@@ -73,20 +75,7 @@ class NavRLEnv(DirectRLEnv):
             self.physics_dt if cfg.method == "zhang" else self.step_dt,
             cfg.dynamic_speed_range,
         )
-        self.dynamic_collection = (
-            self.scene["dynamic_obstacles"]
-            if cfg.num_dynamic_obstacles and self.drone.__backend_name__ != "newton"
-            else None
-        )
-        if self.dynamic_collection is not None:
-            instances = self.dynamic_collection.data.body_pose_w.torch.shape[0]
-            expected = self.num_envs if self.drone.__backend_name__ == "newton" else 1
-            if instances != expected:
-                raise RuntimeError(f"Dynamic obstacle instances: expected {expected}, got {instances}.")
-            self._dynamic_pose = self.dynamic_collection.data.body_pose_w.torch.clone()
-            self.set_active_obstacles(cfg.num_dynamic_obstacles)
-        elif self.drone.__backend_name__ == "newton":
-            self.set_active_obstacles(cfg.num_dynamic_obstacles)
+        self.set_active_obstacles(cfg.num_dynamic_obstacles)
         if getattr(cfg, "geometry_backend", "native") == "curobo_v2":
             from isaaclab_navrl.reference.curobo_geometry import CuroboGeometry
 
@@ -101,6 +90,15 @@ class NavRLEnv(DirectRLEnv):
         self._reset_rng = torch.Generator(device=self.device).manual_seed(cfg.seed)
         self._terms = None
         self._stepping = False
+        self._warp_term_bindings = {}
+        self._warp_obstacle_count = len(self.motion.position)
+        self._warp_events = WarpFirstEvents(
+            root_state=torch.zeros((self.num_envs, 13), device=self.device),
+            target=self.target_pos,
+            collision_gap=torch.zeros(self.num_envs, device=self.device),
+            collision_terminates=getattr(self.cfg, "variant", None) != "continuous",
+            bounds_terminates=getattr(self.cfg, "variant", None) != "continuous",
+        )
 
     # Existing environment readers and Warp graphs see the owner's tensors,
     # never copied state or a second reset implementation.
@@ -119,7 +117,7 @@ class NavRLEnv(DirectRLEnv):
     _event_time = property(lambda self: self.task.first_event_time)
 
     def _create_controller(self):
-        return LeeRotorController(self.num_envs, self.device, dt=self.physics_dt)
+        return GraphedWarpController(self.num_envs, self.device, dt=self.physics_dt)
 
     def _setup_scene(self):
         self.scene.filter_collisions(global_prim_paths=["/World/ground", "/World/defaultGroundPlane"])
@@ -213,11 +211,7 @@ class NavRLEnv(DirectRLEnv):
             self.cfg.dynamic_speed_range,
         )
         self.cfg.num_dynamic_obstacles = count
-        if getattr(getattr(self, "drone", None), "__backend_name__", None) == "newton":
-            self._bind_shared_dynamic_geometry()
-        if self.dynamic_collection is not None:
-            self._dynamic_pose[:, :, :3] = self._dynamic_pose.new_tensor((0.0, 0.0, -1000.0))
-        self._write_dynamic_obstacles()
+        self._bind_shared_dynamic_geometry()
 
     def _bind_shared_dynamic_geometry(self):
         """Connect one global obstacle process to Newton's camera meshes."""
@@ -248,15 +242,6 @@ class NavRLEnv(DirectRLEnv):
 
     def _update_dynamic_obstacles(self):
         self.motion.advance()
-        self._write_dynamic_obstacles()
-
-    def _write_dynamic_obstacles(self):
-        if self.dynamic_collection is None:
-            return
-        self._dynamic_pose[:, self._active_obstacle_ids, :3] = self.motion.position
-        # Kinematic poses are authoritative; visual motion never changes the collision rule.
-        self.dynamic_collection.write_body_pose_to_sim_index(body_poses=self._dynamic_pose)
-        self.dynamic_collection.write_data_to_sim()
 
     def query_clearance(self, query, *, body_radius=0.0, query_time=0.0):
         """Metre clearance from current shared geometry at an explicit time offset."""
@@ -272,37 +257,29 @@ class NavRLEnv(DirectRLEnv):
         )
 
     def _compute_first_events(self):
-        from isaaclab_navrl.zhang.termination import first_events
-
         state = self.root_state()
-        radius = 0.3  # Shared task sphere; training safety margins are separate.
-        return first_events(
-            state,
-            self.target_pos,
-            self.query_clearance(state[:, :3], body_radius=radius),
-            height_bounds_reset=getattr(self.cfg, "height_bounds_reset", True),
+        self._warp_events.update(
+            root_state=state,
+            collision_gap=self.query_clearance(state[:, :3], body_radius=0.3),
         )
+        self._run_warp("first_events", self._warp_events.launch)
+        terms = dict(self._warp_events.terms)
+        if not getattr(self.cfg, "height_bounds_reset", True):
+            terms["bounds"] = (state[:, :2].abs() > state.new_tensor(MAP_SIZE) / 2).any(-1)
+        return terms
 
     def _compute_terms(self):
         state = self.root_state()
         hits = self.lidar.data.ray_hits_w.torch
         origin = self.lidar.data.pos_w.torch
-        distances = (hits - origin[:, None]).norm(dim=-1).clamp_max(4).reshape(self.num_envs, 1, 36, 4)
-        self._terms = navigation_terms(
-            state[:, :3],
-            state[:, 7:10],
-            self.target_pos,
-            self.target_dir,
-            distances,
-            self.motion,
-            self.previous_velocity,
-            self.height_range,
-        )
+        distances = (hits - origin[:, None]).norm(dim=-1).clamp_max(4)
+        binding = self._navigation_terms(state[:, :3], state[:, 7:10], distances)
+        self._terms = dict(binding.terms)
         self._terms.update(self._compute_first_events())
         return self._terms
 
     def _get_dones(self):
-        # Match NavRL's order: PhysX -> global obstacle motion -> observations.
+        # Preserve physics -> shared obstacle motion -> observation ordering.
         self._update_dynamic_obstacles()
         terms = self._finish_policy_terms(self._compute_terms())
         self.nonfinite_events += terms["invalid"].sum()
@@ -377,21 +354,14 @@ class NavRLEnv(DirectRLEnv):
     def _get_observations(self):
         def sample():
             terms = self._compute_terms()
+            binding = self._warp_term_bindings["navigation_terms"]
             if self.cfg.method == "navrl" and self.perturbation.noisy:
                 state = self.root_state()
                 position, velocity, _ = self.perturbation.state(state[:, :3], state[:, 7:10], state[:, 3:7])
-                distance = self.perturbation.normal(4.0 - terms["lidar"], self.cfg.sim_to_real.lidar_std).clamp(0, 4)
-                terms = navigation_terms(
-                    position,
-                    velocity,
-                    self.target_pos,
-                    self.target_dir,
-                    distance,
-                    self.motion,
-                    self.previous_velocity,
-                    self.height_range,
-                )
-            return torch.cat((terms["state"], terms["lidar"].flatten(1), terms["dynamic_obstacle"].flatten(1)), dim=-1)
+                distances = self.perturbation.normal(4.0 - terms["lidar"], self.cfg.sim_to_real.lidar_std).clamp(0, 4)
+                binding = self._navigation_terms(position, velocity, distances, "noisy_navigation_terms")
+            # Future graph replays must not mutate retained policy inputs.
+            return binding.policy_tensor.clone()
 
         if self.cfg.method == "zhang":
             return {"policy": sample()}
@@ -474,6 +444,46 @@ class NavRLEnv(DirectRLEnv):
             )
         return ObservationContext.build(policy=policy_observation, privileged=privileged)
 
+    def _navigation_terms(self, position, velocity, distances, stage="navigation_terms"):
+        if self._warp_obstacle_count != len(self.motion.position):
+            # Curriculum changes are infrequent host boundaries. Never replay
+            # a graph whose obstacle buffer shape or pointer has changed.
+            for key in self._warp_term_bindings:
+                self._graph_cache.invalidate(key)
+            self._warp_term_bindings.clear()
+            self._warp_obstacle_count = len(self.motion.position)
+        selected_count = min(5, len(self.motion.position))
+        if selected_count:
+            distance_xy = (self.motion.position[None, :, :2] - position[:, None, :2]).norm(dim=-1)
+            selected_distances, selected_indices = distance_xy.topk(selected_count, dim=-1, largest=False)
+        else:
+            selected_distances = position.new_empty((self.num_envs, 0))
+            selected_indices = torch.empty((self.num_envs, 0), dtype=torch.long, device=self.device)
+        changed = {
+            "position": position,
+            "velocity": velocity,
+            "lidar_distance": distances.reshape(self.num_envs, 144),
+            "obstacle_position": self.motion.position,
+            "obstacle_velocity": self.motion.velocity,
+            "obstacle_size": self.motion.size,
+            "selected_indices": selected_indices,
+            "selected_distance_xy": selected_distances,
+        }
+        binding = self._warp_term_bindings.get(stage)
+        if binding is None:
+            binding = WarpNavigationTerms(
+                **{name: value.clone() for name, value in changed.items()},
+                target=self.target_pos,
+                direction=self.target_dir,
+                previous_velocity=self.previous_velocity,
+                height_range=self.height_range,
+            )
+            self._warp_term_bindings[stage] = binding
+        else:
+            binding.update(**changed)
+        self._run_warp(stage, binding.launch)
+        return binding
+
 
 class ZhangNavRLEnv(NavRLEnv):
     """The same navigation world with unrestricted world-acceleration actions."""
@@ -498,13 +508,7 @@ class ZhangNavRLEnv(NavRLEnv):
         self.filtered_command = torch.zeros(self.num_envs, 3, device=self.device)
 
     def _configure_controller(self):
-        from isaaclab_navrl.zhang.controller import GraphedLeeRotorController
-
         self._rescale_motor_response()
-        state = self.root_state()
-        self.controller = GraphedLeeRotorController(
-            self.controller, (state, state[:, 7:10], self.command, self.command[:, :1])
-        )
 
     def _rescale_motor_response(self):
         if self.physics_dt != 0.01:
@@ -575,7 +579,7 @@ class ZhangNavRLEnv(NavRLEnv):
 
     def _record_substep(self, terms):
         # A 10 Hz policy can cross the collision band between observations.
-        # Use the same sphere clearance at every completed PhysX step.
+        # Use the same sphere clearance at every completed Newton step.
         elapsed_s = self._policy_start_time + self._physical_substep * self.physics_dt
         self.task.record_substep(terms, elapsed_s)
         # Keep this policy step's first collision even if the episode's first
