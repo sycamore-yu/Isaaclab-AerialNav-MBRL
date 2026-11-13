@@ -55,10 +55,10 @@ def main():
                 for _ in range(2):
                     observation, reward, _, _, _ = env.step(torch.zeros(4, 3, device=env.device))
                     assert torch.isfinite(observation["policy"]).all() and torch.isfinite(reward).all()
-                    depth = env.get_zhang_observation()["depth_features"]
+                    depth = env.get_zhang_observation().privileged["depth_features"]
                     assert depth.shape == (4, 1, 12, 16) and torch.isfinite(depth).all()
                 query = env.root_state()[:, None, :3].detach().requires_grad_()
-                distance = env.nearest_obstacle_signed_distance(query)
+                distance = env.query_clearance(query)
                 distance.square().sum().backward()
                 assert torch.isfinite(query.grad).all()
                 stages.append(

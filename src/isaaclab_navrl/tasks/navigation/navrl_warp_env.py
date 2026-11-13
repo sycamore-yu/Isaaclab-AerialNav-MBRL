@@ -269,7 +269,7 @@ class _WarpNavigation:
         state = self.root_state()
         self._warp_events.update(
             root_state=state,
-            collision_gap=self.nearest_obstacle_signed_distance(state[:, :3]) - 0.3,
+            collision_gap=self.query_clearance(state[:, :3], body_radius=0.3),
         )
         self._run_warp("first_events", self._warp_events.launch)
         terms = dict(self._warp_events.terms)

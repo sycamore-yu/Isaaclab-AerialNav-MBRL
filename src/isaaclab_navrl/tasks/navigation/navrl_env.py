@@ -14,20 +14,16 @@ from isaaclab.utils.math import (
 from isaaclab_tasks.utils.hydra import resolve_presets
 
 from isaaclab_navrl.control import LeeRotorController
-from isaaclab_navrl.zhang.termination import (
-    arrival_wait_timeout,
-    latch_first_event,
-    record_arrival,
-    reset_first_event,
-    terminal_outcomes,
-    termination_mask,
-)
+from isaaclab_navrl.zhang.termination import termination_mask
 
+from .context import ObservationContext
 from .curriculum import TrainingCurriculum, active_obstacle_indices
 from .depth_history import compensated_depth_features, reproject_depth
-from .geometry import TerrainDistance, nearest_obstacle_signed_distance
+from .geometry import TerrainDistance, query_clearance
 from .randomization import PolicyPerturbation
+from .task import NavigationTask
 from .task_logic import DynamicObstacleMotion, goal_frame, navigation_terms, sample_navigation_route
+from .transition import TransitionPublisher
 
 
 class NavRLEnv(DirectRLEnv):
@@ -95,25 +91,32 @@ class NavRLEnv(DirectRLEnv):
             from isaaclab_navrl.reference.curobo_geometry import CuroboGeometry
 
             self.terrain_distance = CuroboGeometry(self.terrain_distance, self.motion.size)
-        self.target_pos = torch.zeros(self.num_envs, 3, device=self.device)
-        self.target_speed = torch.zeros(self.num_envs, 1, device=self.device)
-        self.target_dir = torch.zeros_like(self.target_pos)
-        self.height_range = torch.zeros(self.num_envs, 2, device=self.device)
-        self.previous_velocity = torch.zeros_like(self.target_pos)
+        self.task = NavigationTask(self.num_envs, self.device)
+        self.transitions = TransitionPublisher()
         self.command = torch.zeros_like(self.target_pos)
         self.executed_actions = torch.zeros_like(self.command)
         self.previous_actions = torch.zeros_like(self.command)
         self.action_difference = torch.zeros(self.num_envs, device=self.device)
-        self.first_reach_step = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
-        self.arrived = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
-        self.arrive_time = torch.zeros(self.num_envs, device=self.device)
-        self._episode_failure = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
-        self.episode_return = torch.zeros(self.num_envs, device=self.device)
         self.nonfinite_events = torch.zeros((), dtype=torch.long, device=self.device)
-        self.episode_id = torch.full((self.num_envs,), -1, dtype=torch.long, device=self.device)
         self._reset_rng = torch.Generator(device=self.device).manual_seed(cfg.seed)
         self._terms = None
         self._stepping = False
+
+    # Existing environment readers and Warp graphs see the owner's tensors,
+    # never copied state or a second reset implementation.
+    target_pos = property(lambda self: self.task.target_pos)
+    target_speed = property(lambda self: self.task.target_speed)
+    target_dir = property(lambda self: self.task.target_dir)
+    height_range = property(lambda self: self.task.height_range)
+    previous_velocity = property(lambda self: self.task.previous_velocity)
+    first_reach_step = property(lambda self: self.task.first_reach_step)
+    arrived = property(lambda self: self.task.arrived)
+    arrive_time = property(lambda self: self.task.arrive_time)
+    episode_return = property(lambda self: self.task.episode_return)
+    episode_id = property(lambda self: self.task.episode_id)
+    _episode_failure = property(lambda self: self.task.episode_failure)
+    _event_code = property(lambda self: self.task.first_event_code)
+    _event_time = property(lambda self: self.task.first_event_time)
 
     def _create_controller(self):
         return LeeRotorController(self.num_envs, self.device, dt=self.physics_dt)
@@ -147,14 +150,13 @@ class NavRLEnv(DirectRLEnv):
             speed = self.zhang_parameters["max_speed"][env_ids].clone()
         else:
             speed = 1 + 5 * torch.rand(count, 1, generator=self._reset_rng, device=self.device)
-        self.target_speed[env_ids] = speed
         position, target = sample_navigation_route(
             speed, self._reset_rng, self.cfg.height_target_range if self.cfg.method == "zhang" else (0.5, 2.5)
         )
         # Keep the uniform speed draw; reject occupied endpoints instead of shortening the route.
         for _ in range(64):
-            clearance = self.nearest_obstacle_signed_distance(torch.cat((position, target))).reshape(2, count).amin(0)
-            blocked = clearance <= 0.3
+            clearance = self.query_clearance(torch.cat((position, target)), body_radius=0.3).reshape(2, count).amin(0)
+            blocked = clearance <= 0
             if not blocked.any():
                 break
             position[blocked], target[blocked] = sample_navigation_route(
@@ -164,9 +166,8 @@ class NavRLEnv(DirectRLEnv):
             )
         else:
             raise RuntimeError("Could not sample collision-free 18v route endpoints after 64 attempts")
-        self.target_pos[env_ids] = target
+        self.task.reset(env_ids, position, target, speed)
         direction = target - position
-        self.target_dir[env_ids] = direction
         zero = torch.zeros(count, device=self.device)
         quaternion = quat_from_euler_xyz(zero, zero, torch.atan2(direction[:, 1], direction[:, 0]))
         self.drone.write_root_pose_to_sim_index(root_pose=torch.cat((position, quaternion), dim=-1), env_ids=env_ids)
@@ -176,23 +177,14 @@ class NavRLEnv(DirectRLEnv):
         )
         self.controller.reset(env_ids)
         self.controller.apply(self.drone)
-        self.height_range[env_ids] = torch.stack(
-            (torch.minimum(position[:, 2], target[:, 2]), torch.maximum(position[:, 2], target[:, 2])), dim=-1
-        )
         reset_ids = env_ids.long()
-        self.previous_velocity.index_fill_(0, reset_ids, 0)
         self.command.index_fill_(0, reset_ids, 0)
         self.previous_actions.index_fill_(0, reset_ids, 0)
-        self.first_reach_step.index_fill_(0, reset_ids, 0)
-        self.arrived.index_fill_(0, reset_ids, False)
-        self.arrive_time.index_fill_(0, reset_ids, 0)
-        self._episode_failure.index_fill_(0, reset_ids, 0)
-        self.episode_return.index_fill_(0, reset_ids, 0)
-        self.episode_id[env_ids] += 1
         self._terms = None
 
     def reset(self, *args, **kwargs):
         self._stepping = False
+        self.transitions.clear()
         self.extras = {}
         if self.curriculum is not None:
             self.curriculum.reset_episodes()
@@ -266,12 +258,16 @@ class NavRLEnv(DirectRLEnv):
         self.dynamic_collection.write_body_pose_to_sim_index(body_poses=self._dynamic_pose)
         self.dynamic_collection.write_data_to_sim()
 
-    def nearest_obstacle_signed_distance(self, query):
-        return nearest_obstacle_signed_distance(
+    def query_clearance(self, query, *, body_radius=0.0, query_time=0.0):
+        """Metre clearance from current shared geometry at an explicit time offset."""
+        return query_clearance(
             query,
             self.terrain_distance.signed_distance(query),
             self.motion.position,
             self.motion.size,
+            body_radius=body_radius,
+            query_time=query_time,
+            dynamic_velocity=self.motion.velocity,
             dynamic_backend=getattr(self.terrain_distance, "dynamic_signed_distance", None),
         )
 
@@ -283,7 +279,7 @@ class NavRLEnv(DirectRLEnv):
         return first_events(
             state,
             self.target_pos,
-            self.nearest_obstacle_signed_distance(state[:, :3]) - radius,
+            self.query_clearance(state[:, :3], body_radius=radius),
             height_bounds_reset=getattr(self.cfg, "height_bounds_reset", True),
         )
 
@@ -311,50 +307,54 @@ class NavRLEnv(DirectRLEnv):
         terms = self._finish_policy_terms(self._compute_terms())
         self.nonfinite_events += terms["invalid"].sum()
         terminated = self._termination_mask(terms)
-        elapsed_s = self.episode_length_buf.float() * self.step_dt
-        record_arrival(self.arrived, self.arrive_time, terms["reached"], elapsed_s)
-        wait_expired = arrival_wait_timeout(terms["reached"], self.arrive_time, elapsed_s, self.cfg.wait_before_truncate)
-        episode_timeout = self.episode_length_buf >= self.max_episode_length
-        timed_out = episode_timeout | wait_expired
-        outcome = terminal_outcomes(terms, terminated | timed_out, self._episode_failure)
-        first = self._first_arrival_mask(terms, terminated)
-        self.first_reach_step.copy_(torch.where(first, self.episode_length_buf, self.first_reach_step))
+        outcome = self.task.advance(
+            terms,
+            self.episode_length_buf,
+            policy_dt=self.step_dt,
+            max_episode_length=self.max_episode_length,
+            wait_before_truncate=self.cfg.wait_before_truncate,
+            terminated=terminated,
+            first_arrival=self._first_arrival_mask(terms, terminated),
+        )
+        timed_out = outcome["timeout"]
         state = self.root_state()
         # These values belong to the completed transition, before same-step autoreset.
-        self.extras["transition"] = {
-            "position": state[:, :3].clone(),
-            "quaternion": state[:, 3:7].clone(),
-            "velocity": state[:, 7:10].clone(),
-            "angular_velocity": state[:, 10:13].clone(),
-            "target": self.target_pos.clone(),
-            "episode_id": self.episode_id.clone(),
-            "height_target": self.target_pos[:, 2].clone(),
-            "height_range": self.height_range.clone(),
-            "step": self.episode_length_buf.clone(),
+        transition = {
+            "position": state[:, :3],
+            "quaternion": state[:, 3:7],
+            "velocity": state[:, 7:10],
+            "angular_velocity": state[:, 10:13],
+            "target": self.target_pos,
+            "episode_id": self.episode_id,
+            "height_target": self.target_pos[:, 2],
+            "height_range": self.height_range,
+            "step": self.episode_length_buf,
             "time_s": self.episode_length_buf.float() * self.step_dt,
-            "reached": terms["reached"].clone(),
-            "collision": terms["collision"].clone(),
-            "bounds": terms["bounds"].clone(),
-            "invalid": terms["invalid"].clone(),
-            "timeout": timed_out.clone(),
-            "terminated": terminated.clone(),
-            "arrived": self.arrived.clone(),
-            "arrive_time": self.arrive_time.clone(),
-            "arrival_wait_timeout": wait_expired.clone(),
-            "episode_timeout": episode_timeout.clone(),
-            "terminal_event_code": outcome.clone(),
-            "executed_action": self.executed_actions.clone(),
-            "action_delay_steps": self.executed_action_lags.clone(),
+            "reached": terms["reached"],
+            "collision": terms["collision"],
+            "bounds": terms["bounds"],
+            "invalid": terms["invalid"],
+            "terminated": terminated,
+            "arrived": self.arrived,
+            "arrive_time": self.arrive_time,
+            "raw_action": self.actions,
+            "executed_action": self.executed_actions,
+            "action_delay_steps": self.executed_action_lags,
+            **outcome,
         }
         if self.cfg.method == "zhang" and self.cfg.capture_terminal_observation:
             # Capture before DirectRLEnv autoresets sensors, targets and randomization.
-            transition = self.extras["transition"]
             transition["depth_features"] = (
-                self.scene["depth_camera"].data.output["policy_depth"].torch.permute(0, 3, 1, 2).clone()
+                self.scene["depth_camera"].data.output["policy_depth"].torch.permute(0, 3, 1, 2)
             )
-            transition["input_delay_steps"] = self.perturbation.observation_buffer.time_lags.clone()
-            transition["critic_parameters"] = {k: v.detach().clone() for k, v in self.zhang_parameters.items()}
+            transition["input_delay_steps"] = self.perturbation.observation_buffer.time_lags
+            transition["critic_parameters"] = self.zhang_parameters
+        transition.update(self._transition_details(timed_out))
+        self.extras["transition"] = self.transitions.publish(transition)
         return terminated, timed_out
+
+    def _transition_details(self, timeout):
+        return {}
 
     def _termination_mask(self, terms):
         return terms["collision"] | terms["bounds"] | terms["invalid"]
@@ -370,9 +370,8 @@ class NavRLEnv(DirectRLEnv):
         cfg = self.cfg.sim_to_real
         if self.cfg.method == "navrl" and cfg.enabled and cfg.action_difference:
             reward = reward - cfg.action_difference_weight * self.action_difference
-        self.episode_return += reward
-        self.extras["transition"]["episode_return"] = self.episode_return.clone()
-        self.previous_velocity.copy_(self.drone.data.root_lin_vel_w.torch)
+        self.task.record_reward(reward, self.drone.data.root_lin_vel_w.torch)
+        self.extras["transition"] = self.extras["transition"].with_fields(episode_return=self.episode_return)
         return reward
 
     def _get_observations(self):
@@ -447,7 +446,7 @@ class NavRLEnv(DirectRLEnv):
                 (age > 0)[:, None, None, None], compensated_depth_features(warped, known), policy_depth
             )
             known_fraction = torch.where(age > 0, known.float().mean((1, 2, 3)), known_fraction)
-        observation = {
+        privileged = {
             "depth_features": depth,
             "position": state[:, :3],
             "quaternion": state[:, 3:7],
@@ -456,22 +455,24 @@ class NavRLEnv(DirectRLEnv):
             "episode_id": self.episode_id.clone(),
             "height_target": self.target_pos[:, 2].clone(),
             "height_range": self.height_range.clone(),
-            "policy_position": current[:, :3],
-            "policy_velocity": current[:, 3:6],
-            "policy_quaternion": current[:, 6:10],
-            "policy_target": current[:, 10:13],
-            "policy_depth_features": policy_depth,
             "depth_age_s": age.clone(),
             "depth_known_fraction": known_fraction,
             "input_delay_steps": self.perturbation.observation_buffer.time_lags.clone(),
         }
+        policy_observation = {
+            "position": current[:, :3],
+            "velocity": current[:, 3:6],
+            "quaternion": current[:, 6:10],
+            "target": current[:, 10:13],
+            "depth_features": policy_depth,
+        }
         if self.cfg.perception_cfg.mode == "pointnet":
             from .pointcloud import pack_body_points
 
-            observation["policy_points"] = pack_body_points(
-                self.scene["point_lidar"].data.ray_hits_w.torch, observation["position"], observation["quaternion"]
+            policy_observation["points"] = pack_body_points(
+                self.scene["point_lidar"].data.ray_hits_w.torch, privileged["position"], privileged["quaternion"]
             )
-        return observation
+        return ObservationContext.build(policy=policy_observation, privileged=privileged)
 
 
 class ZhangNavRLEnv(NavRLEnv):
@@ -480,8 +481,6 @@ class ZhangNavRLEnv(NavRLEnv):
     def __init__(self, cfg, render_mode=None, **kwargs):
         super().__init__(cfg, render_mode=render_mode, **kwargs)
         self._configure_controller()
-        self._event_code = torch.zeros(self.num_envs, dtype=torch.int8, device=self.device)
-        self._event_time = torch.zeros(self.num_envs, device=self.device)
         self._substep_collision = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
         self._collision_position = torch.zeros(self.num_envs, 3, device=self.device)
         self._collision_velocity = torch.zeros_like(self._collision_position)
@@ -518,7 +517,6 @@ class ZhangNavRLEnv(NavRLEnv):
         super()._reset_idx(env_ids)
         reset_ids = torch.as_tensor(env_ids, device=self.device, dtype=torch.long)
         self.filtered_command.index_fill_(0, reset_ids, 0)
-        reset_first_event(self._event_code, self._event_time, reset_ids)
         self._substep_collision.index_fill_(0, reset_ids, False)
         self._collision_position.index_fill_(0, reset_ids, 0)
         self._collision_velocity.index_fill_(0, reset_ids, 0)
@@ -579,8 +577,7 @@ class ZhangNavRLEnv(NavRLEnv):
         # A 10 Hz policy can cross the collision band between observations.
         # Use the same sphere clearance at every completed PhysX step.
         elapsed_s = self._policy_start_time + self._physical_substep * self.physics_dt
-        record_arrival(self.arrived, self.arrive_time, terms["reached"], elapsed_s)
-        latch_first_event(self._event_code, self._event_time, terms, elapsed_s)
+        self.task.record_substep(terms, elapsed_s)
         # Keep this policy step's first collision even if the episode's first
         # outcome was already a success. Capture before the aggregate is set.
         first_collision = terms["collision"] & ~self._substep_collision
@@ -605,27 +602,20 @@ class ZhangNavRLEnv(NavRLEnv):
         terms["invalid"] = self._substep_invalid.clone()
         return terms
 
-    def _get_dones(self):
-        terminated, timeout = super()._get_dones()
-        timed_out_first = (self._event_code == 0) & timeout
-        self._event_code[timed_out_first] = 5
-        self._event_time.copy_(
-            torch.where(timed_out_first, self.episode_length_buf.float() * self.step_dt, self._event_time)
-        )
-        self.extras["transition"]["first_event_code"] = self._event_code.clone()
-        self.extras["transition"]["first_event_time_s"] = self._event_time.clone()
-        self.extras["transition"]["collision_position"] = self._collision_position.clone()
-        self.extras["transition"]["collision_substep"] = self._collision_substep.clone()
-        self.extras["transition"]["collision_velocity"] = self._collision_velocity.clone()
+    def _transition_details(self, timeout):
+        self.task.finish_first_events(timeout, self.episode_length_buf.float() * self.step_dt)
+        details = {
+            "first_event_code": self._event_code,
+            "first_event_time_s": self._event_time,
+            "collision_position": self._collision_position,
+            "collision_substep": self._collision_substep,
+            "collision_velocity": self._collision_velocity,
+            "actuator": self.filtered_command,
+        }
         if self.cfg.variant == "dcol":
-            self.extras["transition"]["dynamic_positions_by_substep"] = self._dynamic_positions_by_substep.clone()
-            self.extras["transition"]["dynamic_velocities_by_substep"] = self._dynamic_velocities_by_substep.clone()
-        self.extras["transition"]["actuator"] = self.filtered_command.clone()
-        callback = getattr(self, "pre_reset_loss_callback", None)
-        if callback is not None:
-            self.pre_reset_loss_callback = None
-            callback(self.extras["transition"])
-        return terminated, timeout
+            details["dynamic_positions_by_substep"] = self._dynamic_positions_by_substep
+            details["dynamic_velocities_by_substep"] = self._dynamic_velocities_by_substep
+        return details
 
     @torch.no_grad()
     def _apply_action(self):

@@ -85,7 +85,7 @@ def main():
 
             def complete_policy_transition():
                 env.step(action)
-                return env.get_zhang_observation()["depth_features"]
+                return env.get_zhang_observation().privileged["depth_features"]
 
             def measure(operation, *, check_output=True):
                 for _ in range(args.warmup):

@@ -45,7 +45,7 @@ def check_perception(env):
 
     camera = env.scene["depth_camera"]
     observation = env.get_zhang_observation()
-    policy = observation["depth_features"]
+    policy = observation.privileged["depth_features"]
     assert camera.image_shape == (120, 160)
     assert policy.shape == (64, 1, 12, 16) and bool(torch.isfinite(policy).all())
     stored = camera.data.output["policy_depth"].torch
@@ -72,7 +72,7 @@ def check_episode_height_target(env):
 
     observation = env.get_zhang_observation()
     before = env.target_pos[:, 2].detach().clone()
-    snapshot = observation["height_target"].clone()
+    snapshot = observation.privileged["height_target"].clone()
     low, high = env.cfg.height_target_range
     assert bool(((before >= low) & (before <= high)).all())
     torch.testing.assert_close(snapshot, before, rtol=0, atol=0)
@@ -87,7 +87,7 @@ def check_episode_height_target(env):
     torch.testing.assert_close(after[kept], before[kept], rtol=0, atol=0)
     torch.testing.assert_close(env.episode_id[kept], before_episodes[kept], rtol=0, atol=0)
     torch.testing.assert_close(env.episode_id[ids.long()], before_episodes[ids.long()] + 1, rtol=0, atol=0)
-    torch.testing.assert_close(observation["height_target"], snapshot, rtol=0, atol=0)
+    torch.testing.assert_close(observation.privileged["height_target"], snapshot, rtol=0, atol=0)
     return {
         "range_m": [low, high],
         "sample_min_m": float(after.min()),
@@ -148,7 +148,7 @@ def below_ground_recovery_gradient(env, action):
     assert bool(torch.isfinite(terrain_surface).all())
     assert bool((terrain_surface[..., 2].abs() < 0.02).all())
     torch.testing.assert_close(terrain_surface[..., :2], query.detach()[..., :2], rtol=0, atol=1e-4)
-    signed_distance = env.nearest_obstacle_signed_distance(query)
+    signed_distance = env.query_clearance(query)
     assert bool((signed_distance < 0).all()) and bool(torch.isfinite(signed_distance).all())
     height_target = env.target_pos[lane : lane + 1, 2].detach().clone()
 
@@ -504,7 +504,9 @@ def main():
                 progress("reset_and_empty_dynamic_scene")
                 observation, _ = env.reset()
                 initial_step = int(env.common_step_counter)
-                assert observation["policy"].shape == (64, 202) and bool(torch.isfinite(observation["policy"]).all())
+                assert observation.privileged["policy"].shape == (64, 202) and bool(
+                    torch.isfinite(observation.privileged["policy"]).all()
+                )
                 assert env.dynamic_collection is None and env.cfg.dynamic_capacity() == 0
                 assert env.motion.position.shape == env.motion.size.shape == (0, 3)
                 assert env.curriculum.active_obstacles == 0
@@ -529,7 +531,7 @@ def main():
                 result["depth_camera"] = check_perception(env)
                 progress("static_only_distance_gradient")
                 query = env.root_state()[:, None, :3].detach().requires_grad_()
-                distance = env.nearest_obstacle_signed_distance(query)
+                distance = env.query_clearance(query)
                 distance.square().sum().backward()
                 assert bool(torch.isfinite(distance).all() & torch.isfinite(query.grad).all())
                 result["static_only_distance_gradient_finite"] = True

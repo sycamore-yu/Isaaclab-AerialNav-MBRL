@@ -17,8 +17,8 @@ def metric_navigation_gap(query, static_signed_distance, positions, sizes, radiu
     selection is detached; only the selected primitive keeps a backward graph.
     Positions may be shared or broadcast per-query substep snapshots.
     """
-    from isaaclab_navrl.tasks.navigation.geometry import nearest_obstacle_signed_distance
+    from isaaclab_navrl.tasks.navigation.geometry import query_clearance
 
     return height_bounded_gap(
-        query, nearest_obstacle_signed_distance(query, static_signed_distance, positions, sizes) - radius
+        query, query_clearance(query, static_signed_distance, positions, sizes, body_radius=radius)
     )

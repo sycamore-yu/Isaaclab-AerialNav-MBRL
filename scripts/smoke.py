@@ -67,7 +67,7 @@ def main():
                 min_range = min(min_range, float(4 - observation["policy"][:, 8:152].max()))
                 assert "transition" in info
                 if args.method == "zhang":
-                    depth = env.get_zhang_observation()["depth_features"]
+                    depth = env.get_zhang_observation().privileged["depth_features"]
                     assert torch.isfinite(depth).all()
                     depth_shape = list(depth.shape)
                     if previous_depth is not None:

@@ -31,12 +31,18 @@ class EndpointEnv(AnalyticEnv):
         self.episode_length_buf.zero_()
 
     def get_zhang_observation(self):
+        from isaaclab_navrl.tasks.navigation.context import ObservationContext
+
         result = super().get_zhang_observation()
-        result["target"] = result["policy_target"] = self.target.clone()
-        result["depth_features"] = self.depth.clone()
-        result["policy_depth_features"] = self.depth.clone()
-        result["height_range"] = torch.tensor([[2.0, 2.0]]).repeat(2, 1)
-        return result
+        return ObservationContext.build(
+            policy=dict(result.policy) | {"target": self.target.clone(), "depth_features": self.depth.clone()},
+            privileged=dict(result.privileged)
+            | {
+                "target": self.target.clone(),
+                "depth_features": self.depth.clone(),
+                "height_range": torch.tensor([[2.0, 2.0]]).repeat(2, 1),
+            },
+        )
 
     def step(self, command):
         executed = self.perturbation.execute(command)
@@ -69,6 +75,13 @@ class EndpointEnv(AnalyticEnv):
         terminated, timeout = self.terminated_flags, self.timeout_flags
         transition["collision"] = terminated.clone()
         transition["first_event_code"] = torch.where(terminated, 2, torch.where(timeout, 5, 0))
+        transition.update(
+            episode_id=self.episode_id,
+            terminated=terminated,
+            timeout=timeout,
+            time_s=self.episode_length_buf.float() * self.step_dt,
+        )
+        transition = self.transitions.publish(transition)
         if self.total_steps == self.trigger_step:
             self.position[:, 0] = 100.0
             self.target[:, 0] = 200.0

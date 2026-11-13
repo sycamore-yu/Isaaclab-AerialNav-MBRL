@@ -106,14 +106,17 @@ def run_contract(env, steps):
         nonlocal previous_payload, previous_payload_episode, delayed_samples
         if zhang:
             observation = env.get_zhang_observation()
-            for name in ("depth_features", "policy_depth_features"):
-                assert observation[name].shape == (4, 1, 12, 16)
-                assert bool(torch.isfinite(observation[name]).all()), name
-            assert bool(((observation["depth_known_fraction"] >= 0) & (observation["depth_known_fraction"] <= 1)).all())
+            for source in (observation.policy, observation.privileged):
+                assert source["depth_features"].shape == (4, 1, 12, 16)
+                assert bool(torch.isfinite(source["depth_features"]).all())
+            known = observation.privileged["depth_known_fraction"]
+            assert bool(((known >= 0) & (known <= 1)).all())
             pushes = env.perturbation.observation_buffer.num_pushes.clone()
             again = env.get_zhang_observation()
             torch.testing.assert_close(env.perturbation.observation_buffer.num_pushes, pushes, rtol=0, atol=0)
-            torch.testing.assert_close(again["depth_age_s"], observation["depth_age_s"], rtol=0, atol=0)
+            torch.testing.assert_close(
+                again.privileged["depth_age_s"], observation.privileged["depth_age_s"], rtol=0, atol=0
+            )
         perturbation = env.perturbation
         assert bool((perturbation.observation_buffer.time_lags == 1).all())
         expected_age = (perturbation.observation_buffer.num_pushes - 1).clamp(0, 1).float() * env.step_dt

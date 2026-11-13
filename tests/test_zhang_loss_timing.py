@@ -39,10 +39,12 @@ class DepthEnv(AnalyticEnv):
             "dynamic_positions_by_substep": torch.empty(1, 0, 3),
             "first_event_code": done.to(torch.int8) * 2,
         }
-        callback = getattr(self, "pre_reset_loss_callback", None)
-        if callback is not None:
-            self.pre_reset_loss_callback = None
-            callback(transition)
+        transition["episode_id"] = self.episode_id
+        transition["step"] = torch.full((2,), self.total_steps, dtype=torch.long)
+        transition["time_s"] = transition["step"].float() * self.step_dt
+        pending = self.transitions._consumer is not None
+        transition = self.transitions.publish(transition)
+        if pending:
             self.before_reset_calls += 1
         if done[0]:
             self.position[0] = torch.tensor([0.0, 0.0, 2.0])
@@ -72,4 +74,3 @@ def test_depth_policy_two_updates_preserve_weights_and_callbacks_precede_reset(t
             torch.testing.assert_close(weights[0][name], weights[1][name], rtol=1e-5, atol=1e-6)
     finally:
         torch.set_num_threads(previous_threads)
-

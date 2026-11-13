@@ -60,9 +60,9 @@ class ZhangInference:
     @torch.no_grad()
     def __call__(self, observation=None):
         observation = self.env.get_zhang_observation()
-        reset = observation["episode_id"] != self.episode_id
+        reset = observation.privileged["episode_id"] != self.episode_id
         self.hidden[reset] = 0
-        self.episode_id.copy_(observation["episode_id"])
+        self.episode_id.copy_(observation.privileged["episode_id"])
         parameters = self.env.zhang_parameters
         from .goal import final_approach_weight
 
@@ -70,17 +70,17 @@ class ZhangInference:
         if self.cfg.goal_speed_profile == "smooth":
             goal_weight = final_approach_weight(
                 self.env,
-                observation["position"],
-                observation["target"],
+                observation.privileged["position"],
+                observation.privileged["target"],
                 parameters["max_speed"],
                 parameters["margin"],
                 self.cfg.goal_approach_time_s,
             )
         state, heading, _, _ = policy_state(
-            observation["policy_position"],
-            observation["policy_velocity"],
-            observation["policy_quaternion"],
-            observation["policy_target"],
+            observation.policy["position"],
+            observation.policy["velocity"],
+            observation.policy["quaternion"],
+            observation.policy["target"],
             parameters["max_speed"],
             parameters["margin"],
             body_frame=getattr(self.model, "body_frame", False),
@@ -89,7 +89,7 @@ class ZhangInference:
             goal_clear_weight=goal_weight,
         )
         depth, state = self.normalizer.normalize(
-            observation["policy_points" if self.cfg.perception == "lidar" else "policy_depth_features"],
+            observation.policy["points" if self.cfg.perception == "lidar" else "depth_features"],
             state,
             self.normalization_snapshot,
         )

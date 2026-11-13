@@ -38,7 +38,7 @@ def final_approach_weight(env, position, target, cruise_speed, margin, approach_
         return weight
     samples = torch.linspace(0, 1, 128, device=position.device, dtype=position.dtype)
     query = position[ids, None] + (target[ids] - position[ids])[:, None] * samples[None, :, None]
-    clearance = env.nearest_obstacle_signed_distance(query) - margin[ids, None]
+    clearance = env.query_clearance(query, body_radius=margin[ids, None])
     clearance = clearance.amin(dim=1) - distance[ids] / (2 * (samples.numel() - 1))
     x = (clearance / 0.1).clamp(0, 1)
     weight[ids] = x**3 * (10 - 15 * x + 6 * x.square())

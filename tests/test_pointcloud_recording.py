@@ -9,6 +9,7 @@ import warp as wp
 
 pytest.importorskip("rerun")
 from isaaclab_navrl.pointnet.recording import PointCloudRecording, terrain_mesh_parts  # noqa: E402
+from isaaclab_navrl.tasks.navigation.context import ObservationContext  # noqa: E402
 
 
 def test_recording_preserves_only_valid_world_and_body_hits(tmp_path):
@@ -29,11 +30,11 @@ def test_recording_preserves_only_valid_world_and_body_hits(tmp_path):
         scene={"point_lidar": sensor},
         target_pos=torch.tensor([[4.0, 0.0, 1.0]]),
         root_state=lambda: state,
-        nearest_obstacle_signed_distance=lambda p: torch.tensor([1.3]),
+        query_clearance=lambda p, *, body_radius: torch.tensor([1.3]) - body_radius,
         zhang_parameters={"margin": torch.tensor([0.3])},
-        get_zhang_observation=lambda: {
-            "policy_points": torch.tensor([[[1.0, 0.0], [0.0, 0.0], [0.0, 0.0], [1.0, 0.0]]])
-        },
+        get_zhang_observation=lambda: ObservationContext.build(
+            policy={"points": torch.tensor([[[1.0, 0.0], [0.0, 0.0], [0.0, 0.0], [1.0, 0.0]]])}, privileged={}
+        ),
     )
     record = PointCloudRecording(tmp_path, env)
     record.frame(0.0)

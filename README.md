@@ -130,6 +130,7 @@ TensorBoard 使用统一的 `Train/success_rate`、`Train/episodes` 等标签。
 
 ## 决策与证据
 
+- [导航状态、观测与 Transition 接口](docs/NAVIGATION_ARCHITECTURE.md)
 - [训练课程与验收](docs/TRAINING_CURRICULUM.md)
 - [共享 Sim-to-Real 扰动](docs/SIM_TO_REAL_TRAINING.md)
 - [NavRL 迁移决策](docs/migration/NAVRL_ISAACLAB_3_MIGRATION.md)

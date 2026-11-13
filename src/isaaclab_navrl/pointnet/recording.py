@@ -128,13 +128,15 @@ class PointCloudRecording:
     def frame(self, time_s):
         state = self.env.root_state()[0].detach().cpu().numpy()
         observation = self.env.get_zhang_observation()
-        packed = observation["policy_points"][0].cpu().numpy()
+        packed = observation.policy["points"][0].cpu().numpy()
         valid = packed[3] > 0
         hits = self.env.scene["point_lidar"].data.ray_hits_w.torch[0].cpu().numpy()[valid]
         assert np.isfinite(hits).all()
         position, quaternion, velocity = state[:3], state[3:7], state[7:10]
-        clearance = float(self.env.nearest_obstacle_signed_distance(self.env.root_state()[:, :3])[0]) - float(
-            self.env.zhang_parameters["margin"][0]
+        clearance = float(
+            self.env.query_clearance(
+                self.env.root_state()[:, :3], body_radius=self.env.zhang_parameters["margin"].reshape(-1)
+            )[0]
         )
         self.positions.append(position.copy())
         self.quaternions.append(quaternion.copy())

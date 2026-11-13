@@ -617,6 +617,63 @@ def nearest_obstacle_signed_distance(
     return distance, velocity.detach()
 
 
+def query_clearance(
+    query,
+    static_signed_distance,
+    dynamic_position,
+    dynamic_size,
+    *,
+    body_radius=0.0,
+    query_time=0.0,
+    dynamic_velocity=None,
+    ground_z=0.01,
+    dynamic_backend=None,
+    return_velocity=False,
+):
+    """Signed net clearance in metres, with one radius subtraction.
+
+    ``query`` already contains drone positions at each query time. Offsets in
+    seconds broadcast to ``query.shape[:-1]`` and extrapolate only obstacles
+    from the supplied snapshot, never the drone. Use zero offsets for measured
+    collision-substep obstacle poses. ``body_radius`` broadcasts to that same
+    shape (e.g. [N, 1] for [N, K] queries); zero returns point-to-surface distance.
+
+    Static geometry keeps its backend's exact/proxy semantics. Dynamic obstacle
+    selection and velocity are detached; the query-position gradient is kept.
+    """
+    if dynamic_velocity is None:
+        if not isinstance(query_time, (int, float)) or query_time != 0:
+            raise ValueError("Nonzero query_time requires dynamic_velocity from the snapshot")
+        positions = dynamic_position
+    else:
+        if dynamic_velocity.shape != dynamic_size.shape:
+            raise ValueError("dynamic_velocity must have shape (obstacles, 3)")
+        if isinstance(query_time, (int, float)) and query_time == 0:
+            positions = dynamic_position
+        else:
+            offsets = torch.as_tensor(query_time, dtype=query.dtype, device=query.device)
+            if torch.broadcast_shapes(offsets.shape, query.shape[:-1]) != query.shape[:-1]:
+                raise ValueError("query_time must broadcast to query.shape[:-1]")
+            # Keep shared [M,3] or [1,K,M,3] storage; the backend broadcasts
+            # across drones without allocating an [N,K,M,3] snapshot here.
+            positions = dynamic_position + offsets[..., None, None] * dynamic_velocity
+    velocity = dynamic_velocity if dynamic_velocity is not None else torch.zeros_like(dynamic_size)
+    result = nearest_obstacle_signed_distance(
+        query,
+        static_signed_distance,
+        positions,
+        dynamic_size,
+        ground_z,
+        dynamic_velocity=velocity if return_velocity else None,
+        dynamic_backend=dynamic_backend,
+    )
+    radius = torch.as_tensor(body_radius, dtype=query.dtype, device=query.device)
+    if return_velocity:
+        distance, selected_velocity = result
+        return distance - radius, selected_velocity
+    return result - radius
+
+
 def nearest_obstacle_vector(query, static_nearest, dynamic_position, dynamic_size):
     """Return the vector from each query to the closest obstacle surface.
 

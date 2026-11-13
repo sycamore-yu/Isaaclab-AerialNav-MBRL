@@ -249,7 +249,11 @@ def test_new_rollout_discards_gru_delays_window_and_incomplete_episode_state(tmp
     )
     env.curriculum.outcome.fill_(2)
     env.reset = env.curriculum.reset_episodes
-    env.get_zhang_observation = lambda: {"position": torch.full((2, 3), 2.0), "velocity": torch.zeros(2, 3)}
+    from isaaclab_navrl.tasks.navigation.context import ObservationContext
+
+    env.get_zhang_observation = lambda: ObservationContext.build(
+        policy={}, privileged={"position": torch.full((2, 3), 2.0), "velocity": torch.zeros(2, 3)}
+    )
     _, _, state, hidden, previous, action_delay, observation_delay, window = trainer._initialize_rollout()
     assert trainer.velocity_history is None
     assert not hidden.any() and not previous.any() and not state.actuator.any()

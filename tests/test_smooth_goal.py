@@ -71,12 +71,12 @@ def test_profile_and_cli_validation():
 
 def test_blocked_final_segment_does_not_trigger_euclidean_slowdown():
     class Wall:
-        def nearest_obstacle_signed_distance(self, q):
-            return (q[..., 0] - 3).abs() - 0.2
+        def query_clearance(self, q, *, body_radius):
+            return (q[..., 0] - 3).abs() - 0.2 - body_radius
 
     class Free:
-        def nearest_obstacle_signed_distance(self, q):
-            return torch.full(q.shape[:-1], 10.0)
+        def query_clearance(self, q, *, body_radius):
+            return torch.full(q.shape[:-1], 10.0) - body_radius
 
     p = torch.tensor([[0.0, 0.0, 2.0]])
     target = torch.tensor([[6.0, 0.0, 2.0]])

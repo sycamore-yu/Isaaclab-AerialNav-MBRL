@@ -308,9 +308,7 @@ def main(*, reference_dcol=False):
                             "route_duration_max_error_s": float((distance / speed - 18).abs().max()),
                             "route_heading_max_abs_deg": float(angle.max()),
                             "route_endpoint_min_clearance_m": float(
-                                env.nearest_obstacle_signed_distance(
-                                    torch.cat((env.root_state()[:, :3], env.target_pos))
-                                ).min()
+                                env.query_clearance(torch.cat((env.root_state()[:, :3], env.target_pos))).min()
                             ),
                             "target_speed_min_mps": float(speed.min()),
                             "target_speed_max_mps": float(speed.max()),

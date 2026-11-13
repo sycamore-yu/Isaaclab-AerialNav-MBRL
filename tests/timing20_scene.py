@@ -65,11 +65,14 @@ def main():
             for _ in range(20):
                 _, _, _, _, info = env.step(torch.zeros(16, 3, device=env.device))
                 observation = env.get_zhang_observation()
-                depth = observation["policy_depth_features"]
+                depth = observation.policy["depth_features"]
                 assert torch.isfinite(depth).all() and torch.isfinite(env.root_state()).all()
-                assert observation["depth_age_s"].min() >= 0 and observation["depth_age_s"].max() <= 0.100001
-                assert (observation["depth_known_fraction"] > 0).all()
-                assert (observation["depth_known_fraction"] <= 1).all()
+                assert (
+                    observation.privileged["depth_age_s"].min() >= 0
+                    and observation.privileged["depth_age_s"].max() <= 0.100001
+                )
+                assert (observation.privileged["depth_known_fraction"] > 0).all()
+                assert (observation.privileged["depth_known_fraction"] <= 1).all()
                 assert camera.data.output["distance_to_image_plane"].torch.shape == (16, 120, 160, 1)
                 assert env._physical_substep == 1
                 assert info["transition"]["dynamic_positions_by_substep"].shape == (1, 60, 3)
@@ -92,7 +95,7 @@ def main():
             torch.testing.assert_close(tau, torch.full_like(tau, 1 - 0.57 ** (dt / 0.01)))
             from isaaclab_navrl.zhang.losses import navrl_height_loss
 
-            band = env.get_zhang_observation()["height_range"]
+            band = env.get_zhang_observation().privileged["height_range"]
             point = env.root_state()[:, :3].detach().clone()
             point[:, 2] = band[:, 0] - 0.4
             point.requires_grad_()
@@ -114,8 +117,8 @@ def main():
                 lidar_delta_max_s=float(lidar_delta[valid_lidar].max()),
                 motor_alpha=float(tau[0, 0]),
                 report_episodes=env.curriculum.min_episodes,
-                depth_age_max_s=float(observation["depth_age_s"].max()),
-                depth_known_fraction_mean=float(observation["depth_known_fraction"].mean()),
+                depth_age_max_s=float(observation.privileged["depth_age_s"].max()),
+                depth_known_fraction_mean=float(observation.privileged["depth_known_fraction"].mean()),
                 action_delay_max_s=env.perturbation.action_buffer.history_length * dt,
             )
             if args.train_smoke:

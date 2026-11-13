@@ -146,10 +146,10 @@ class ZhangTrainer:
                     code = transition.get("terminal_event_code", transition["first_event_code"])
                     scored["failure_terminal"] = transition["terminated"] & (code >= 2) & (code <= 4)
                 self.step_loss.append(scored)
-                if not torch.equal(sample["episode_id"], self.env.episode_id):
+                if not torch.equal(sample["episode_id"], transition["episode_id"]):
                     raise RuntimeError("Loss was evaluated after episode reset")
 
-        self.env.pre_reset_loss_callback = before_reset
+        self.env.transitions.set_consumer(before_reset)
 
     def __init__(self, env, cfg, log_dir):
         cfg.validate()
@@ -228,8 +228,10 @@ class ZhangTrainer:
     def _initialize_rollout(self):
         self.env.reset()
         observation = self.env.get_zhang_observation()
-        zero = torch.zeros_like(observation["velocity"])
-        state = PointMassState(observation["position"].detach(), observation["velocity"].detach(), zero, zero)
+        zero = torch.zeros_like(observation.privileged["velocity"])
+        state = PointMassState(
+            observation.privileged["position"].detach(), observation.privileged["velocity"].detach(), zero, zero
+        )
         hidden = zero.new_zeros(self.env.num_envs, self.model.recurrent_state_size)
         action_history = DifferentiableDelay(self.env.perturbation.action_buffer.history_length)
         observation_history = DifferentiableDelay(self.env.perturbation.observation_buffer.history_length)
@@ -243,7 +245,7 @@ class ZhangTrainer:
     ):
         features = critic_observation(
             state,
-            observation,
+            observation.privileged,
             hidden,
             previous_command,
             self.env.zhang_parameters,
@@ -282,24 +284,24 @@ class ZhangTrainer:
             self.actor_critic.load_state_dict(self._pending_critic_state)
             self._pending_critic_state = None
 
-    def _collision_gap(self, query, radius, obstacle_positions=None, *, static_distance=None):
+    def _collision_gap(self, query, radius, obstacle_positions=None, *, static_distance=None, query_time=0.0):
         """Metric SDF minus the safety radius, at the existing sample times."""
-        from isaaclab_navrl.tasks.navigation.geometry import nearest_obstacle_signed_distance
+        from isaaclab_navrl.tasks.navigation.geometry import query_clearance
 
         radius = radius.reshape(-1, *([1] * (query.ndim - 2))).expand(query.shape[:-1])
         static_distance = (
             self.env.terrain_distance.signed_distance(query) if static_distance is None else static_distance
         )
-        obstacle_positions = self.env.motion.position if obstacle_positions is None else obstacle_positions
-        return (
-            nearest_obstacle_signed_distance(
-                query,
-                static_distance,
-                obstacle_positions,
-                self.env.motion.size,
-                dynamic_backend=getattr(self.env.terrain_distance, "dynamic_signed_distance", None),
-            )
-            - radius
+        predict_motion = not (isinstance(query_time, (int, float)) and query_time == 0)
+        return query_clearance(
+            query,
+            static_distance,
+            self.env.motion.position if obstacle_positions is None else obstacle_positions,
+            self.env.motion.size,
+            body_radius=radius,
+            query_time=query_time,
+            dynamic_velocity=self.env.motion.velocity if obstacle_positions is None and predict_motion else None,
+            dynamic_backend=getattr(self.env.terrain_distance, "dynamic_signed_distance", None),
         )
 
     def load_stage_checkpoint(self, path, *, resume=False, allow_num_envs_change=False):
@@ -792,7 +794,7 @@ class ZhangTrainer:
                         goal_weight = final_approach_weight(
                             self.env,
                             state.position,
-                            observation["target"],
+                            observation.privileged["target"],
                             parameters["max_speed"],
                             parameters["margin"],
                             self.cfg.goal_approach_time_s,
@@ -808,8 +810,8 @@ class ZhangTrainer:
                     _, heading, target_velocity, rotation = policy_state(
                         state.position,
                         state.velocity,
-                        observation["quaternion"],
-                        observation["target"],
+                        observation.privileged["quaternion"],
+                        observation.privileged["target"],
                         parameters["max_speed"],
                         parameters["margin"],
                         **goal_options,
@@ -817,20 +819,20 @@ class ZhangTrainer:
                     if goal_weight is not None:
                         history["goal_reference_speed"].append(target_velocity.detach().norm(dim=-1))
                     observation_history.push(
-                        torch.cat((state.position, state.velocity), dim=-1), observation["input_delay_steps"]
+                        torch.cat((state.position, state.velocity), dim=-1), observation.privileged["input_delay_steps"]
                     )
                     features, policy_heading, _, _ = policy_state(
-                        align_state(state.position, observation["policy_position"]),
-                        align_state(state.velocity, observation["policy_velocity"]),
-                        observation["policy_quaternion"],
-                        observation["policy_target"],
+                        align_state(state.position, observation.policy["position"]),
+                        align_state(state.velocity, observation.policy["velocity"]),
+                        observation.policy["quaternion"],
+                        observation.policy["target"],
                         parameters["max_speed"],
                         parameters["margin"],
                         **goal_options,
                     )
                     # Camera output is a reused buffer and must not overwrite saved CNN inputs.
                     depth = (
-                        observation["policy_points" if self.cfg.perception == "lidar" else "policy_depth_features"]
+                        observation.policy["points" if self.cfg.perception == "lidar" else "depth_features"]
                         .detach()
                         .clone()
                     )
@@ -840,19 +842,20 @@ class ZhangTrainer:
                     self.normalizer.observe(depth, features.detach())
                     # Source look-ahead queries belong to the pre-step state.
                     query = state.position[:, None] + state.velocity[:, None] * lookahead
-                    from isaaclab_navrl.tasks.navigation.geometry import nearest_obstacle_signed_distance
+                    from isaaclab_navrl.tasks.navigation.geometry import query_clearance
 
                     if self.cfg.approach_mode == "relative" or self.cfg.avoidance_gradient == "reshaped":
                         query.requires_grad_(True)
                     # shortcut: constant obstacle velocity within one policy step; turns are not predicted.
-                    obstacle_positions = self.env.motion.position + self.env.motion.velocity * lookahead[..., None]
                     static_distance = self.env.terrain_distance.signed_distance(query)
-                    geometry = nearest_obstacle_signed_distance(
+                    geometry = query_clearance(
                         query,
                         static_distance,
-                        obstacle_positions,
+                        self.env.motion.position,
                         self.env.motion.size,
-                        dynamic_velocity=self.env.motion.velocity if self.cfg.approach_mode == "relative" else None,
+                        query_time=lookahead[..., 0],
+                        dynamic_velocity=self.env.motion.velocity,
+                        return_velocity=self.cfg.approach_mode == "relative",
                         dynamic_backend=getattr(self.env.terrain_distance, "dynamic_signed_distance", None),
                     )
                     if self.cfg.approach_mode == "relative":
@@ -904,28 +907,28 @@ class ZhangTrainer:
                                 obstacle_distance,
                                 query,
                                 state.velocity.detach(),
-                                observation["target"] - state.position.detach(),
+                                observation.privileged["target"] - state.position.detach(),
                             )
                         )
                     if self.cfg.variant == "dcol":
                         collision_lookahead = self._collision_gap(
                             query[:, 1:-1],
                             parameters["margin"],
-                            obstacle_positions[:, 1:-1],
                             static_distance=static_distance[:, 1:-1],
+                            query_time=lookahead[:, 1:-1, 0],
                         )
                     if self.cfg.variant == "dcol":
                         history["collision_lookahead"].append(collision_lookahead)
                     history["margin"].append(parameters["margin"])
                     history["target_velocity"].append(target_velocity)
-                    history["height_target"].append(observation["height_target"].detach().clone())
+                    history["height_target"].append(observation.privileged["height_target"].detach().clone())
                     if self.cfg.height_loss_mode == "navrl_range":
-                        history["height_range"].append(observation["height_range"].detach().clone())
+                        history["height_range"].append(observation.privileged["height_range"].detach().clone())
                     history["velocity_prediction"].append(velocity_prediction)
                     history["observed_velocity"].append(state.velocity.detach())
-                    history["depth_age_s"].append(observation["depth_age_s"])
-                    history["depth_known_fraction"].append(observation["depth_known_fraction"])
-                    history["episode_id"].append(observation["episode_id"].clone())
+                    history["depth_age_s"].append(observation.privileged["depth_age_s"])
+                    history["depth_known_fraction"].append(observation.privileged["depth_known_fraction"])
+                    history["episode_id"].append(observation.privileged["episode_id"].clone())
                     history["command"].append(command)
                     history["previous_command"].append(previous_command)
                     applied_command = action_history.push(
@@ -978,8 +981,8 @@ class ZhangTrainer:
                         transition["velocity"],
                         state.velocity,
                         done,
-                        next_observation["position"],
-                        next_observation["velocity"],
+                        next_observation.privileged["position"],
+                        next_observation.privileged["velocity"],
                         self.cfg.policy_dt,
                         transition["actuator"],
                     )

@@ -113,7 +113,7 @@ def test_real_runner_new_modes_keep_terminal_poses_and_reset_graphs(tmp_path, ch
         result = original_step(command)
         times = torch.arange(1, 11)[:, None, None] * env.physics_dt
         poses = env.motion.position + env.motion.velocity * times
-        result[-1]["transition"]["dynamic_positions_by_substep"] = poses
+        result[-1]["transition"] = result[-1]["transition"].with_fields(dynamic_positions_by_substep=poses)
         env.motion.position = poses[-1].clone()
         return result
 
@@ -129,14 +129,16 @@ def test_real_runner_new_modes_keep_terminal_poses_and_reset_graphs(tmp_path, ch
         **changes,
     )
     trainer = ZhangTrainer(env, cfg, tmp_path)
-    original_gap = trainer._collision_gap
     samples = []
 
-    def gap(query, radius, positions, **kwargs):
-        samples.append(positions.clone())
-        return original_gap(query, radius, positions, **kwargs)
+    def capture_geometry(query, positions, sizes, *, return_index):
+        # Observe the actual geometry backend input after time alignment,
+        # not the trainer's now time-aware clearance wrapper arguments.
+        if query.ndim == 2 or query.shape[1] == 8:
+            samples.append(positions.clone())
+        return dynamic_signed_distance(query, positions, sizes, return_index=return_index)
 
-    trainer._collision_gap = gap
+    env.terrain_distance.dynamic_signed_distance = capture_geometry
     result = trainer.run()
     assert result["completed_updates"] == 2 and result["nonfinite_grad_events"] == 0
     torch.testing.assert_close(samples[0][0, :, 0, 0], 2.0 - torch.linspace(0, 0.1, 10)[1:-1])

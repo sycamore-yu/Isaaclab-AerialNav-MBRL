@@ -689,6 +689,9 @@ class AnalyticEnv:
     step_dt = 0.1
 
     def __init__(self):
+        from isaaclab_navrl.tasks.navigation.transition import TransitionPublisher
+
+        self.transitions = TransitionPublisher()
         self.cfg = SimpleNamespace(
             seed=7,
             terrain_seed=0,
@@ -717,6 +720,7 @@ class AnalyticEnv:
         self.curriculum = None
 
     def reset(self):
+        self.transitions.clear()
         self.perturbation.reset(torch.arange(2))
         self.position.zero_()
         self.position[:, 2] = 2
@@ -725,6 +729,8 @@ class AnalyticEnv:
         self.total_steps = 0
 
     def get_zhang_observation(self):
+        from isaaclab_navrl.tasks.navigation.context import ObservationContext
+
         observation = {
             "position": self.position.clone(),
             "velocity": self.velocity.clone(),
@@ -735,16 +741,26 @@ class AnalyticEnv:
             "height_target": torch.full((2,), 2.0),
             "height_range": torch.full((2, 2), 2.0),
         }
-        observation.update(
-            {
-                f"policy_{name}": observation[name]
-                for name in ("position", "velocity", "quaternion", "target", "depth_features")
-            }
-        )
+        policy = {
+            name: observation[name] for name in ("position", "velocity", "quaternion", "target", "depth_features")
+        }
         observation["input_delay_steps"] = torch.zeros(2, dtype=torch.long)
         observation["depth_age_s"] = torch.zeros(2)
         observation["depth_known_fraction"] = torch.ones(2)
-        return observation
+        return ObservationContext.build(policy=policy, privileged=observation)
+
+    def query_clearance(self, query, *, body_radius=0.0, query_time=0.0):
+        from isaaclab_navrl.tasks.navigation.geometry import query_clearance
+
+        return query_clearance(
+            query,
+            self.terrain_distance.signed_distance(query),
+            self.motion.position,
+            self.motion.size,
+            body_radius=body_radius,
+            query_time=query_time,
+            dynamic_velocity=self.motion.velocity,
+        )
 
     def nearest_obstacle_signed_distance(self, query):
         self.queried_at_steps.append(self.total_steps)
@@ -770,10 +786,10 @@ class AnalyticEnv:
         transition["collision"] = done.clone()
         transition["terminated"] = done.clone()
         transition["timeout"] = torch.zeros_like(done)
-        callback = getattr(self, "pre_reset_loss_callback", None)
-        if callback is not None:
-            self.pre_reset_loss_callback = None
-            callback(transition)
+        transition["episode_id"] = self.episode_id
+        transition["step"] = torch.full((2,), self.total_steps, dtype=torch.long)
+        transition["time_s"] = transition["step"].float() * self.step_dt
+        transition = self.transitions.publish(transition)
         if done[0]:
             self.position[0] = torch.tensor([0.0, 0.0, 2.0])
             self.velocity[0] = 0

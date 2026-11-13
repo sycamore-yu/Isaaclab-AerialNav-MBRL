@@ -355,7 +355,7 @@ def main():
                     pushes = env.perturbation.observation_buffer.num_pushes.clone()
                     second = env.get_zhang_observation()
                     torch.testing.assert_close(
-                        first["policy_depth_features"], second["policy_depth_features"], rtol=0, atol=0
+                        first.policy["depth_features"], second.policy["depth_features"], rtol=0, atol=0
                     )
                     torch.testing.assert_close(env.perturbation.observation_buffer.num_pushes, pushes)
                     torch.testing.assert_close(env.root_state(), clean, rtol=0, atol=0)
