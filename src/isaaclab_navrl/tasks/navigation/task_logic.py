@@ -13,7 +13,7 @@ from isaaclab_navrl.training import END_CLEARANCE, MAP_SIZE
 
 
 def sample_navigation_route(speed, generator, height_range=(0.5, 2.5)):
-    """Sample feasible XY segments of exactly 18v metres, within +/-8 degrees of +/-X."""
+    """Sample feasible XY segments of 18v metres ending in the obstacle-free end strips."""
     speed = speed.reshape(-1)
     if not torch.isfinite(speed).all() or (speed <= 0).any() or (18 * speed > MAP_SIZE[0] - 2 * END_CLEARANCE).any():
         raise ValueError("18v routes require finite positive target speeds at most 6 m/s")
@@ -22,15 +22,24 @@ def sample_navigation_route(speed, generator, height_range=(0.5, 2.5)):
     angle = (random[:, 0] * 2 - 1) * (8 * torch.pi / 180)
     sign = torch.where(random[:, 1] < 0.5, -1.0, 1.0)
     delta = 18 * speed[:, None] * sign[:, None] * torch.stack((angle.cos(), angle.sin()), dim=-1)
-    half = speed.new_tensor((MAP_SIZE[0] / 2 - END_CLEARANCE, MAP_SIZE[1] / 2))
-    low = torch.maximum(-half, -half - delta)
-    high = torch.minimum(half, half - delta)
-    position = speed.new_empty(count, 3)
-    position[:, :2] = low + (high - low).clamp_min(0) * random[:, 2:4]
-    position[:, 2] = 0.5 + 2.0 * random[:, 4]
-    target = position.clone()
-    target[:, :2] += delta
+    # Place goals strictly inside the 6 m obstacle-free X-end strips with 0.8 m margin
+    # (0.5 m goal radius + 0.3 m drone radius) so shared obstacles never enter the goal zone.
+    goal_margin = 0.8
+    half_x = MAP_SIZE[0] / 2
+    obstacle_edge_x = half_x - END_CLEARANCE
+    goal_x_abs = (obstacle_edge_x + goal_margin) + ((half_x - goal_margin) - (obstacle_edge_x + goal_margin)) * random[:, 2]
+    target_x = sign * goal_x_abs
+    half_y = MAP_SIZE[1] / 2 - goal_margin
+    low_y = torch.maximum(speed.new_tensor(-half_y), -half_y - delta[:, 1])
+    high_y = torch.minimum(speed.new_tensor(half_y), half_y - delta[:, 1])
+    start_y = low_y + (high_y - low_y).clamp_min(0) * random[:, 3]
+    target = speed.new_empty(count, 3)
+    target[:, 0] = target_x
+    target[:, 1] = start_y + delta[:, 1]
     target[:, 2] = height_range[0] + (height_range[1] - height_range[0]) * random[:, 5]
+    position = target.clone()
+    position[:, :2] -= delta
+    position[:, 2] = 0.5 + 2.0 * random[:, 4]
     return position, target
 
 

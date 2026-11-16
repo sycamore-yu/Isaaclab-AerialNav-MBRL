@@ -29,6 +29,7 @@ def main():
     parser.add_argument("--static_obstacles", type=int, default=350)
     parser.add_argument("--dynamic_obstacles", type=int, default=100)
     parser.add_argument("--stage", choices=("pretrain_s0", "pretrain_s1", "finetune_s1"))
+    parser.add_argument("--wait_before_truncate", type=float, default=None)
     add_launcher_args(parser)
     parser.set_defaults(visualizer=["none"])
     args = parse_runtime_args(parser, allow_presets=True)
@@ -68,6 +69,8 @@ def main():
     cfg.evaluation = args.stage is None
     if args.stage:
         cfg.apply_training_stage(args.stage)
+    if args.wait_before_truncate is not None:
+        cfg.wait_before_truncate = args.wait_before_truncate
     cfg.sim.device = args.device
     cfg.configure_scene()
     task = "Isaac-NavRL-Zhang-Hummingbird-Direct-v0" if args.method == "zhang" else "Isaac-NavRL-Hummingbird-Direct-v0"

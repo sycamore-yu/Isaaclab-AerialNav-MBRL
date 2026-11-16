@@ -19,8 +19,10 @@ def test_routes_preserve_uniform_speed_exact_distance_heading_and_bounds():
     start, goal = sample_navigation_route(speed, generator)
     delta = goal - start
     torch.testing.assert_close(delta[:, :2].norm(dim=-1), 18 * speed, atol=2e-5, rtol=1e-6)
+    assert (start[:, 0].abs() <= 54.00001).all() and (start[:, 1].abs() <= 19.20001).all()
+    assert ((goal[:, 0].abs() >= 54.8 - 1e-5) & (goal[:, 0].abs() <= 59.2 + 1e-5)).all()
+    assert (goal[:, 1].abs() <= 19.20001).all()
     for point in (start, goal):
-        assert (point[:, 0].abs() <= 54.00001).all() and (point[:, 1].abs() <= 20.00001).all()
         assert ((point[:, 2] >= 0.5) & (point[:, 2] <= 2.5)).all()
     angle = torch.atan2(delta[:, 1], delta[:, 0]).remainder(math.pi)
     deviation = torch.minimum(angle, math.pi - angle)
@@ -58,6 +60,10 @@ def test_dynamic_geometry_and_motion_stay_outside_clear_end_strips(count):
     if count:
         assert motion.position[:, 0].amax() - motion.position[:, 0].amin() > 50
         assert (motion.velocity.norm(dim=-1) <= 1.50001).all()
+        # No dynamic obstacle footprint may ever reach or cross any sampled goal zone (0.5 m radius + 0.3 m drone).
+        _, goals = sample_navigation_route(torch.linspace(1.0, 6.0, 256), torch.Generator().manual_seed(11))
+        gap_xy = (goals[:, None, :2] - motion.position[None, :, :2]).norm(dim=-1) - motion.size[None, :, 0] / 2
+        assert (gap_xy >= 0.8 - 1e-5).all()
 
 
 def test_map_xy_bounds_are_terminal_even_when_height_reset_is_disabled():

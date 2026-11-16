@@ -427,7 +427,7 @@ class ZhangTrainer:
                     "previous_goal_approach_time_s": saved_config["goal_approach_time_s"],
                     "goal_approach_time_s": self.cfg.goal_approach_time_s,
                     "previous_wait_before_truncate_s": payload["environment"].get("wait_before_truncate_s"),
-                    "wait_before_truncate_s": getattr(self.env.cfg, "wait_before_truncate", 5.0),
+                    "wait_before_truncate_s": getattr(self.env.cfg, "wait_before_truncate", 1.0),
                     "restored": [
                         "model",
                         "optimizer",
@@ -489,7 +489,7 @@ class ZhangTrainer:
                 "sim_to_real": asdict(self.env.cfg.sim_to_real),
                 "observation_contract": self.observation_contract,
                 "episode_end_contract": EPISODE_END_CONTRACT,
-                "wait_before_truncate_s": getattr(self.env.cfg, "wait_before_truncate", 5.0),
+                "wait_before_truncate_s": getattr(self.env.cfg, "wait_before_truncate", 1.0),
             },
             **self.checkpoint_metadata(),
             "torch_rng_state": torch.get_rng_state(),
@@ -603,7 +603,7 @@ class ZhangTrainer:
         result = {
             "method": self.method,
             "episode_end_contract": EPISODE_END_CONTRACT,
-            "wait_before_truncate_s": getattr(self.env.cfg, "wait_before_truncate", 5.0),
+            "wait_before_truncate_s": getattr(self.env.cfg, "wait_before_truncate", 1.0),
             "physics": self.cfg.physics,
             **runtime_metadata(self.env),
             "variant": self.cfg.variant,
