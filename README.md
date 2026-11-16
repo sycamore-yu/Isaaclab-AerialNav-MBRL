@@ -3,7 +3,7 @@
 阅读并接受 [NVIDIA Omniverse 许可协议](https://docs.omniverse.nvidia.com/platform/latest/common/NVIDIA_Omniverse_License_Agreement.html)后，使用项目已有的 Python 环境检查 Newton 仿真：
 
 ```bash
-cd /home/tong/tongworkspace/projects/aerial/isaaclab-navrl
+cd /home/tong/tongworkspace/projects/aerial/algorithms/isaaclab-navrl
 export OMNI_KIT_ACCEPT_EULA=YES
 export PYTHONPATH="$PWD/src"
 RUN_ROOT="$(mktemp -d /tmp/navrl.XXXXXX)"
