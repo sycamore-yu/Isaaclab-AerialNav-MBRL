@@ -12,7 +12,11 @@ import torch
 from torch.utils.tensorboard import SummaryWriter
 
 from isaaclab_navrl.physics import runtime_metadata
-from isaaclab_navrl.tasks.navigation.depth_history import OBSERVATION_CONTRACT
+from isaaclab_navrl.tasks.navigation.depth_history import (
+    DEPTH_EVENT_OBSERVATION_CONTRACT,
+    OBSERVATION_CONTRACT,
+    TEMPORAL_DEPTH_EVENT_OBSERVATION_CONTRACT,
+)
 from isaaclab_navrl.tasks.navigation.randomization import DifferentiableDelay
 from isaaclab_navrl.training import (
     EPISODE_END_CONTRACT,
@@ -162,6 +166,14 @@ class ZhangTrainer:
         self.env, self.cfg = env, cfg
         self.log_dir = Path(log_dir).resolve()
         self.model = self.model_type(cfg.recurrent_model).to(env.device)
+        if cfg.depth_event_channel:
+            self.model.enable_depth_event_channel()
+            self.observation_contract = (
+                TEMPORAL_DEPTH_EVENT_OBSERVATION_CONTRACT
+                if cfg.depth_event_history_frames > 1
+                else DEPTH_EVENT_OBSERVATION_CONTRACT
+            )
+            self.checkpoint_observation_contracts = (self.observation_contract,)
         optimizer_type = torch.optim.AdamW if cfg.optimizer == "adamw" else torch.optim.Adam
         self.optimizer = optimizer_type(self.model.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)
         self.normalizer = PolicyObservationNormalizer(
@@ -323,6 +335,7 @@ class ZhangTrainer:
                         "geometry_backend": payload["train_cfg"].get("geometry_backend", "native"),
                         "avoidance_gradient": payload["train_cfg"].get("avoidance_gradient", "original"),
                         "goal_speed_profile": payload["train_cfg"].get("goal_speed_profile", "linear"),
+                        "depth_event_pose_source": payload["train_cfg"].get("depth_event_pose_source", "estimated"),
                     }
                 )
             )
@@ -840,6 +853,10 @@ class ZhangTrainer:
                         depth, features, normalization_snapshot
                     )
                     self.normalizer.observe(depth, features.detach())
+                    if self.cfg.depth_event_channel:
+                        polarity = depth[:, 1:].detach()
+                        history["event_active_fraction"].append((polarity != 0).float().mean())
+                        history["event_mean_abs_strength"].append(polarity.abs().mean())
                     # Source look-ahead queries belong to the pre-step state.
                     query = state.position[:, None] + state.velocity[:, None] * lookahead
                     from isaaclab_navrl.tasks.navigation.geometry import query_clearance
@@ -1180,6 +1197,11 @@ class ZhangTrainer:
                 except RuntimeError:
                     self.nonfinite_grad_events += 1
                     raise
+                if self.cfg.depth_event_channel:
+                    event_grad = self.model.stem[0].weight.grad
+                    algorithm_metrics["DepthEvent/conv_gradient_norm"] = (
+                        float(event_grad[:, 1:].norm()) if event_grad is not None else 0.0
+                    )
                 self.optimizer_monitor.before_step()
                 self.optimizer.step()
                 optimizer_metrics = self.optimizer_monitor.after_step()
@@ -1211,6 +1233,13 @@ class ZhangTrainer:
                         {f"Critic/{name}": value for name, value in self.critic_monitor.after_step().items()}
                     )
                 rollout_metrics = rollout_diagnostics(history)
+                if self.cfg.depth_event_channel:
+                    rollout_metrics["DepthEvent/active_fraction"] = float(
+                        torch.stack(history["event_active_fraction"]).mean()
+                    )
+                    rollout_metrics["DepthEvent/mean_abs_strength"] = float(
+                        torch.stack(history["event_mean_abs_strength"]).mean()
+                    )
                 if history["goal_smooth_weight"]:
                     weights = torch.stack(history["goal_smooth_weight"])
                     rollout_metrics.update(
@@ -1282,6 +1311,13 @@ class ZhangTrainer:
                 log.write(json.dumps(metrics, allow_nan=False) + "\n")
                 log.flush()
                 write_training_scalars(writer, metrics, self.completed_updates)
+                if self.cfg.depth_event_channel:
+                    for key in (
+                        "DepthEvent/active_fraction",
+                        "DepthEvent/mean_abs_strength",
+                        "DepthEvent/conv_gradient_norm",
+                    ):
+                        writer.add_scalar(key, metrics[key], self.completed_updates)
                 print("ZHANG_UPDATE " + json.dumps(metrics), flush=True)
                 report = record_curriculum(
                     self.env.curriculum, self.completed_updates, self.log_dir, writer, self._checkpoint

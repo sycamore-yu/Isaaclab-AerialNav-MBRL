@@ -39,6 +39,17 @@ class ZhangPolicy(nn.Module):
             self.v_proj.weight.mul_(0.5)
             self.fc.weight.mul_(0.01)
 
+    def enable_depth_event_channel(self):
+        """Expand the original depth kernel; initial actions match the 1-channel policy."""
+        old = self.stem[0]
+        if old.in_channels != 1:
+            raise ValueError("Depth-event expansion can only be applied once")
+        new = nn.Conv2d(2, old.out_channels, old.kernel_size, old.stride, bias=False).to(old.weight)
+        with torch.no_grad():
+            new.weight[:, :1].copy_(old.weight)
+            new.weight[:, 1:].zero_()
+        self.stem[0] = new
+
     def forward(self, depth_features, state, hidden=None):
         """Return six outputs and complete [N, recurrent_state_size] memory.
 

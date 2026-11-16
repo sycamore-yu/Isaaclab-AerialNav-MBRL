@@ -4,6 +4,8 @@ import torch
 import torch.nn.functional as F
 
 OBSERVATION_CONTRACT = "delayed_depth_current_odometry_ego_reprojection_v1"
+DEPTH_EVENT_OBSERVATION_CONTRACT = "delayed_depth_signed_event_ego_reprojection_v1"
+TEMPORAL_DEPTH_EVENT_OBSERVATION_CONTRACT = "delayed_depth_temporal_signed_event_region_pool_v2"
 
 
 @torch.no_grad()
@@ -76,3 +78,49 @@ def depth_event_observation(depth, events):
     pooled, indices = F.adaptive_max_pool2d(3 / depth.clamp(0.3, 24) - 0.6, (12, 16), return_indices=True)
     selected = events.flatten(2).gather(2, indices.flatten(2)).reshape_as(pooled)
     return torch.cat((pooled, selected.to(pooled)), dim=1)
+
+
+@torch.no_grad()
+def pooled_signed_event_channel(depth, signed, known=None, *, region_pool=False):
+    """Pool full-resolution event evidence, optionally preserving sparse motion edges.
+
+    Legacy nearest-ray pooling is retained for v1 checkpoints. Region pooling
+    means an event exists *somewhere* in the cell, not that its closest ray moved.
+    """
+    if depth.ndim != 4 or depth.shape[1] != 1 or signed.shape != depth.shape:
+        raise ValueError("Expected depth and signed events [N,1,H,W]")
+    inverse = 3 / depth.clamp(0.3, 24) - 0.6
+    if known is not None:
+        if known.shape != depth.shape:
+            raise ValueError("known must match depth")
+        inverse = torch.where(known, inverse, -1.0)
+        signed = torch.where(known, signed, 0)
+    if region_pool:
+        positive = F.adaptive_max_pool2d(signed.clamp_min(0), (12, 16))
+        negative = F.adaptive_max_pool2d((-signed).clamp_min(0), (12, 16))
+        return torch.where(positive >= negative, positive, -negative)
+    _, index = F.adaptive_max_pool2d(inverse, (12, 16), return_indices=True)
+    return signed.flatten(2).gather(2, index.flatten(2)).reshape(depth.shape[0], 1, 12, 16)
+
+
+@torch.no_grad()
+def reproject_signed_event_channel(
+    delivered_depth, delivered_event, intrinsic, source_rotation, source_position, target_rotation, target_position,
+    aligned_depth, aligned_known,
+):
+    """Transport delayed events with their captured depth; do not infer any later motion.
+
+    Reuses the same source and target estimates as delayed depth reprojection.
+    Only the nearest (visible) event surface is used in the new view.
+    """
+    if delivered_event.shape != delivered_depth.shape:
+        raise ValueError("Delayed event and depth must have identical image dimensions")
+    images = []
+    for sign in (1, -1):
+        source = torch.where(delivered_event * sign > 0, delivered_depth, torch.inf)
+        surface, valid = reproject_depth(
+            source, intrinsic, source_rotation, source_position, target_rotation, target_position
+        )
+        aligned = valid & aligned_known & ((surface - aligned_depth).abs() < 0.15)
+        images.append(aligned.to(delivered_depth.dtype))
+    return images[0] - images[1]

@@ -31,6 +31,9 @@ class ZhangTrainCfg:
     goal_approach_time_s: float = 2.0
     avoidance_gradient: Literal["original", "reshaped"] = "original"
     perception: Literal["depth"] = "depth"
+    depth_event_channel: bool = False
+    depth_event_history_frames: int = 1
+    depth_event_pose_source: Literal["estimated", "truth"] = "estimated"
     approach_mode: Literal["finite_difference", "relative"] = "finite_difference"
     lateral_avoidance: float = 0.0
     risk_speed_floor: float = 1.0
@@ -135,6 +138,14 @@ class ZhangTrainCfg:
             raise ValueError("position_integration must be original or trapezoid")
         if self.perception not in self.supported_perceptions:
             raise ValueError("Original Zhang uses depth observations")
+        if type(self.depth_event_channel) is not bool:
+            raise ValueError("depth_event_channel must be boolean")
+        if type(self.depth_event_history_frames) is not int or self.depth_event_history_frames < 1:
+            raise ValueError("depth_event_history_frames must be a positive integer")
+        if self.depth_event_pose_source not in ("estimated", "truth"):
+            raise ValueError("depth_event_pose_source must be estimated or truth")
+        if self.depth_event_channel and self.perception != "depth":
+            raise ValueError("depth_event_channel requires depth perception")
         if self.loss_timing not in ("deferred", "pre_reset"):
             raise ValueError("loss_timing must be deferred or pre_reset")
         if self.loss_timing == "pre_reset" and (

@@ -18,7 +18,12 @@ from isaaclab_navrl.zhang.termination import termination_mask
 
 from .context import ObservationContext
 from .curriculum import TrainingCurriculum, active_obstacle_indices
-from .depth_history import compensated_depth_features, reproject_depth
+from .depth_history import (
+    compensated_depth_features,
+    pooled_signed_event_channel,
+    reproject_depth,
+    reproject_signed_event_channel,
+)
 from .geometry import TerrainDistance, query_clearance
 from .randomization import PolicyPerturbation
 from .task import NavigationTask
@@ -90,6 +95,25 @@ class NavRLEnv(_NavigationWarpLoop):
         self._reset_rng = torch.Generator(device=self.device).manual_seed(cfg.seed)
         self._terms = None
         self._stepping = False
+        self.depth_event_detector = None
+        if cfg.method == "zhang" and getattr(cfg, "depth_event_channel", False):
+            from .geometric_depth_events import DepthEventDetector
+
+            shape = cfg.scene.depth_camera.pattern_cfg
+            history_frames = getattr(cfg, "depth_event_history_frames", 1)
+            temporal = history_frames > 1
+            self.depth_event_detector = DepthEventDetector(
+                shape.height,
+                shape.width,
+                max_depth=cfg.scene.depth_camera.max_distance,
+                threshold=0.0 if temporal else 0.25,
+                relative_threshold=0.002 if temporal else 0.01,
+                history_frames=history_frames,
+                depth_sigma=0.02 if temporal else 0.0,
+                pose_position_sigma=0.01 if temporal else 0.0,
+                pose_rotation_sigma=0.002 if temporal else 0.0,
+                sigma_multiplier=2.5 if temporal else 0.0,
+            )
         self._warp_term_bindings = {}
         self._warp_obstacle_count = len(self.motion.position)
         self._warp_events = WarpFirstEvents(
@@ -178,6 +202,8 @@ class NavRLEnv(_NavigationWarpLoop):
         reset_ids = env_ids.long()
         self.command.index_fill_(0, reset_ids, 0)
         self.previous_actions.index_fill_(0, reset_ids, 0)
+        if getattr(self, "depth_event_detector", None) is not None:
+            self.depth_event_detector.reset(env_ids)
         self._terms = None
 
     def reset(self, *args, **kwargs):
@@ -374,11 +400,42 @@ class NavRLEnv(_NavigationWarpLoop):
         depth = features.permute(0, 3, 1, 2).clone()
         measured_depth = camera.data.output["distance_to_image_plane"].torch.permute(0, 3, 1, 2)
 
+        event_enabled = self.depth_event_detector is not None
+        temporal_event = event_enabled and getattr(self.cfg, "depth_event_history_frames", 1) > 1
+        raw_count = measured_depth[0].numel()
+        pose_source = getattr(self.cfg, "depth_event_pose_source", "estimated")
+        if pose_source not in ("estimated", "truth"):
+            raise ValueError("depth_event_pose_source must be estimated or truth")
+
         def sample():
             position, velocity, quaternion = self.perturbation.state(state[:, :3], state[:, 7:10], state[:, 3:7])
-            return torch.cat(
-                (position, velocity, quaternion, self.target_pos, depth.flatten(1), measured_depth.flatten(1)), dim=-1
-            )
+            pieces = [position, velocity, quaternion, self.target_pos, depth.flatten(1), measured_depth.flatten(1)]
+            if event_enabled:
+                if pose_source == "truth":
+                    pose = torch.cat((camera.data.pos_w.torch, camera.data.quat_w_world.torch), dim=-1)
+                else:
+                    # Default onboard contract: use estimated body odometry + calibrated
+                    # nominal mount in the robotics (+X forward, +Y left, +Z up) frame.
+                    offset = camera.cfg.offset
+                    offset_world_q = convert_camera_frame_orientation_convention(
+                        state.new_tensor(offset.rot).expand(self.num_envs, -1),
+                        origin=offset.convention,
+                        target="world",
+                    )
+                    offset_p = state.new_tensor(offset.pos).expand(self.num_envs, -1)
+                    cam_pos = position + quat_apply(quaternion, offset_p)
+                    cam_quat = quat_mul(quaternion, offset_world_q)
+                    pose = torch.cat((cam_pos, cam_quat), dim=-1)
+                result = self.depth_event_detector.update(
+                    measured_depth[:, 0],
+                    pose,
+                    camera.data.intrinsic_matrices.torch,
+                    float(self.common_step_counter) * self.step_dt,
+                )
+                pieces.append(
+                    result.signed_image(pose, camera.data.intrinsic_matrices.torch, camera.cfg.max_distance).flatten(1)
+                )
+            return torch.cat(pieces, dim=-1)
 
         policy = self.perturbation.observe(self.common_step_counter, sample)
         # The fast odometry channel models an onboard state estimate, with the
@@ -386,6 +443,9 @@ class NavRLEnv(_NavigationWarpLoop):
         current = self.perturbation.latest_observation
         age = self.perturbation.observation_age_s
         policy_depth = policy[:, 13:205].reshape(self.num_envs, 1, 12, 16)
+        delivered_event = (
+            policy[:, 205 + raw_count : 205 + 2 * raw_count].reshape_as(measured_depth) if event_enabled else None
+        )
         known_fraction = age.new_ones(self.num_envs)
         if self.cfg.sim_to_real.enabled and self.cfg.sim_to_real.input_delay:
             # Use calibrated nominal mounting; hidden pitch perturbations remain
@@ -404,8 +464,9 @@ class NavRLEnv(_NavigationWarpLoop):
 
             source_rotation, source_position = camera_pose(policy)
             target_rotation, target_position = camera_pose(current)
+            delivered_raw_depth = policy[:, 205 : 205 + raw_count].reshape_as(measured_depth)
             warped, known = reproject_depth(
-                policy[:, 205:].reshape_as(measured_depth),
+                delivered_raw_depth,
                 camera.data.intrinsic_matrices.torch,
                 source_rotation,
                 source_position,
@@ -416,6 +477,31 @@ class NavRLEnv(_NavigationWarpLoop):
                 (age > 0)[:, None, None, None], compensated_depth_features(warped, known), policy_depth
             )
             known_fraction = torch.where(age > 0, known.float().mean((1, 2, 3)), known_fraction)
+            if event_enabled:
+                aligned_event = reproject_signed_event_channel(
+                    delivered_raw_depth,
+                    delivered_event,
+                    camera.data.intrinsic_matrices.torch,
+                    source_rotation,
+                    source_position,
+                    target_rotation,
+                    target_position,
+                    warped,
+                    known,
+                )
+                pooled_event = pooled_signed_event_channel(warped, aligned_event, known, region_pool=temporal_event)
+                original_event = pooled_signed_event_channel(
+                    measured_depth, delivered_event, region_pool=temporal_event
+                )
+                delivered_event_feature = torch.where((age > 0)[:, None, None, None], pooled_event, original_event)
+                delivered_motion_pixels = torch.where((age > 0)[:, None, None, None], aligned_event, delivered_event)
+        if event_enabled:
+            if not (self.cfg.sim_to_real.enabled and self.cfg.sim_to_real.input_delay):
+                delivered_event_feature = pooled_signed_event_channel(
+                    measured_depth, delivered_event, region_pool=temporal_event
+                )
+                delivered_motion_pixels = delivered_event
+            policy_depth = torch.cat((policy_depth, delivered_event_feature), dim=1)
         privileged = {
             "depth_features": depth,
             "position": state[:, :3],
@@ -436,6 +522,10 @@ class NavRLEnv(_NavigationWarpLoop):
             "target": current[:, 10:13],
             "depth_features": policy_depth,
         }
+        if event_enabled:
+            # Full-resolution signed evidence is available to mask consumers.
+            # It is not a full object segmentation and is not fed into the CNN.
+            policy_observation["depth_motion_pixels"] = delivered_motion_pixels
         if self.cfg.perception_cfg.mode == "pointnet":
             from .pointcloud import pack_body_points
 

@@ -54,6 +54,12 @@ def main():
         if args.method != "zhang":
             parser.error("--geometry_backend requires --method zhang")
         cfg.geometry_backend = args.geometry_backend
+    if args.method == "zhang" and not pointnet:
+        # Configure event acquisition before the sensor and task are created.
+        saved_train = torch.load(args.checkpoint, map_location="cpu", weights_only=True)["train_cfg"]
+        cfg.depth_event_channel = bool(saved_train.get("depth_event_channel", False))
+        cfg.depth_event_history_frames = int(saved_train.get("depth_event_history_frames", 1))
+        cfg.depth_event_pose_source = saved_train.get("depth_event_pose_source", "estimated")
     cfg.training_curriculum = False
     cfg.scene.num_envs = args.episodes
     cfg.num_static_obstacles = args.static_obstacles
@@ -85,12 +91,30 @@ def main():
             evaluation = EpisodeEvaluation(
                 env.root_state()[:, :3].cpu().tolist(), env.target_pos.cpu().tolist(), args.seed
             )
+            # Classification uses simulator ground truth only for evaluation;
+            # neither the detector nor the policy receives obstacle labels.
+            from isaaclab_navrl.tasks.navigation.geometry import dynamic_signed_distance
+
             start = time.perf_counter()
             with torch.inference_mode():
                 for _ in range(env.max_episode_length):
                     action = policy(observation)
                     observation, _, _, _, info = env.step(action)
-                    evaluation.update(info["transition"])
+                    transition = info["transition"]
+                    evaluation.update(transition)
+                    collisions = transition["collision"] & transition["terminated"]
+                    ids = collisions.nonzero(as_tuple=False).flatten()
+                    if len(ids):
+                        positions = transition["position"][ids]
+                        moving = dynamic_signed_distance(positions, env.motion.position, env.motion.size)
+                        fixed = torch.minimum(
+                            env.terrain_distance.signed_distance(positions), positions[:, 2] - 0.01
+                        )
+                        classification = ((moving <= 0.3) & (moving <= fixed + 1e-4)).cpu().tolist()
+                        for i, dynamic in zip(ids.cpu().tolist(), classification, strict=True):
+                            row = evaluation.rows[i]
+                            if row is not None and row["outcome"] == "collision" and "collision_source" not in row:
+                                row["collision_source"] = "dynamic" if dynamic else "static"
                     if evaluation.complete:
                         break
             result = {
@@ -124,7 +148,15 @@ def main():
                     else {}
                 ),
                 "elapsed_s": time.perf_counter() - start,
-                "summary": evaluation.summary(),
+                "summary": evaluation.summary()
+                | {
+                    "dynamic_collision_count": sum(
+                        row.get("collision_source") == "dynamic" for row in evaluation.rows
+                    ),
+                    "static_collision_count": sum(
+                        row.get("collision_source") == "static" for row in evaluation.rows
+                    ),
+                },
                 "episodes": evaluation.rows,
             }
             args.output.parent.mkdir(parents=True, exist_ok=True)

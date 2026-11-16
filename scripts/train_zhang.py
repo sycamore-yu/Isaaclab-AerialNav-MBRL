@@ -70,6 +70,8 @@ def main():
 
     cfg, recipe = resolve_navigation_config("Isaac-NavRL-Zhang-Hummingbird-Direct-v0", args, training=True)
     pointnet = cfg.perception_cfg.mode == "pointnet"
+    if pointnet and args.depth_event_channel:
+        parser.error("--depth_event_channel requires depth perception, not PointNet")
     if pointnet:
         explicit = {token.split("=", 1)[0].removeprefix("--") for token in sys.argv[1:] if token.startswith("--")}
         for name, value in asdict(recipe).items():
@@ -136,7 +138,11 @@ def main():
 
     import torch
 
-    from isaaclab_navrl.tasks.navigation.depth_history import OBSERVATION_CONTRACT
+    from isaaclab_navrl.tasks.navigation.depth_history import (
+        DEPTH_EVENT_OBSERVATION_CONTRACT,
+        OBSERVATION_CONTRACT,
+        TEMPORAL_DEPTH_EVENT_OBSERVATION_CONTRACT,
+    )
 
     config_type = type(recipe)
     stage = STAGE_CONFIG[args.stage].copy()
@@ -157,6 +163,9 @@ def main():
     cfg.training_curriculum = True
     cfg.sim.device = args.device
     cfg.depth_camera_batch_size = args.camera_batch_size
+    cfg.depth_event_channel = args.depth_event_channel
+    cfg.depth_event_history_frames = args.depth_event_history_frames
+    cfg.depth_event_pose_source = args.depth_event_pose_source
     cfg.configure_scene()
     train_values = {
         field.name: getattr(args, field.name)
@@ -229,10 +238,30 @@ def main():
                 "height": cfg.scene.depth_camera.pattern_cfg.height,
                 "batch_size": cfg.depth_camera_batch_size,
                 "policy_shape": [12, 16],
+                "event_channel": bool(args.depth_event_channel),
+                "event_history_frames": args.depth_event_history_frames,
+                "event_pose_source": args.depth_event_pose_source if args.depth_event_channel else None,
+                "event_algorithm": (
+                    "temporal_bidirectional_ego_depth_consistency_v2"
+                    if args.depth_event_channel and args.depth_event_history_frames > 1
+                    else ("bidirectional_ego_depth_consistency_v1" if args.depth_event_channel else None)
+                ),
                 "pixel_noise_std": cfg.scene.depth_camera.pixel_noise_std,
             },
             "sim_to_real": asdict(cfg.sim_to_real),
-            "observation_contract": "body_xyz_lidar_validity_v2" if pointnet else OBSERVATION_CONTRACT,
+            "observation_contract": (
+                "body_xyz_lidar_validity_v2"
+                if pointnet
+                else (
+                    (
+                        TEMPORAL_DEPTH_EVENT_OBSERVATION_CONTRACT
+                        if args.depth_event_history_frames > 1
+                        else DEPTH_EVENT_OBSERVATION_CONTRACT
+                    )
+                    if args.depth_event_channel
+                    else OBSERVATION_CONTRACT
+                )
+            ),
             "episode_end_contract": EPISODE_END_CONTRACT,
             "wait_before_truncate_s": cfg.wait_before_truncate,
         },

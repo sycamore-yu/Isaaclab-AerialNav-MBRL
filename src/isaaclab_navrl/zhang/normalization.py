@@ -100,8 +100,8 @@ class PolicyObservationNormalizer(nn.Module):
 
     @staticmethod
     def _check_shapes(depth: torch.Tensor, state: torch.Tensor) -> None:
-        if depth.ndim != 4 or depth.shape[1] != 1 or state.shape != (depth.shape[0], 10):
-            raise ValueError("Expected pooled depth [N,1,H,W] and policy state [N,10]")
+        if depth.ndim != 4 or depth.shape[1] not in (1, 2) or state.shape != (depth.shape[0], 10):
+            raise ValueError("Expected pooled depth [N,1|2,H,W] and policy state [N,10]")
 
     @torch.no_grad()
     def begin_rollout(self) -> ObservationSnapshot | None:
@@ -119,14 +119,19 @@ class PolicyObservationNormalizer(nn.Module):
         self._check_shapes(depth, state)
         if snapshot is None:
             raise ValueError("Enabled normalization requires a fixed begin_rollout() snapshot")
-        return snapshot.depth.normalize(depth), snapshot.state.normalize(state)
+        # The event polarity is a semantic [-1,1] measurement, not a metric-depth
+        # variable.  Keep it out of the running depth statistics.
+        normalized_depth = snapshot.depth.normalize(depth[:, :1])
+        if depth.shape[1] == 2:
+            normalized_depth = torch.cat((normalized_depth, depth[:, 1:]), dim=1)
+        return normalized_depth, snapshot.state.normalize(state)
 
     @torch.no_grad()
     def observe(self, depth: torch.Tensor, state: torch.Tensor) -> None:
         if not self.enabled or not self.training:
             return
         self._check_shapes(depth, state)
-        self.depth_moments.update(depth)
+        self.depth_moments.update(depth[:, :1])
         self.state_moments.update(state)
 
     def get_extra_state(self) -> dict:

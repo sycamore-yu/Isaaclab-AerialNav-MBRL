@@ -59,6 +59,9 @@ TRAIN_ARG_TYPES = {
     "goal_speed_profile": str,
     "goal_approach_time_s": float,
     "avoidance_gradient": str,
+    "depth_event_channel": parse_binary_flag,
+    "depth_event_history_frames": int,
+    "depth_event_pose_source": str,
     "approach_mode": str,
     "lateral_avoidance": float,
     "risk_speed_floor": float,
@@ -166,6 +169,8 @@ def parse_train_args(tokens: list[str]) -> dict[str, TrainArgValue]:
             raise ValueError("Height-priority projection requires --algorithm bptt")
     if values.get("timesteps", 150) < 2:
         raise ValueError("timesteps must be at least 2")
+    if values.get("depth_event_history_frames", 1) < 1:
+        raise ValueError("depth_event_history_frames must be a positive integer")
     if (
         not 2
         <= values.get("ahac_min_horizon", 16)

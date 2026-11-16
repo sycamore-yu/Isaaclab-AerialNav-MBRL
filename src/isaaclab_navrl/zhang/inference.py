@@ -2,7 +2,11 @@
 
 import torch
 
-from isaaclab_navrl.tasks.navigation.depth_history import OBSERVATION_CONTRACT
+from isaaclab_navrl.tasks.navigation.depth_history import (
+    DEPTH_EVENT_OBSERVATION_CONTRACT,
+    OBSERVATION_CONTRACT,
+    TEMPORAL_DEPTH_EVENT_OBSERVATION_CONTRACT,
+)
 
 from .config import ZhangTrainCfg
 from .model import ZhangPolicy, decode_action, policy_state
@@ -23,12 +27,6 @@ class ZhangInference:
         payload = torch.load(checkpoint, map_location=env.device, weights_only=True)
         if payload["method"] not in self.checkpoint_methods or payload["format_version"] not in (2, 3):
             raise ValueError("Not a supported Zhang checkpoint")
-        if (
-            env.cfg.sim_to_real.enabled
-            and env.cfg.sim_to_real.input_delay
-            and payload.get("environment", {}).get("observation_contract") not in self.checkpoint_observation_contracts
-        ):
-            raise ValueError("Observation timing changed; evaluate the old delayed-input policy with its frozen source")
         self.checkpoint_train_cfg = payload["train_cfg"]
         self.training_collision_metric = payload["train_cfg"].get("collision_metric", "dcol")
         self.training_geometry_backend = payload["train_cfg"].get("geometry_backend", "native")
@@ -40,13 +38,36 @@ class ZhangInference:
                     "goal_speed_profile": payload["train_cfg"].get("goal_speed_profile", "linear"),
                     "position_integration": payload["train_cfg"].get("position_integration", "original"),
                     "geometry_backend": self.training_geometry_backend,
+                    "depth_event_pose_source": payload["train_cfg"].get("depth_event_pose_source", "estimated"),
                 }
             )
         )
         self.cfg.validate()
+        if bool(getattr(env.cfg, "depth_event_channel", False)) != self.cfg.depth_event_channel:
+            raise ValueError("Evaluation environment must match checkpoint event input contract")
+        if (
+            self.cfg.depth_event_channel
+            and getattr(env.cfg, "depth_event_history_frames", 1) != self.cfg.depth_event_history_frames
+        ):
+            raise ValueError("Evaluation environment must match event history length")
+        if self.cfg.depth_event_channel:
+            self.checkpoint_observation_contracts = (
+                (TEMPORAL_DEPTH_EVENT_OBSERVATION_CONTRACT,)
+                if self.cfg.depth_event_history_frames > 1
+                else (DEPTH_EVENT_OBSERVATION_CONTRACT,)
+            )
+        saved_contract = payload.get("environment", {}).get("observation_contract")
+        if (
+            self.cfg.depth_event_channel or (env.cfg.sim_to_real.enabled and env.cfg.sim_to_real.input_delay)
+        ) and saved_contract not in self.checkpoint_observation_contracts:
+            if self.cfg.depth_event_channel:
+                raise ValueError("Checkpoint observation contract does not match the evaluation input")
+            raise ValueError("Observation timing changed; evaluate the old delayed-input policy with its frozen source")
         self.env = env
         self.validate_checkpoint(payload)
         self.model = self.model_type(self.cfg.recurrent_model).to(env.device).eval()
+        if self.cfg.depth_event_channel:
+            self.model.enable_depth_event_channel()
         self.model.load_state_dict(payload["model_state_dict"], strict=True)
         self.normalizer = PolicyObservationNormalizer(
             self.cfg.observation_normalization, self.cfg.normalization_variance_floor, device=env.device

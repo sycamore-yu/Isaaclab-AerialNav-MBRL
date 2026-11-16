@@ -129,6 +129,9 @@ class NavRLEnvCfg(DirectRLEnvCfg):
     num_static_obstacles: int = STAGE_CONFIG[DEFAULT_STAGE]["static_obstacles"]
     num_dynamic_obstacles: int = STAGE_CONFIG[DEFAULT_STAGE]["dynamic_obstacles"]
     depth_camera_batch_size: int = 16
+    depth_event_channel: bool = False
+    depth_event_history_frames: int = 1
+    depth_event_pose_source: str = "estimated"
     training_curriculum: bool = True
     training_stage: str | None = DEFAULT_STAGE
     training_stage_config: dict | None = None
@@ -184,6 +187,10 @@ class NavRLEnvCfg(DirectRLEnvCfg):
         """Apply task counts after command-line overrides and before launch."""
         if not math.isfinite(self.wait_before_truncate) or self.wait_before_truncate < 0:
             raise ValueError("wait_before_truncate must be finite and nonnegative")
+        if self.depth_event_history_frames < 1:
+            raise ValueError("depth_event_history_frames must be a positive integer")
+        if self.depth_event_pose_source not in ("estimated", "truth"):
+            raise ValueError("depth_event_pose_source must be estimated or truth")
         stage = self.training_stage_config or STAGE_CONFIG.get(self.training_stage)
         if stage is not None:
             self.episode_length_s = stage["episode_length_s"]
