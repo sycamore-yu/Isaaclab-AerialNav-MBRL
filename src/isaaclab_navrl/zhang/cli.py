@@ -39,6 +39,7 @@ TRAIN_ARG_CHOICES["position_integration"] = ("original", "trapezoid")
 TRAIN_ARG_CHOICES["timing"] = ("baseline", "unified_20hz", "unified_50hz")
 TRAIN_ARG_TYPES = {
     "timing": str,
+    "num_static_obstacles": int,
     "num_dynamic_obstacles": int,
     "target_speed_min": float,
     "target_speed_max": float,
@@ -148,6 +149,7 @@ def parse_train_args(tokens: list[str]) -> dict[str, TrainArgValue]:
             "plateau_patience",
             "failure_terminal_cost",
             "lateral_avoidance",
+            "num_static_obstacles",
             "num_dynamic_obstacles",
         ):
             if value < 0:
@@ -193,6 +195,7 @@ def add_train_args(parser):
         timing="unified_20hz",
         goal_speed_profile=None,
         goal_approach_time_s=None,
+        num_static_obstacles=None,
         num_dynamic_obstacles=None,
         target_speed_min=None,
         target_speed_max=None,

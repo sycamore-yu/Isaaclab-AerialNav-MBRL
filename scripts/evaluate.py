@@ -26,8 +26,8 @@ def main():
     parser.add_argument("--episodes", type=int, default=100)
     parser.add_argument("--seed", type=int, default=10000)
     parser.add_argument("--terrain_seed", type=int, default=10000)
-    parser.add_argument("--static_obstacles", type=int, default=350)
-    parser.add_argument("--dynamic_obstacles", type=int, default=100)
+    parser.add_argument("--static_obstacles", type=int, default=None)
+    parser.add_argument("--dynamic_obstacles", type=int, default=None)
     parser.add_argument("--stage", choices=("pretrain_s0", "pretrain_s1", "finetune_s1"))
     parser.add_argument("--wait_before_truncate", type=float, default=None)
     add_launcher_args(parser)
@@ -63,12 +63,16 @@ def main():
         cfg.depth_event_pose_source = saved_train.get("depth_event_pose_source", "estimated")
     cfg.training_curriculum = False
     cfg.scene.num_envs = args.episodes
-    cfg.num_static_obstacles = args.static_obstacles
-    cfg.num_dynamic_obstacles = args.dynamic_obstacles
     cfg.seed, cfg.terrain_seed = args.seed, args.terrain_seed
     cfg.evaluation = args.stage is None
     if args.stage:
         cfg.apply_training_stage(args.stage)
+    cfg.num_static_obstacles = (
+        args.static_obstacles if args.static_obstacles is not None else (cfg.num_static_obstacles if args.stage else 350)
+    )
+    cfg.num_dynamic_obstacles = (
+        args.dynamic_obstacles if args.dynamic_obstacles is not None else (cfg.num_dynamic_obstacles if args.stage else 100)
+    )
     if args.wait_before_truncate is not None:
         cfg.wait_before_truncate = args.wait_before_truncate
     cfg.sim.device = args.device

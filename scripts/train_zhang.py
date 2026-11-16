@@ -105,7 +105,7 @@ def main():
         parser.error("--fresh_stage requires a later stage without --checkpoint")
     overrides = {
         key: getattr(args, key)
-        for key in ("num_dynamic_obstacles", "target_speed_min", "target_speed_max")
+        for key in ("num_static_obstacles", "num_dynamic_obstacles", "target_speed_min", "target_speed_max")
         if getattr(args, key) is not None
     }
     try:
@@ -146,6 +146,8 @@ def main():
 
     config_type = type(recipe)
     stage = STAGE_CONFIG[args.stage].copy()
+    if args.num_static_obstacles is not None:
+        stage["static_obstacles"] = args.num_static_obstacles
     if args.num_dynamic_obstacles is not None:
         stage["dynamic_obstacles"] = args.num_dynamic_obstacles
     cfg.variant = args.variant
