@@ -6,6 +6,7 @@ from isaaclab_navrl.tasks.navigation.depth_history import (
     DEPTH_EVENT_OBSERVATION_CONTRACT,
     OBSERVATION_CONTRACT,
     TEMPORAL_DEPTH_EVENT_OBSERVATION_CONTRACT,
+    TEMPORAL_DUAL_DEPTH_EVENT_OBSERVATION_CONTRACT,
 )
 
 from .config import ZhangTrainCfg
@@ -39,23 +40,34 @@ class ZhangInference:
                     "position_integration": payload["train_cfg"].get("position_integration", "original"),
                     "geometry_backend": self.training_geometry_backend,
                     "depth_event_pose_source": payload["train_cfg"].get("depth_event_pose_source", "estimated"),
+                    "depth_event_dual_channel": bool(payload["train_cfg"].get("depth_event_dual_channel", False)),
+                    "depth_event_edge_suppression": bool(
+                        payload["train_cfg"].get("depth_event_edge_suppression", False)
+                    ),
+                    "coef_dyn_aux": float(payload["train_cfg"].get("coef_dyn_aux", 0.0)),
+                    "dyn_aux_sectors": int(payload["train_cfg"].get("dyn_aux_sectors", 8)),
                 }
             )
         )
         self.cfg.validate()
         if bool(getattr(env.cfg, "depth_event_channel", False)) != self.cfg.depth_event_channel:
             raise ValueError("Evaluation environment must match checkpoint event input contract")
+        if bool(getattr(env.cfg, "depth_event_dual_channel", False)) != self.cfg.depth_event_dual_channel:
+            raise ValueError("Evaluation environment must match checkpoint dual-event input contract")
         if (
             self.cfg.depth_event_channel
             and getattr(env.cfg, "depth_event_history_frames", 1) != self.cfg.depth_event_history_frames
         ):
             raise ValueError("Evaluation environment must match event history length")
         if self.cfg.depth_event_channel:
-            self.checkpoint_observation_contracts = (
-                (TEMPORAL_DEPTH_EVENT_OBSERVATION_CONTRACT,)
-                if self.cfg.depth_event_history_frames > 1
-                else (DEPTH_EVENT_OBSERVATION_CONTRACT,)
-            )
+            if self.cfg.depth_event_dual_channel:
+                self.checkpoint_observation_contracts = (TEMPORAL_DUAL_DEPTH_EVENT_OBSERVATION_CONTRACT,)
+            else:
+                self.checkpoint_observation_contracts = (
+                    (TEMPORAL_DEPTH_EVENT_OBSERVATION_CONTRACT,)
+                    if self.cfg.depth_event_history_frames > 1
+                    else (DEPTH_EVENT_OBSERVATION_CONTRACT,)
+                )
         saved_contract = payload.get("environment", {}).get("observation_contract")
         if (
             self.cfg.depth_event_channel or (env.cfg.sim_to_real.enabled and env.cfg.sim_to_real.input_delay)
@@ -66,8 +78,12 @@ class ZhangInference:
         self.env = env
         self.validate_checkpoint(payload)
         self.model = self.model_type(self.cfg.recurrent_model).to(env.device).eval()
-        if self.cfg.depth_event_channel:
+        if self.cfg.depth_event_dual_channel:
+            self.model.enable_dual_depth_event_early_conv()
+        elif self.cfg.depth_event_channel:
             self.model.enable_depth_event_channel()
+        if self.cfg.coef_dyn_aux > 0 or "dynamic_aux_head.weight" in payload["model_state_dict"]:
+            self.model.enable_dynamic_aux_head(self.cfg.dyn_aux_sectors)
         self.model.load_state_dict(payload["model_state_dict"], strict=True)
         self.normalizer = PolicyObservationNormalizer(
             self.cfg.observation_normalization, self.cfg.normalization_variance_floor, device=env.device

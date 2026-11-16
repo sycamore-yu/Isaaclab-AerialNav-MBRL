@@ -35,6 +35,8 @@ class ZhangPolicy(nn.Module):
             self.sru = LSTMSRUGateCell(192, 192)
         self.fc = nn.Linear(192, 6, bias=False)
         self.act = nn.LeakyReLU(0.05)
+        self.dynamic_aux_head = None
+        self.dynamic_aux_sectors = 0
         with torch.no_grad():
             self.v_proj.weight.mul_(0.5)
             self.fc.weight.mul_(0.01)
@@ -42,13 +44,45 @@ class ZhangPolicy(nn.Module):
     def enable_depth_event_channel(self):
         """Expand the original depth kernel; initial actions match the 1-channel policy."""
         old = self.stem[0]
-        if old.in_channels != 1:
+        if not isinstance(old, nn.Conv2d) or old.in_channels != 1:
             raise ValueError("Depth-event expansion can only be applied once")
         new = nn.Conv2d(2, old.out_channels, old.kernel_size, old.stride, bias=False).to(old.weight)
         with torch.no_grad():
             new.weight[:, :1].copy_(old.weight)
             new.weight[:, 1:].zero_()
         self.stem[0] = new
+
+    def enable_dual_depth_event_early_conv(self):
+        """Replace 12x16 patch stem with 24x32 early spatial convolutions over (depth, appeared, disappeared)."""
+        old = self.stem[0]
+        if not isinstance(old, nn.Conv2d) or old.in_channels != 1:
+            raise ValueError("Dual depth-event early conv expansion can only be applied once")
+        early = nn.Sequential(
+            nn.Conv2d(3, 16, kernel_size=3, stride=2, padding=1, bias=False),
+            nn.LeakyReLU(0.05),
+            nn.Conv2d(16, 32, kernel_size=3, stride=1, padding=1, bias=False),
+            nn.LeakyReLU(0.05),
+            nn.Conv2d(32, old.out_channels, kernel_size=2, stride=2, bias=False),
+        ).to(old.weight)
+        with torch.no_grad():
+            early[0].weight[:, 1:].zero_()
+        self.stem[0] = early
+
+    def enable_dynamic_aux_head(self, num_sectors: int = 8):
+        """Attach training-only ego dynamic obstacle head on recurrent hidden state."""
+        if num_sectors < 1:
+            raise ValueError("num_sectors must be a positive integer")
+        self.dynamic_aux_sectors = int(num_sectors)
+        self.dynamic_aux_head = nn.Linear(192, self.dynamic_aux_sectors * 3).to(
+            device=self.fc.weight.device, dtype=self.fc.weight.dtype
+        )
+
+    def predict_dynamic_aux(self, hidden: torch.Tensor) -> torch.Tensor:
+        """Predict [N, num_sectors, 3] dynamic obstacle features from recurrent state."""
+        if self.dynamic_aux_head is None:
+            raise RuntimeError("dynamic_aux_head is not enabled on this policy")
+        h = hidden if self.recurrent_model == "gru" else hidden[:, :192]
+        return self.dynamic_aux_head(self.act(h)).reshape(len(hidden), self.dynamic_aux_sectors, 3)
 
     def forward(self, depth_features, state, hidden=None):
         """Return six outputs and complete [N, recurrent_state_size] memory.

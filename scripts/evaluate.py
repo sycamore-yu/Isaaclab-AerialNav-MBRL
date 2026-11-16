@@ -59,6 +59,8 @@ def main():
         # Configure event acquisition before the sensor and task are created.
         saved_train = torch.load(args.checkpoint, map_location="cpu", weights_only=True)["train_cfg"]
         cfg.depth_event_channel = bool(saved_train.get("depth_event_channel", False))
+        cfg.depth_event_dual_channel = bool(saved_train.get("depth_event_dual_channel", False))
+        cfg.depth_event_edge_suppression = bool(saved_train.get("depth_event_edge_suppression", False))
         cfg.depth_event_history_frames = int(saved_train.get("depth_event_history_frames", 1))
         cfg.depth_event_pose_source = saved_train.get("depth_event_pose_source", "estimated")
     cfg.training_curriculum = False

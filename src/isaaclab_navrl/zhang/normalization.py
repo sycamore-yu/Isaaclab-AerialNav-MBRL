@@ -100,8 +100,8 @@ class PolicyObservationNormalizer(nn.Module):
 
     @staticmethod
     def _check_shapes(depth: torch.Tensor, state: torch.Tensor) -> None:
-        if depth.ndim != 4 or depth.shape[1] not in (1, 2) or state.shape != (depth.shape[0], 10):
-            raise ValueError("Expected pooled depth [N,1|2,H,W] and policy state [N,10]")
+        if depth.ndim != 4 or depth.shape[1] not in (1, 2, 3) or state.shape != (depth.shape[0], 10):
+            raise ValueError("Expected pooled depth [N,1|2|3,H,W] and policy state [N,10]")
 
     @torch.no_grad()
     def begin_rollout(self) -> ObservationSnapshot | None:
@@ -122,7 +122,7 @@ class PolicyObservationNormalizer(nn.Module):
         # The event polarity is a semantic [-1,1] measurement, not a metric-depth
         # variable.  Keep it out of the running depth statistics.
         normalized_depth = snapshot.depth.normalize(depth[:, :1])
-        if depth.shape[1] == 2:
+        if depth.shape[1] > 1:
             normalized_depth = torch.cat((normalized_depth, depth[:, 1:]), dim=1)
         return normalized_depth, snapshot.state.normalize(state)
 

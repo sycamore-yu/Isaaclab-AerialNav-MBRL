@@ -16,6 +16,7 @@ from isaaclab_navrl.tasks.navigation.depth_history import (
     DEPTH_EVENT_OBSERVATION_CONTRACT,
     OBSERVATION_CONTRACT,
     TEMPORAL_DEPTH_EVENT_OBSERVATION_CONTRACT,
+    TEMPORAL_DUAL_DEPTH_EVENT_OBSERVATION_CONTRACT,
 )
 from isaaclab_navrl.tasks.navigation.randomization import DifferentiableDelay
 from isaaclab_navrl.training import (
@@ -28,6 +29,7 @@ from isaaclab_navrl.training import (
 )
 
 from .actor_critic import ActorCriticSettings, CostActorCritic, short_horizon_cost_objective
+from .aux import dynamic_aux_loss, ego_dynamic_sector_targets
 from .collision import height_bounded_gap, metric_navigation_gap
 from .critic_state import CriticHistory, critic_observation
 from .diagnostics import GradientDiagnostic, collision_records, critic_vertical_probe
@@ -166,7 +168,11 @@ class ZhangTrainer:
         self.env, self.cfg = env, cfg
         self.log_dir = Path(log_dir).resolve()
         self.model = self.model_type(cfg.recurrent_model).to(env.device)
-        if cfg.depth_event_channel:
+        if cfg.depth_event_dual_channel:
+            self.model.enable_dual_depth_event_early_conv()
+            self.observation_contract = TEMPORAL_DUAL_DEPTH_EVENT_OBSERVATION_CONTRACT
+            self.checkpoint_observation_contracts = (self.observation_contract,)
+        elif cfg.depth_event_channel:
             self.model.enable_depth_event_channel()
             self.observation_contract = (
                 TEMPORAL_DEPTH_EVENT_OBSERVATION_CONTRACT
@@ -174,6 +180,8 @@ class ZhangTrainer:
                 else DEPTH_EVENT_OBSERVATION_CONTRACT
             )
             self.checkpoint_observation_contracts = (self.observation_contract,)
+        if cfg.coef_dyn_aux > 0:
+            self.model.enable_dynamic_aux_head(cfg.dyn_aux_sectors)
         optimizer_type = torch.optim.AdamW if cfg.optimizer == "adamw" else torch.optim.Adam
         self.optimizer = optimizer_type(self.model.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)
         self.normalizer = PolicyObservationNormalizer(
@@ -336,6 +344,14 @@ class ZhangTrainer:
                         "avoidance_gradient": payload["train_cfg"].get("avoidance_gradient", "original"),
                         "goal_speed_profile": payload["train_cfg"].get("goal_speed_profile", "linear"),
                         "depth_event_pose_source": payload["train_cfg"].get("depth_event_pose_source", "estimated"),
+                        "depth_event_dual_channel": bool(
+                            payload["train_cfg"].get("depth_event_dual_channel", False)
+                        ),
+                        "depth_event_edge_suppression": bool(
+                            payload["train_cfg"].get("depth_event_edge_suppression", False)
+                        ),
+                        "coef_dyn_aux": float(payload["train_cfg"].get("coef_dyn_aux", 0.0)),
+                        "dyn_aux_sectors": int(payload["train_cfg"].get("dyn_aux_sectors", 8)),
                     }
                 )
             )
@@ -913,6 +929,19 @@ class ZhangTrainer:
                             "clearance_m": clearance[probe_ids].tolist(),
                         }
                     output, hidden = self.model.forward_checkpointed(normalized_depth, normalized_features, hidden)
+                    if self.cfg.coef_dyn_aux > 0:
+                        history["dyn_aux_pred"].append(self.model.predict_dynamic_aux(hidden))
+                        history["dyn_aux_target"].append(
+                            ego_dynamic_sector_targets(
+                                observation.privileged["position"].detach(),
+                                observation.privileged["velocity"].detach(),
+                                heading.detach(),
+                                self.env.motion.position.detach(),
+                                self.env.motion.velocity.detach(),
+                                self.env.motion.size.detach(),
+                                num_sectors=self.cfg.dyn_aux_sectors,
+                            )
+                        )
                     command, velocity_prediction = decode_action(output, policy_heading, parameters["thr_est_error"])
                     # Source main_cuda records p + v * sub_div before env.run, including terminating steps.
                     history["obstacle_signed_distance"].append(obstacle_distance)
@@ -1081,6 +1110,12 @@ class ZhangTrainer:
                 losses, self.velocity_history, transition_cost = self.transition_costs(
                     history, self.cfg, self.velocity_history
                 )
+                if self.cfg.coef_dyn_aux > 0:
+                    dyn_aux_raw = dynamic_aux_loss(
+                        torch.stack(history["dyn_aux_pred"]), torch.stack(history["dyn_aux_target"])
+                    )
+                    losses["dynamic_aux"] = self.cfg.coef_dyn_aux * dyn_aux_raw
+                    losses["total"] = losses["total"] + losses["dynamic_aux"]
                 actor_loss = losses["total"]
                 algorithm_metrics = {}
                 if self.actor_critic is not None:
@@ -1198,7 +1233,8 @@ class ZhangTrainer:
                     self.nonfinite_grad_events += 1
                     raise
                 if self.cfg.depth_event_channel:
-                    event_grad = self.model.stem[0].weight.grad
+                    first_conv = self.model.stem[0][0] if self.cfg.depth_event_dual_channel else self.model.stem[0]
+                    event_grad = first_conv.weight.grad
                     algorithm_metrics["DepthEvent/conv_gradient_norm"] = (
                         float(event_grad[:, 1:].norm()) if event_grad is not None else 0.0
                     )

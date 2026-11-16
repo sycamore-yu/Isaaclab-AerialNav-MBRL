@@ -32,8 +32,12 @@ class ZhangTrainCfg:
     avoidance_gradient: Literal["original", "reshaped"] = "original"
     perception: Literal["depth"] = "depth"
     depth_event_channel: bool = False
+    depth_event_dual_channel: bool = False
+    depth_event_edge_suppression: bool = False
     depth_event_history_frames: int = 1
     depth_event_pose_source: Literal["estimated", "truth"] = "estimated"
+    coef_dyn_aux: float = 0.0
+    dyn_aux_sectors: int = 8
     approach_mode: Literal["finite_difference", "relative"] = "finite_difference"
     lateral_avoidance: float = 0.0
     risk_speed_floor: float = 1.0
@@ -140,6 +144,16 @@ class ZhangTrainCfg:
             raise ValueError("Original Zhang uses depth observations")
         if type(self.depth_event_channel) is not bool:
             raise ValueError("depth_event_channel must be boolean")
+        if type(self.depth_event_dual_channel) is not bool:
+            raise ValueError("depth_event_dual_channel must be boolean")
+        if type(self.depth_event_edge_suppression) is not bool:
+            raise ValueError("depth_event_edge_suppression must be boolean")
+        if self.depth_event_dual_channel and not self.depth_event_channel:
+            raise ValueError("depth_event_dual_channel requires depth_event_channel")
+        if not math.isfinite(self.coef_dyn_aux) or self.coef_dyn_aux < 0:
+            raise ValueError("coef_dyn_aux must be finite and nonnegative")
+        if type(self.dyn_aux_sectors) is not int or self.dyn_aux_sectors < 1:
+            raise ValueError("dyn_aux_sectors must be a positive integer")
         if type(self.depth_event_history_frames) is not int or self.depth_event_history_frames < 1:
             raise ValueError("depth_event_history_frames must be a positive integer")
         if self.depth_event_pose_source not in ("estimated", "truth"):

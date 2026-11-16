@@ -130,6 +130,8 @@ class NavRLEnvCfg(DirectRLEnvCfg):
     num_dynamic_obstacles: int = STAGE_CONFIG[DEFAULT_STAGE]["dynamic_obstacles"]
     depth_camera_batch_size: int = 16
     depth_event_channel: bool = False
+    depth_event_dual_channel: bool = False
+    depth_event_edge_suppression: bool = False
     depth_event_history_frames: int = 1
     depth_event_pose_source: str = "estimated"
     training_curriculum: bool = True

@@ -72,6 +72,10 @@ def obstacle_height_field(difficulty, cfg, rng=None):
     x1, x2 = (width_pixels - platform_width) // 2, (width_pixels + platform_width) // 2
     y1, y2 = (length_pixels - platform_width) // 2, (length_pixels + platform_width) // 2
     heights[x1:x2, y1:y2] = 0
+    if cfg.num_obstacles == 0 and not np.any(heights):
+        # MJWarp rejects a zero-thickness 2D terrain mesh; keep a 0.4x0.4x0.1m
+        # corner relief below the flight floor so empty terrain compiles cleanly.
+        heights[:4, :4] = 1
     return np.rint(heights).astype(np.int16)
 
 

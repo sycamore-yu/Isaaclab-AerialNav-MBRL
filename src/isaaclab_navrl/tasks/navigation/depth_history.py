@@ -6,6 +6,7 @@ import torch.nn.functional as F
 OBSERVATION_CONTRACT = "delayed_depth_current_odometry_ego_reprojection_v1"
 DEPTH_EVENT_OBSERVATION_CONTRACT = "delayed_depth_signed_event_ego_reprojection_v1"
 TEMPORAL_DEPTH_EVENT_OBSERVATION_CONTRACT = "delayed_depth_temporal_signed_event_region_pool_v2"
+TEMPORAL_DUAL_DEPTH_EVENT_OBSERVATION_CONTRACT = "delayed_depth_temporal_dual_event_early_conv_v3"
 
 
 @torch.no_grad()
@@ -51,10 +52,10 @@ def reproject_depth(depth, intrinsics, source_rotation, source_position, target_
     return torch.where(known, output.reshape_as(depth), 0), known
 
 
-def compensated_depth_features(depth, known):
+def compensated_depth_features(depth, known, *, output_size=(12, 16)):
     """Keep unknown cells distinct from observed far range without a new actor head."""
     inverse = torch.where(known, 3 / depth.clamp(0.3, 24) - 0.6, -1.0)
-    return F.adaptive_max_pool2d(inverse, (12, 16))
+    return F.adaptive_max_pool2d(inverse, output_size)
 
 
 @torch.no_grad()
@@ -80,6 +81,25 @@ def depth_event_observation(depth, events):
     return torch.cat((pooled, selected.to(pooled)), dim=1)
 
 
+def _prepare_inverse_and_events(depth, events, known, expected_channels):
+    if (
+        depth.ndim != 4
+        or depth.shape[1] != 1
+        or events.ndim != 4
+        or events.shape[0] != depth.shape[0]
+        or events.shape[1] != expected_channels
+        or events.shape[2:] != depth.shape[2:]
+    ):
+        raise ValueError(f"Expected depth [N,1,H,W] and events [N,{expected_channels},H,W]")
+    inverse = 3 / depth.clamp(0.3, 24) - 0.6
+    if known is not None:
+        if known.shape != depth.shape:
+            raise ValueError("known must match depth")
+        inverse = torch.where(known, inverse, -1.0)
+        events = torch.where(known, events, 0)
+    return inverse, events
+
+
 @torch.no_grad()
 def pooled_signed_event_channel(depth, signed, known=None, *, region_pool=False):
     """Pool full-resolution event evidence, optionally preserving sparse motion edges.
@@ -87,20 +107,36 @@ def pooled_signed_event_channel(depth, signed, known=None, *, region_pool=False)
     Legacy nearest-ray pooling is retained for v1 checkpoints. Region pooling
     means an event exists *somewhere* in the cell, not that its closest ray moved.
     """
-    if depth.ndim != 4 or depth.shape[1] != 1 or signed.shape != depth.shape:
-        raise ValueError("Expected depth and signed events [N,1,H,W]")
-    inverse = 3 / depth.clamp(0.3, 24) - 0.6
-    if known is not None:
-        if known.shape != depth.shape:
-            raise ValueError("known must match depth")
-        inverse = torch.where(known, inverse, -1.0)
-        signed = torch.where(known, signed, 0)
+    inverse, signed = _prepare_inverse_and_events(depth, signed, known, 1)
     if region_pool:
         positive = F.adaptive_max_pool2d(signed.clamp_min(0), (12, 16))
         negative = F.adaptive_max_pool2d((-signed).clamp_min(0), (12, 16))
         return torch.where(positive >= negative, positive, -negative)
     _, index = F.adaptive_max_pool2d(inverse, (12, 16), return_indices=True)
     return signed.flatten(2).gather(2, index.flatten(2)).reshape(depth.shape[0], 1, 12, 16)
+
+
+@torch.no_grad()
+def pooled_dual_event_channels(depth, dual, known=None, *, output_size=(24, 32), region_pool=True):
+    """Pool full-resolution (appeared, disappeared) channels [N,2,H,W] without sign overwrite."""
+    inverse, dual = _prepare_inverse_and_events(depth, dual.clamp_min(0), known, 2)
+    if region_pool:
+        return F.adaptive_max_pool2d(dual, output_size)
+    _, index = F.adaptive_max_pool2d(inverse, output_size, return_indices=True)
+    flat_index = index.flatten(2).expand(-1, 2, -1)
+    return dual.flatten(2).gather(2, flat_index).reshape(depth.shape[0], 2, *output_size)
+
+
+def _reproject_masked_event(
+    source_mask, delivered_depth, intrinsic, source_rotation, source_position,
+    target_rotation, target_position, aligned_depth, aligned_known,
+):
+    source = torch.where(source_mask, delivered_depth, torch.inf)
+    surface, valid = reproject_depth(
+        source, intrinsic, source_rotation, source_position, target_rotation, target_position
+    )
+    aligned = valid & aligned_known & ((surface - aligned_depth).abs() < 0.15)
+    return aligned.to(delivered_depth.dtype)
 
 
 @torch.no_grad()
@@ -115,12 +151,36 @@ def reproject_signed_event_channel(
     """
     if delivered_event.shape != delivered_depth.shape:
         raise ValueError("Delayed event and depth must have identical image dimensions")
-    images = []
-    for sign in (1, -1):
-        source = torch.where(delivered_event * sign > 0, delivered_depth, torch.inf)
-        surface, valid = reproject_depth(
-            source, intrinsic, source_rotation, source_position, target_rotation, target_position
+    images = [
+        _reproject_masked_event(
+            delivered_event * sign > 0, delivered_depth, intrinsic,
+            source_rotation, source_position, target_rotation, target_position,
+            aligned_depth, aligned_known,
         )
-        aligned = valid & aligned_known & ((surface - aligned_depth).abs() < 0.15)
-        images.append(aligned.to(delivered_depth.dtype))
+        for sign in (1, -1)
+    ]
     return images[0] - images[1]
+
+
+@torch.no_grad()
+def reproject_dual_event_channels(
+    delivered_depth, delivered_dual, intrinsic, source_rotation, source_position, target_rotation, target_position,
+    aligned_depth, aligned_known,
+):
+    """Transport delayed (appeared, disappeared) [N,2,H,W] channels with their captured depth."""
+    if (
+        delivered_dual.ndim != 4
+        or delivered_dual.shape[1] != 2
+        or delivered_dual.shape[0] != delivered_depth.shape[0]
+        or delivered_dual.shape[2:] != delivered_depth.shape[2:]
+    ):
+        raise ValueError("Delayed dual event must have shape [N,2,H,W] matching delivered_depth")
+    channels = [
+        _reproject_masked_event(
+            delivered_dual[:, ch : ch + 1] > 0, delivered_depth, intrinsic,
+            source_rotation, source_position, target_rotation, target_position,
+            aligned_depth, aligned_known,
+        )
+        for ch in (0, 1)
+    ]
+    return torch.cat(channels, dim=1)

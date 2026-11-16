@@ -11,13 +11,17 @@ import torch.nn.functional as F
 from isaaclab_navrl.tasks.navigation.context import ObservationContext
 from isaaclab_navrl.tasks.navigation.depth_history import (
     TEMPORAL_DEPTH_EVENT_OBSERVATION_CONTRACT,
+    TEMPORAL_DUAL_DEPTH_EVENT_OBSERVATION_CONTRACT,
+    pooled_dual_event_channels,
     pooled_signed_event_channel,
     reproject_depth,
+    reproject_dual_event_channels,
     reproject_signed_event_channel,
 )
 from isaaclab_navrl.tasks.navigation.geometric_depth_events import DepthEventDetector
 from isaaclab_navrl.tasks.navigation.navrl_env import NavRLEnv
 from isaaclab_navrl.tasks.navigation.randomization import PolicyPerturbation, SimToRealCfg
+from isaaclab_navrl.zhang.aux import dynamic_aux_loss, ego_dynamic_sector_targets
 from isaaclab_navrl.zhang.cli import parse_train_args
 from isaaclab_navrl.zhang.config import ZhangTrainCfg
 from isaaclab_navrl.zhang.inference import ZhangInference
@@ -335,3 +339,149 @@ def test_region_pool_keeps_motion_edge_that_nearest_depth_pool_drops():
     new_pool = pooled_signed_event_channel(depth, signed, region_pool=True)
     assert (new_pool > 0).sum() > (old_pool > 0).sum()
     assert signed.shape == (1, 1, 120, 160)
+
+
+def test_dual_event_channels_preserve_simultaneous_appearance_and_disappearance():
+    depth = torch.full((1, 1, 120, 160), 6.0)
+    dual = torch.zeros((1, 2, 120, 160))
+    # Place both an appearance and a stronger disappearance inside the same 5x5 cell (0, 0).
+    dual[0, 0, 1, 1] = 0.6
+    dual[0, 1, 2, 2] = 0.9
+    pooled = pooled_dual_event_channels(depth, dual, output_size=(24, 32), region_pool=True)
+    assert pooled.shape == (1, 2, 24, 32)
+    assert float(pooled[0, 0, 0, 0]) == pytest.approx(0.6)
+    assert float(pooled[0, 1, 0, 0]) == pytest.approx(0.9)
+
+
+def test_edge_suppression_rejects_isolated_noise_and_keeps_moving_clusters():
+    pose, k = _camera()
+    detector = DepthEventDetector(48, 64, max_depth=24, edge_suppression=True)
+    bg = torch.full((1, 48, 64), 8.0)
+    detector.update(bg, pose, k, 0.0)
+    frame = bg.clone()
+    # Isolated single-pixel spike vs 4x4 moving obstacle cluster.
+    frame[0, 5, 5] = 4.0
+    frame[0, 20:24, 30:34] = 4.0
+    res = detector.update(frame, pose, k, 0.05)
+    assert not bool(res.appeared[0, 5, 5])
+    assert int(res.appeared[0, 20:24, 30:34].sum()) >= 12
+
+
+def test_v3_dual_early_conv_and_dynamic_aux_head_end_to_end(tmp_path):
+    model = ZhangPolicy()
+    model.enable_dual_depth_event_early_conv()
+    model.enable_dynamic_aux_head(num_sectors=8)
+    depth_3ch = torch.randn(4, 3, 24, 32)
+    state = torch.randn(4, 10)
+    normalizer = PolicyObservationNormalizer(enabled=True)
+    normalizer.observe(depth_3ch, state)
+    norm_depth, norm_state = normalizer.normalize(depth_3ch, state, normalizer.begin_rollout())
+    torch.testing.assert_close(norm_depth[:, 1:], depth_3ch[:, 1:])
+
+    out, hidden = model.forward_checkpointed(norm_depth, norm_state, None)
+    aux_pred = model.predict_dynamic_aux(hidden)
+    assert out.shape == (4, 6)
+    assert aux_pred.shape == (4, 8, 3)
+
+    drone_pos = torch.zeros(4, 3)
+    drone_vel = torch.tensor([[1.0, 0.0, 0.0]]).expand(4, -1)
+    heading = torch.eye(3)[None].expand(4, -1, -1)
+    obs_pos = torch.tensor([[4.0, 0.2, 0.0], [20.0, 0.0, 0.0]])
+    obs_vel = torch.tensor([[-1.0, 0.5, 0.0], [0.0, 0.0, 0.0]])
+    obs_size = torch.tensor([[0.5, 0.5, 2.0], [0.5, 0.5, 2.0]])
+    targets = ego_dynamic_sector_targets(drone_pos, drone_vel, heading, obs_pos, obs_vel, obs_size, num_sectors=8)
+    assert targets.shape == (4, 8, 3)
+    assert (targets[..., 0] > 0).any()
+    loss = out.square().mean() + 0.5 * dynamic_aux_loss(aux_pred, targets)
+    loss.backward()
+    assert model.stem[0][0].weight.grad[:, 1:].abs().sum() > 0
+    assert model.dynamic_aux_head.weight.grad.abs().sum() > 0
+
+    cfg = ZhangTrainCfg(
+        depth_event_channel=True,
+        depth_event_dual_channel=True,
+        depth_event_history_frames=4,
+        coef_dyn_aux=0.5,
+        goal_speed_profile="linear",
+    )
+    cfg.validate()
+    ckpt = tmp_path / "v3.pt"
+    torch.save(
+        {
+            "format_version": 3,
+            "method": "zhang",
+            "environment": {"observation_contract": TEMPORAL_DUAL_DEPTH_EVENT_OBSERVATION_CONTRACT},
+            "train_cfg": asdict(cfg),
+            "model_state_dict": model.state_dict(),
+            "normalizer_state_dict": normalizer.state_dict(),
+        },
+        ckpt,
+    )
+    env = SimpleNamespace(
+        num_envs=2,
+        device="cpu",
+        cfg=SimpleNamespace(
+            depth_event_channel=True,
+            depth_event_dual_channel=True,
+            depth_event_history_frames=4,
+            sim_to_real=SimpleNamespace(enabled=False, input_delay=False),
+        ),
+        zhang_parameters={
+            "max_speed": torch.full((2, 1), 3.0),
+            "margin": torch.full((2,), 0.3),
+            "thr_est_error": torch.ones((2, 1)),
+        },
+        get_zhang_observation=lambda: ObservationContext.build(
+            policy={
+                "position": torch.zeros(2, 3),
+                "velocity": torch.zeros(2, 3),
+                "quaternion": torch.tensor([[0.0, 0.0, 0.0, 1.0]]).expand(2, -1),
+                "target": torch.tensor([[8.0, 0.0, 1.0]]).expand(2, -1),
+                "depth_features": torch.zeros(2, 3, 24, 32),
+            },
+            privileged={
+                "episode_id": torch.zeros(2, dtype=torch.long),
+                "position": torch.full((2, 3), float("nan")),
+                "target": torch.full((2, 3), float("nan")),
+            },
+        ),
+    )
+    inf = ZhangInference(env, ckpt)
+    act = inf()
+    assert act.shape == (2, 3)
+    assert torch.isfinite(act).all()
+
+
+def test_dual_channel_env_observation_and_delayed_reprojection():
+    sim_cfg = SimToRealCfg(enabled=True, input_delay=True, observation_noise=False)
+    env, raw, camera_output, _ = _make_mock_env(sim_cfg=sim_cfg, history_frames=1)
+    env.cfg.depth_event_dual_channel = True
+    initial = NavRLEnv.get_zhang_observation(env)
+    assert initial.policy["depth_features"].shape == (1, 3, 24, 32)
+    assert initial.policy["depth_motion_pixels"].shape == (1, 2, 24, 32)
+    raw[:, :, 4:18, 6:22] = 3.0
+    camera_output["policy_depth"].torch = F.adaptive_max_pool2d(
+        3 / raw.clamp(0.3, 24) - 0.6, (12, 16)
+    ).permute(0, 2, 3, 1)
+    env.common_step_counter = 1
+    NavRLEnv.get_zhang_observation(env)
+    raw[:, :, 4:18, 6:22] = 2.0
+    env.common_step_counter = 2
+    delivered = NavRLEnv.get_zhang_observation(env)
+    assert delivered.policy["depth_features"][:, 1].sum() > 0
+    assert float(delivered.policy["depth_features"][:, 2].sum()) == 0.0
+
+    # Also verify direct reproject_dual_event_channels helper.
+    d = torch.full((1, 1, 24, 32), 4.0)
+    dual = torch.zeros((1, 2, 24, 32))
+    dual[:, 0, 6:12, 8:16] = 1.0
+    dual[:, 1, 12:18, 8:16] = 1.0
+    k = torch.tensor([[[16.0, 0.0, 16.0], [0.0, 16.0, 12.0], [0.0, 0.0, 1.0]]])
+    rot = torch.eye(3)[None]
+    pos0 = torch.zeros(1, 3)
+    pos1 = torch.tensor([[0.5, 0.0, 0.0]])
+    ad, kn = reproject_depth(d, k, rot, pos0, rot, pos1)
+    reproj = reproject_dual_event_channels(d, dual, k, rot, pos0, rot, pos1, ad, kn)
+    assert reproj.shape == (1, 2, 24, 32)
+    assert reproj[:, 0].sum() > 0
+    assert reproj[:, 1].sum() > 0

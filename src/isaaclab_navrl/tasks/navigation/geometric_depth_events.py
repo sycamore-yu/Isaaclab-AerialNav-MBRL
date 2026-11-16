@@ -63,20 +63,28 @@ class DepthEventBatch:
     appearance_strength: torch.Tensor
     disappearance_strength: torch.Tensor
 
-    def signed_image(self, current_pose, intrinsic, max_depth):
-        """Signed [-1,1] confidence in the CURRENT camera frame [B,1,H,W]."""
+    def dual_image(self, current_pose, intrinsic, max_depth):
+        """Dual [0,1] channels in the CURRENT camera frame [B,2,H,W]: (appeared, disappeared)."""
         count, height, width = self.appeared.shape
         grid, _, within = _project(self.disappeared_world, current_pose, intrinsic, height, width, max_depth)
         u = ((grid[..., 0] + 1) * width / 2 - 0.5).round().long().clamp(0, width - 1)
         v = ((grid[..., 1] + 1) * height / 2 - 0.5).round().long().clamp(0, height - 1)
         negative = self.appeared_world.new_zeros((count, height * width))
         negative.scatter_reduce_(
-            1, (v * width + u).reshape(count, -1),
+            1,
+            (v * width + u).reshape(count, -1),
             torch.where(self.disappeared & within, self.disappearance_strength, 0).reshape(count, -1),
-            reduce="amax", include_self=True,
+            reduce="amax",
+            include_self=True,
         )
+        positive = torch.where(self.appeared, self.appearance_strength, 0.0)
+        return torch.stack((positive, negative.reshape(count, height, width)), dim=1)
+
+    def signed_image(self, current_pose, intrinsic, max_depth):
+        """Signed [-1,1] confidence in the CURRENT camera frame [B,1,H,W]."""
+        dual = self.dual_image(current_pose, intrinsic, max_depth)
         # A nearer appearing surface wins if two events overlap in a pixel.
-        output = torch.where(self.appeared, self.appearance_strength, -negative.reshape(count, height, width))
+        output = torch.where(self.appeared, dual[:, 0], -dual[:, 1])
         return output[:, None]
 
     def sparse(self):
@@ -113,7 +121,8 @@ class DepthEventDetector:
     def __init__(
         self, height, width, *, max_depth=20.0, threshold=0.25, relative_threshold=0.01,
         match_radius=1, history_frames=1, depth_sigma=0.0, pose_position_sigma=0.0,
-        pose_rotation_sigma=0.0, sigma_multiplier=0.0,
+        pose_rotation_sigma=0.0, sigma_multiplier=0.0, edge_suppression=False,
+        edge_suppression_scale=0.0, min_cluster_pixels=1,
     ):
         if height <= 0 or width <= 0 or max_depth <= 0 or threshold < 0 or relative_threshold < 0:
             raise ValueError("Invalid depth event configuration")
@@ -121,7 +130,9 @@ class DepthEventDetector:
             raise ValueError("match_radius must be a nonnegative integer")
         if not isinstance(history_frames, int) or history_frames < 1:
             raise ValueError("history_frames must be a positive integer")
-        if min(depth_sigma, pose_position_sigma, pose_rotation_sigma, sigma_multiplier) < 0:
+        if not isinstance(min_cluster_pixels, int) or min_cluster_pixels < 1:
+            raise ValueError("min_cluster_pixels must be a positive integer")
+        if min(depth_sigma, pose_position_sigma, pose_rotation_sigma, sigma_multiplier, edge_suppression_scale) < 0:
             raise ValueError("Uncertainty parameters must be nonnegative")
         self.height, self.width = height, width
         self.max_depth = float(max_depth)
@@ -133,6 +144,8 @@ class DepthEventDetector:
         self.pose_position_sigma = pose_position_sigma
         self.pose_rotation_sigma = pose_rotation_sigma
         self.sigma_multiplier = sigma_multiplier
+        self.edge_suppression = bool(edge_suppression or edge_suppression_scale > 0)
+        self.min_cluster_pixels = 3 if (self.edge_suppression and min_cluster_pixels == 1) else min_cluster_pixels
         self._depth = self._pose = self._intrinsic = self._seen = self._next = None
         self._pixels = None
 
@@ -152,14 +165,33 @@ class DepthEventDetector:
         )
         return self.threshold + self.sigma_multiplier * sigma + self.relative_threshold * depth
 
-    def _near_min(self, depth):
+    def _near_min(self, depth, radius=None):
         # Infinity means no surface was hit within max_depth (free-space ray).
         valid = torch.isfinite(depth) & (depth > 0) & (depth < self.max_depth)
         values = torch.where(valid, depth, torch.full_like(depth, self.max_depth))
-        radius = self.match_radius
+        radius = self.match_radius if radius is None else radius
         if radius:
             return -F.max_pool2d(-values[:, None], kernel_size=2 * radius + 1, stride=1, padding=radius)[:, 0]
         return values
+
+    def _edge_aware_reference(self, depth):
+        """Suppress 1-2 px reprojection jitter across sharp static depth silhouettes."""
+        near_1 = self._near_min(depth, radius=self.match_radius)
+        if not self.edge_suppression:
+            return near_1
+        valid = torch.isfinite(depth) & (depth > 0) & (depth < self.max_depth)
+        values = torch.where(valid, depth, torch.full_like(depth, self.max_depth))
+        far_1 = F.max_pool2d(values[:, None], kernel_size=3, stride=1, padding=1)[:, 0]
+        span = (far_1 - near_1).clamp_min(0.0)
+        wide_radius = max(self.match_radius + 1, 2)
+        near_wide = self._near_min(depth, radius=wide_radius)
+        return torch.where(span > 0.75, near_wide, near_1)
+
+    def _filter_isolated(self, mask):
+        if self.min_cluster_pixels <= 1:
+            return mask
+        count = F.avg_pool2d(mask[:, None].float(), kernel_size=3, stride=1, padding=1)[:, 0] * 9.0
+        return mask & (count >= self.min_cluster_pixels - 0.1)
 
     @torch.no_grad()
     def update(self, depth, pose, intrinsic, timestamp, *, active=None):
@@ -216,11 +248,12 @@ class DepthEventDetector:
         previous_uv, current_in_previous, in_previous = _project(
             world_now, old_pose, old_intrinsic, self.height, self.width, self.max_depth
         )
-        old_near = F.grid_sample(
-            self._near_min(old_depth)[:, None], previous_uv, mode="nearest", align_corners=False
-        )[:, 0]
-        appeared = (
-            valid_now & in_previous & (current_in_previous + self._margin(current_in_previous) < old_near)
+        old_ref = self._edge_aware_reference(old_depth)
+        old_near = F.grid_sample(old_ref[:, None], previous_uv, mode="nearest", align_corners=False)[:, 0]
+        appeared = self._filter_isolated(
+            valid_now
+            & in_previous
+            & (current_in_previous + self._margin(current_in_previous) < old_near)
         )
 
         # Vacated rays: only mark an old surface if the *current* observation
@@ -228,11 +261,12 @@ class DepthEventDetector:
         current_uv, previous_in_current, in_current = _project(
             world_old, pose, intrinsic, self.height, self.width, self.max_depth
         )
-        now_near = F.grid_sample(
-            self._near_min(depth)[:, None], current_uv, mode="nearest", align_corners=False
-        )[:, 0]
-        disappeared = (
-            valid_old & in_current & (previous_in_current + self._margin(previous_in_current) < now_near)
+        now_ref = self._edge_aware_reference(depth)
+        now_near = F.grid_sample(now_ref[:, None], current_uv, mode="nearest", align_corners=False)[:, 0]
+        disappeared = self._filter_isolated(
+            valid_old
+            & in_current
+            & (previous_in_current + self._margin(previous_in_current) < now_near)
         )
 
         eligible = (active & (self._seen >= self.history_frames))[:, None, None]

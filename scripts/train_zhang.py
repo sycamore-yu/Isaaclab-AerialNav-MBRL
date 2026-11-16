@@ -142,6 +142,7 @@ def main():
         DEPTH_EVENT_OBSERVATION_CONTRACT,
         OBSERVATION_CONTRACT,
         TEMPORAL_DEPTH_EVENT_OBSERVATION_CONTRACT,
+        TEMPORAL_DUAL_DEPTH_EVENT_OBSERVATION_CONTRACT,
     )
 
     config_type = type(recipe)
@@ -166,6 +167,8 @@ def main():
     cfg.sim.device = args.device
     cfg.depth_camera_batch_size = args.camera_batch_size
     cfg.depth_event_channel = args.depth_event_channel
+    cfg.depth_event_dual_channel = args.depth_event_dual_channel
+    cfg.depth_event_edge_suppression = args.depth_event_edge_suppression
     cfg.depth_event_history_frames = args.depth_event_history_frames
     cfg.depth_event_pose_source = args.depth_event_pose_source
     cfg.configure_scene()
@@ -239,14 +242,20 @@ def main():
                 "width": cfg.scene.depth_camera.pattern_cfg.width,
                 "height": cfg.scene.depth_camera.pattern_cfg.height,
                 "batch_size": cfg.depth_camera_batch_size,
-                "policy_shape": [12, 16],
+                "policy_shape": [24, 32] if args.depth_event_dual_channel else [12, 16],
                 "event_channel": bool(args.depth_event_channel),
+                "event_dual_channel": bool(args.depth_event_dual_channel),
+                "event_edge_suppression": bool(args.depth_event_edge_suppression or args.depth_event_dual_channel),
                 "event_history_frames": args.depth_event_history_frames,
                 "event_pose_source": args.depth_event_pose_source if args.depth_event_channel else None,
                 "event_algorithm": (
-                    "temporal_bidirectional_ego_depth_consistency_v2"
-                    if args.depth_event_channel and args.depth_event_history_frames > 1
-                    else ("bidirectional_ego_depth_consistency_v1" if args.depth_event_channel else None)
+                    "temporal_dual_ego_depth_consistency_v3"
+                    if args.depth_event_dual_channel
+                    else (
+                        "temporal_bidirectional_ego_depth_consistency_v2"
+                        if args.depth_event_channel and args.depth_event_history_frames > 1
+                        else ("bidirectional_ego_depth_consistency_v1" if args.depth_event_channel else None)
+                    )
                 ),
                 "pixel_noise_std": cfg.scene.depth_camera.pixel_noise_std,
             },
@@ -256,9 +265,13 @@ def main():
                 if pointnet
                 else (
                     (
-                        TEMPORAL_DEPTH_EVENT_OBSERVATION_CONTRACT
-                        if args.depth_event_history_frames > 1
-                        else DEPTH_EVENT_OBSERVATION_CONTRACT
+                        TEMPORAL_DUAL_DEPTH_EVENT_OBSERVATION_CONTRACT
+                        if args.depth_event_dual_channel
+                        else (
+                            TEMPORAL_DEPTH_EVENT_OBSERVATION_CONTRACT
+                            if args.depth_event_history_frames > 1
+                            else DEPTH_EVENT_OBSERVATION_CONTRACT
+                        )
                     )
                     if args.depth_event_channel
                     else OBSERVATION_CONTRACT
