@@ -37,6 +37,9 @@ class ZhangPolicy(nn.Module):
         self.act = nn.LeakyReLU(0.05)
         self.dynamic_aux_head = None
         self.dynamic_aux_sectors = 0
+        self.aux_from_perception = False
+        self.kinematic_stem = None
+        self.kinematic_proj = None
         with torch.no_grad():
             self.v_proj.weight.mul_(0.5)
             self.fc.weight.mul_(0.01)
@@ -47,6 +50,19 @@ class ZhangPolicy(nn.Module):
         if not isinstance(old, nn.Conv2d) or old.in_channels != 1:
             raise ValueError("Depth-event expansion can only be applied once")
         new = nn.Conv2d(2, old.out_channels, old.kernel_size, old.stride, bias=False).to(old.weight)
+        with torch.no_grad():
+            new.weight[:, :1].copy_(old.weight)
+            new.weight[:, 1:].zero_()
+        self.stem[0] = new
+
+    def enable_depth_stack_channels(self, num_channels: int):
+        """Expand 12x16 stem input for stacked depth + delta-pose baseline; starts equal to depth_only."""
+        old = self.stem[0]
+        if not isinstance(old, nn.Conv2d) or old.in_channels != 1:
+            raise ValueError("Depth-stack expansion can only be applied once")
+        if num_channels < 2:
+            raise ValueError("Depth stack requires at least 2 channels")
+        new = nn.Conv2d(num_channels, old.out_channels, old.kernel_size, old.stride, bias=False).to(old.weight)
         with torch.no_grad():
             new.weight[:, :1].copy_(old.weight)
             new.weight[:, 1:].zero_()
@@ -68,28 +84,60 @@ class ZhangPolicy(nn.Module):
             early[0].weight[:, 1:].zero_()
         self.stem[0] = early
 
-    def enable_dynamic_aux_head(self, num_sectors: int = 8):
-        """Attach training-only ego dynamic obstacle head on recurrent hidden state."""
+    def enable_kinematic_residual_stream(self, kinematic_channels: int = 3):
+        """Keep 1x12x16 inv-depth stem intact and add zero-initialized 24x32 kinematic branch."""
+        if self.kinematic_stem is not None:
+            raise ValueError("Kinematic residual stream can only be enabled once")
+        ref = self.fc.weight
+        # Preserve sparse event/looming peaks cleanly across 24x32 -> 12x16 -> 6x8 -> 192.
+        self.kinematic_stem = nn.Sequential(
+            nn.Conv2d(kinematic_channels, 16, kernel_size=3, stride=1, padding=1, bias=False),
+            nn.LeakyReLU(0.05),
+            nn.MaxPool2d(2),
+            nn.Conv2d(16, 32, kernel_size=3, stride=1, padding=1, bias=False),
+            nn.LeakyReLU(0.05),
+            nn.MaxPool2d(2),
+            nn.Conv2d(32, 64, kernel_size=3, stride=1, bias=False),
+            nn.LeakyReLU(0.05),
+            nn.Flatten(),
+            nn.Linear(64 * 4 * 6, 192, bias=False),
+        ).to(device=ref.device, dtype=ref.dtype)
+        self.kinematic_proj = nn.Linear(192, 192, bias=False).to(device=ref.device, dtype=ref.dtype)
+        with torch.no_grad():
+            self.kinematic_proj.weight.zero_()
+
+    def enable_dynamic_aux_head(self, num_sectors: int = 8, *, from_perception: bool = False):
+        """Attach training-only ego dynamic obstacle head on hidden or perception branch."""
         if num_sectors < 1:
             raise ValueError("num_sectors must be a positive integer")
         self.dynamic_aux_sectors = int(num_sectors)
+        self.aux_from_perception = bool(from_perception)
         self.dynamic_aux_head = nn.Linear(192, self.dynamic_aux_sectors * 3).to(
             device=self.fc.weight.device, dtype=self.fc.weight.dtype
         )
 
-    def predict_dynamic_aux(self, hidden: torch.Tensor) -> torch.Tensor:
-        """Predict [N, num_sectors, 3] dynamic obstacle features from recurrent state."""
+    def predict_dynamic_aux(self, state_repr: torch.Tensor) -> torch.Tensor:
+        """Predict [N, num_sectors, 3] dynamic obstacle features from recurrent or perception embedding."""
         if self.dynamic_aux_head is None:
             raise RuntimeError("dynamic_aux_head is not enabled on this policy")
-        h = hidden if self.recurrent_model == "gru" else hidden[:, :192]
-        return self.dynamic_aux_head(self.act(h)).reshape(len(hidden), self.dynamic_aux_sectors, 3)
+        if self.aux_from_perception:
+            emb = state_repr
+        else:
+            emb = state_repr if self.recurrent_model == "gru" else state_repr[:, :192]
+        return self.dynamic_aux_head(self.act(emb)).reshape(len(emb), self.dynamic_aux_sectors, 3)
 
-    def forward(self, depth_features, state, hidden=None):
-        """Return six outputs and complete [N, recurrent_state_size] memory.
+    def _encode_visual(self, depth_features: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor | None]:
+        if self.kinematic_stem is None:
+            return self.stem(depth_features), None
+        # ch0 in [N, 4, 24, 32] pools identically to 12x16 because 24x32 -> 12x16 is exact 2x2 max-pool.
+        base_depth = nn.functional.adaptive_max_pool2d(depth_features[:, :1], (12, 16))
+        base_embed = self.stem(base_depth)
+        kin_embed = self.kinematic_stem(depth_features[:, 1:])
+        return base_embed + self.kinematic_proj(kin_embed), kin_embed + base_embed.detach()
 
-        GRU memory is h; SRU memory packs [h, c]. Only h feeds the output head.
-        """
-        feature = self.act(self.stem(depth_features) + self.v_proj(state))
+    def _step_recurrent(self, depth_features, state, hidden):
+        visual_embed, perception_embed = self._encode_visual(depth_features)
+        feature = self.act(visual_embed + self.v_proj(state))
         if self.recurrent_model == "gru":
             h = self.gru(feature, hidden)
             hidden = h
@@ -99,11 +147,29 @@ class ZhangPolicy(nn.Module):
             h, c = self.sru(feature, *hidden.split(192, dim=-1))
             # Pack both states so existing per-environment reset/detach/probes cover the full memory.
             hidden = torch.cat((h, c), dim=-1)
-        return self.fc(self.act(h)), hidden
+        return self.fc(self.act(h)), hidden, perception_embed
+
+    def forward(self, depth_features, state, hidden=None):
+        """Return six outputs and complete [N, recurrent_state_size] memory.
+
+        GRU memory is h; SRU memory packs [h, c]. Only h feeds the output head.
+        """
+        output, hidden, _ = self._step_recurrent(depth_features, state, hidden)
+        return output, hidden
+
+    def forward_with_aux(self, depth_features, state, hidden=None):
+        """Return (action_output, hidden, aux_input) for decoupled aux supervision."""
+        output, hidden, perception_embed = self._step_recurrent(depth_features, state, hidden)
+        aux_input = perception_embed if (self.aux_from_perception and perception_embed is not None) else hidden
+        return output, hidden, aux_input
 
     def forward_checkpointed(self, depth_features, state, hidden):
         """Recompute neural activations during backward; never replay the physical simulation."""
         return checkpoint(self, depth_features, state, hidden, use_reentrant=False)
+
+    def forward_checkpointed_with_aux(self, depth_features, state, hidden):
+        """Checkpointed forward returning (output, hidden, aux_input)."""
+        return checkpoint(self.forward_with_aux, depth_features, state, hidden, use_reentrant=False)
 
 
 def quaternion_matrix(quaternion):

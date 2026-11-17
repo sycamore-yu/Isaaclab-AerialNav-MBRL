@@ -62,11 +62,21 @@ TRAIN_ARG_TYPES = {
     "avoidance_gradient": str,
     "depth_event_channel": parse_binary_flag,
     "depth_event_dual_channel": parse_binary_flag,
+    "depth_event_kinematic_field": parse_binary_flag,
+    "depth_event_naive_diff": parse_binary_flag,
     "depth_event_edge_suppression": parse_binary_flag,
     "depth_event_history_frames": int,
     "depth_event_pose_source": str,
+    "depth_stack_frames": int,
     "coef_dyn_aux": float,
     "dyn_aux_sectors": int,
+    "aux_from_perception": parse_binary_flag,
+    "aux_inv_ttc": parse_binary_flag,
+    "aux_survival_gate_s": float,
+    "smooth_approach_gate": parse_binary_flag,
+    "temporal_yielding_lambda": float,
+    "temporal_yielding_floor": float,
+    "active_yaw_alignment": float,
     "approach_mode": str,
     "lateral_avoidance": float,
     "risk_speed_floor": float,
@@ -143,9 +153,9 @@ def parse_train_args(tokens: list[str]) -> dict[str, TrainArgValue]:
         elif key == "td_lambda":
             if not 0 <= value <= 1:
                 raise ValueError("td_lambda must be in [0, 1]")
-        elif key in ("grad_decay", "critic_target_tau", "risk_speed_floor"):
+        elif key in ("grad_decay", "critic_target_tau", "risk_speed_floor", "temporal_yielding_floor"):
             if not 0 < value <= 1:
-                raise ValueError("grad_decay must be in (0, 1]")
+                raise ValueError(f"{option} must be in (0, 1]")
         elif key.startswith("coef_") or key in (
             "boundary_margin",
             "ahac_risk_clearance",
@@ -155,6 +165,9 @@ def parse_train_args(tokens: list[str]) -> dict[str, TrainArgValue]:
             "lateral_avoidance",
             "num_static_obstacles",
             "num_dynamic_obstacles",
+            "aux_survival_gate_s",
+            "temporal_yielding_lambda",
+            "active_yaw_alignment",
         ):
             if value < 0:
                 raise ValueError(f"{option} must be nonnegative")

@@ -140,7 +140,9 @@ def main():
 
     from isaaclab_navrl.tasks.navigation.depth_history import (
         DEPTH_EVENT_OBSERVATION_CONTRACT,
+        KINEMATIC_EVENT_FIELD_OBSERVATION_CONTRACT,
         OBSERVATION_CONTRACT,
+        STACK_DEPTH_POSE_OBSERVATION_CONTRACT,
         TEMPORAL_DEPTH_EVENT_OBSERVATION_CONTRACT,
         TEMPORAL_DUAL_DEPTH_EVENT_OBSERVATION_CONTRACT,
     )
@@ -168,9 +170,13 @@ def main():
     cfg.depth_camera_batch_size = args.camera_batch_size
     cfg.depth_event_channel = args.depth_event_channel
     cfg.depth_event_dual_channel = args.depth_event_dual_channel
+    cfg.depth_event_kinematic_field = args.depth_event_kinematic_field
+    cfg.depth_event_naive_diff = args.depth_event_naive_diff
     cfg.depth_event_edge_suppression = args.depth_event_edge_suppression
     cfg.depth_event_history_frames = args.depth_event_history_frames
     cfg.depth_event_pose_source = args.depth_event_pose_source
+    cfg.depth_stack_frames = args.depth_stack_frames
+    cfg.active_yaw_alignment = args.active_yaw_alignment
     cfg.configure_scene()
     train_values = {
         field.name: getattr(args, field.name)
@@ -242,19 +248,32 @@ def main():
                 "width": cfg.scene.depth_camera.pattern_cfg.width,
                 "height": cfg.scene.depth_camera.pattern_cfg.height,
                 "batch_size": cfg.depth_camera_batch_size,
-                "policy_shape": [24, 32] if args.depth_event_dual_channel else [12, 16],
+                "policy_shape": [24, 32]
+                if (args.depth_event_dual_channel or args.depth_event_kinematic_field)
+                else [12, 16],
                 "event_channel": bool(args.depth_event_channel),
                 "event_dual_channel": bool(args.depth_event_dual_channel),
+                "event_kinematic_field": bool(args.depth_event_kinematic_field),
+                "event_naive_diff": bool(args.depth_event_naive_diff),
                 "event_edge_suppression": bool(args.depth_event_edge_suppression or args.depth_event_dual_channel),
                 "event_history_frames": args.depth_event_history_frames,
                 "event_pose_source": args.depth_event_pose_source if args.depth_event_channel else None,
+                "depth_stack_frames": args.depth_stack_frames,
                 "event_algorithm": (
-                    "temporal_dual_ego_depth_consistency_v3"
-                    if args.depth_event_dual_channel
+                    "ego_compensated_kinematic_event_field_v4"
+                    if args.depth_event_kinematic_field
                     else (
-                        "temporal_bidirectional_ego_depth_consistency_v2"
-                        if args.depth_event_channel and args.depth_event_history_frames > 1
-                        else ("bidirectional_ego_depth_consistency_v1" if args.depth_event_channel else None)
+                        "naive_reprojection_diff_baseline"
+                        if args.depth_event_naive_diff
+                        else (
+                            "temporal_dual_ego_depth_consistency_v3"
+                            if args.depth_event_dual_channel
+                            else (
+                                "temporal_bidirectional_ego_depth_consistency_v2"
+                                if args.depth_event_channel and args.depth_event_history_frames > 1
+                                else ("bidirectional_ego_depth_consistency_v1" if args.depth_event_channel else None)
+                            )
+                        )
                     )
                 ),
                 "pixel_noise_std": cfg.scene.depth_camera.pixel_noise_std,
@@ -265,16 +284,24 @@ def main():
                 if pointnet
                 else (
                     (
-                        TEMPORAL_DUAL_DEPTH_EVENT_OBSERVATION_CONTRACT
-                        if args.depth_event_dual_channel
+                        KINEMATIC_EVENT_FIELD_OBSERVATION_CONTRACT
+                        if args.depth_event_kinematic_field
                         else (
-                            TEMPORAL_DEPTH_EVENT_OBSERVATION_CONTRACT
-                            if args.depth_event_history_frames > 1
-                            else DEPTH_EVENT_OBSERVATION_CONTRACT
+                            TEMPORAL_DUAL_DEPTH_EVENT_OBSERVATION_CONTRACT
+                            if args.depth_event_dual_channel
+                            else (
+                                TEMPORAL_DEPTH_EVENT_OBSERVATION_CONTRACT
+                                if args.depth_event_history_frames > 1
+                                else DEPTH_EVENT_OBSERVATION_CONTRACT
+                            )
                         )
                     )
                     if args.depth_event_channel
-                    else OBSERVATION_CONTRACT
+                    else (
+                        STACK_DEPTH_POSE_OBSERVATION_CONTRACT
+                        if args.depth_stack_frames > 1
+                        else OBSERVATION_CONTRACT
+                    )
                 )
             ),
             "episode_end_contract": EPISODE_END_CONTRACT,

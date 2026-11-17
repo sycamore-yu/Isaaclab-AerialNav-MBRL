@@ -7,6 +7,8 @@ OBSERVATION_CONTRACT = "delayed_depth_current_odometry_ego_reprojection_v1"
 DEPTH_EVENT_OBSERVATION_CONTRACT = "delayed_depth_signed_event_ego_reprojection_v1"
 TEMPORAL_DEPTH_EVENT_OBSERVATION_CONTRACT = "delayed_depth_temporal_signed_event_region_pool_v2"
 TEMPORAL_DUAL_DEPTH_EVENT_OBSERVATION_CONTRACT = "delayed_depth_temporal_dual_event_early_conv_v3"
+KINEMATIC_EVENT_FIELD_OBSERVATION_CONTRACT = "delayed_depth_kinematic_event_field_zero_init_v4"
+STACK_DEPTH_POSE_OBSERVATION_CONTRACT = "delayed_depth_4frame_pose_stack_v1"
 
 
 @torch.no_grad()
@@ -117,14 +119,21 @@ def pooled_signed_event_channel(depth, signed, known=None, *, region_pool=False)
 
 
 @torch.no_grad()
+def pooled_event_channels(depth, events, known=None, *, output_size=(24, 32), region_pool=True):
+    """Pool full-resolution multi-channel event/kinematic maps [N,C,H,W] -> [N,C,*output_size]."""
+    num_channels = events.shape[1]
+    inverse, events = _prepare_inverse_and_events(depth, events.clamp_min(0), known, num_channels)
+    if region_pool:
+        return F.adaptive_max_pool2d(events, output_size)
+    _, index = F.adaptive_max_pool2d(inverse, output_size, return_indices=True)
+    flat_index = index.flatten(2).expand(-1, num_channels, -1)
+    return events.flatten(2).gather(2, flat_index).reshape(depth.shape[0], num_channels, *output_size)
+
+
+@torch.no_grad()
 def pooled_dual_event_channels(depth, dual, known=None, *, output_size=(24, 32), region_pool=True):
     """Pool full-resolution (appeared, disappeared) channels [N,2,H,W] without sign overwrite."""
-    inverse, dual = _prepare_inverse_and_events(depth, dual.clamp_min(0), known, 2)
-    if region_pool:
-        return F.adaptive_max_pool2d(dual, output_size)
-    _, index = F.adaptive_max_pool2d(inverse, output_size, return_indices=True)
-    flat_index = index.flatten(2).expand(-1, 2, -1)
-    return dual.flatten(2).gather(2, flat_index).reshape(depth.shape[0], 2, *output_size)
+    return pooled_event_channels(depth, dual, known, output_size=output_size, region_pool=region_pool)
 
 
 def _reproject_masked_event(
@@ -163,24 +172,37 @@ def reproject_signed_event_channel(
 
 
 @torch.no_grad()
+def reproject_event_channels(
+    delivered_depth, delivered_events, intrinsic, source_rotation, source_position, target_rotation, target_position,
+    aligned_depth, aligned_known,
+):
+    """Transport delayed [N,C,H,W] nonnegative event/kinematic channels with their captured depth."""
+    if (
+        delivered_events.ndim != 4
+        or delivered_events.shape[0] != delivered_depth.shape[0]
+        or delivered_events.shape[2:] != delivered_depth.shape[2:]
+    ):
+        raise ValueError("Delayed events must have shape [N,C,H,W] matching delivered_depth")
+    channels = [
+        _reproject_masked_event(
+            delivered_events[:, ch : ch + 1] > 0.05, delivered_depth, intrinsic,
+            source_rotation, source_position, target_rotation, target_position,
+            aligned_depth, aligned_known,
+        )
+        for ch in range(delivered_events.shape[1])
+    ]
+    return torch.cat(channels, dim=1)
+
+
+@torch.no_grad()
 def reproject_dual_event_channels(
     delivered_depth, delivered_dual, intrinsic, source_rotation, source_position, target_rotation, target_position,
     aligned_depth, aligned_known,
 ):
     """Transport delayed (appeared, disappeared) [N,2,H,W] channels with their captured depth."""
-    if (
-        delivered_dual.ndim != 4
-        or delivered_dual.shape[1] != 2
-        or delivered_dual.shape[0] != delivered_depth.shape[0]
-        or delivered_dual.shape[2:] != delivered_depth.shape[2:]
-    ):
+    if delivered_dual.shape[1] != 2:
         raise ValueError("Delayed dual event must have shape [N,2,H,W] matching delivered_depth")
-    channels = [
-        _reproject_masked_event(
-            delivered_dual[:, ch : ch + 1] > 0, delivered_depth, intrinsic,
-            source_rotation, source_position, target_rotation, target_position,
-            aligned_depth, aligned_known,
-        )
-        for ch in (0, 1)
-    ]
-    return torch.cat(channels, dim=1)
+    return reproject_event_channels(
+        delivered_depth, delivered_dual, intrinsic, source_rotation, source_position,
+        target_rotation, target_position, aligned_depth, aligned_known,
+    )

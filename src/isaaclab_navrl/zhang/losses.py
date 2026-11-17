@@ -282,7 +282,12 @@ def zhang_transition_costs(history, cfg, velocity_history=None):
         else distance
     )
     # Ten source look-ahead points include both endpoints: dt_sample = policy_dt / 9.
-    approach = (-distance.diff(dim=2) * ((distance.shape[2] - 1) / cfg.policy_dt)).clamp_min(1).detach()
+    raw_closing = -distance.diff(dim=2) * ((distance.shape[2] - 1) / cfg.policy_dt)
+    if getattr(cfg, "smooth_approach_gate", False):
+        beta = 4.0
+        approach = (F.softplus(beta * raw_closing) / beta + 0.05).detach()
+    else:
+        approach = raw_closing.clamp_min(1).detach()
     lateral_cost = 0.0
     if cfg.approach_mode == "relative":
         closing, lateral_cost = relative_avoidance(
@@ -346,6 +351,7 @@ def zhang_transition_costs(history, cfg, velocity_history=None):
     if cfg.approach_mode == "relative":
         losses["relative_closing_mps"] = closing.detach().mean()
         losses["lateral_avoidance"] = lateral_cost.detach().mean()
+    if history.get("target_speed_scale"):
         losses["target_speed_scale"] = torch.stack(history["target_speed_scale"]).mean()
     # Includes an exactly-W terminal completion when the source omitted it.
     losses["velocity_short_terminal_samples"] = short_samples.detach()

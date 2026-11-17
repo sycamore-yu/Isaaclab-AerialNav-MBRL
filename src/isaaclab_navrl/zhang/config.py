@@ -33,11 +33,21 @@ class ZhangTrainCfg:
     perception: Literal["depth"] = "depth"
     depth_event_channel: bool = False
     depth_event_dual_channel: bool = False
+    depth_event_kinematic_field: bool = False
+    depth_event_naive_diff: bool = False
     depth_event_edge_suppression: bool = False
     depth_event_history_frames: int = 1
     depth_event_pose_source: Literal["estimated", "truth"] = "estimated"
+    depth_stack_frames: int = 1
     coef_dyn_aux: float = 0.0
     dyn_aux_sectors: int = 8
+    aux_from_perception: bool = False
+    aux_inv_ttc: bool = False
+    aux_survival_gate_s: float = 0.0
+    smooth_approach_gate: bool = False
+    temporal_yielding_lambda: float = 0.0
+    temporal_yielding_floor: float = 0.2
+    active_yaw_alignment: float = 0.0
     approach_mode: Literal["finite_difference", "relative"] = "finite_difference"
     lateral_avoidance: float = 0.0
     risk_speed_floor: float = 1.0
@@ -146,14 +156,37 @@ class ZhangTrainCfg:
             raise ValueError("depth_event_channel must be boolean")
         if type(self.depth_event_dual_channel) is not bool:
             raise ValueError("depth_event_dual_channel must be boolean")
+        if type(self.depth_event_kinematic_field) is not bool:
+            raise ValueError("depth_event_kinematic_field must be boolean")
+        if type(self.depth_event_naive_diff) is not bool:
+            raise ValueError("depth_event_naive_diff must be boolean")
         if type(self.depth_event_edge_suppression) is not bool:
             raise ValueError("depth_event_edge_suppression must be boolean")
-        if self.depth_event_dual_channel and not self.depth_event_channel:
-            raise ValueError("depth_event_dual_channel requires depth_event_channel")
+        if any(
+            type(v) is not bool
+            for v in (self.aux_from_perception, self.aux_inv_ttc, self.smooth_approach_gate)
+        ):
+            raise ValueError("aux_from_perception, aux_inv_ttc, smooth_approach_gate must be boolean")
+        if (self.depth_event_dual_channel or self.depth_event_kinematic_field or self.depth_event_naive_diff) and not self.depth_event_channel:
+            raise ValueError("Event field modes require depth_event_channel")
+        if self.depth_event_kinematic_field and self.depth_event_dual_channel:
+            raise ValueError("Select either depth_event_kinematic_field or depth_event_dual_channel")
+        if type(self.depth_stack_frames) is not int or self.depth_stack_frames < 1:
+            raise ValueError("depth_stack_frames must be a positive integer")
+        if self.depth_stack_frames > 1 and self.depth_event_channel:
+            raise ValueError("depth_stack_frames > 1 cannot be combined with depth_event_channel")
         if not math.isfinite(self.coef_dyn_aux) or self.coef_dyn_aux < 0:
             raise ValueError("coef_dyn_aux must be finite and nonnegative")
         if type(self.dyn_aux_sectors) is not int or self.dyn_aux_sectors < 1:
             raise ValueError("dyn_aux_sectors must be a positive integer")
+        if not math.isfinite(self.aux_survival_gate_s) or self.aux_survival_gate_s < 0:
+            raise ValueError("aux_survival_gate_s must be finite and nonnegative")
+        if not math.isfinite(self.temporal_yielding_lambda) or self.temporal_yielding_lambda < 0:
+            raise ValueError("temporal_yielding_lambda must be finite and nonnegative")
+        if not math.isfinite(self.temporal_yielding_floor) or not 0 < self.temporal_yielding_floor <= 1:
+            raise ValueError("temporal_yielding_floor must be in (0, 1]")
+        if not math.isfinite(self.active_yaw_alignment) or self.active_yaw_alignment < 0:
+            raise ValueError("active_yaw_alignment must be finite and nonnegative")
         if type(self.depth_event_history_frames) is not int or self.depth_event_history_frames < 1:
             raise ValueError("depth_event_history_frames must be a positive integer")
         if self.depth_event_pose_source not in ("estimated", "truth"):

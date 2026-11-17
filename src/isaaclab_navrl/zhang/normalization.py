@@ -100,8 +100,8 @@ class PolicyObservationNormalizer(nn.Module):
 
     @staticmethod
     def _check_shapes(depth: torch.Tensor, state: torch.Tensor) -> None:
-        if depth.ndim != 4 or depth.shape[1] not in (1, 2, 3) or state.shape != (depth.shape[0], 10):
-            raise ValueError("Expected pooled depth [N,1|2|3,H,W] and policy state [N,10]")
+        if depth.ndim != 4 or depth.shape[1] < 1 or state.shape != (depth.shape[0], 10):
+            raise ValueError("Expected pooled depth [N,C>=1,H,W] and policy state [N,10]")
 
     @torch.no_grad()
     def begin_rollout(self) -> ObservationSnapshot | None:
