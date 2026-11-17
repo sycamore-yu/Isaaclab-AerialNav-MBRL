@@ -62,9 +62,18 @@ class DepthEventBatch:
     timestamp: torch.Tensor
     appearance_strength: torch.Tensor
     disappearance_strength: torch.Tensor
+    _precomputed_dual: torch.Tensor | None = None
+    _pose_ref: torch.Tensor | None = None
+    _intrinsic_ref: torch.Tensor | None = None
 
     def dual_image(self, current_pose, intrinsic, max_depth):
         """Dual [0,1] channels in the CURRENT camera frame [B,2,H,W]: (appeared, disappeared)."""
+        if (
+            self._precomputed_dual is not None
+            and current_pose is self._pose_ref
+            and intrinsic is self._intrinsic_ref
+        ):
+            return self._precomputed_dual
         count, height, width = self.appeared.shape
         grid, _, within = _project(self.disappeared_world, current_pose, intrinsic, height, width, max_depth)
         u = ((grid[..., 0] + 1) * width / 2 - 0.5).round().long().clamp(0, width - 1)
@@ -148,6 +157,7 @@ class DepthEventDetector:
         self.min_cluster_pixels = 3 if (self.edge_suppression and min_cluster_pixels == 1) else min_cluster_pixels
         self._depth = self._pose = self._intrinsic = self._seen = self._next = None
         self._pixels = None
+        self._warp_workspace = None
 
     def reset(self, env_ids=None):
         if self._seen is not None:
@@ -229,6 +239,47 @@ class DepthEventDetector:
         old_depth = self._depth[rows, self._next]
         old_pose = self._pose[rows, self._next]
         old_intrinsic = self._intrinsic[rows, self._next]
+
+        if depth.is_cuda and depth.dtype == torch.float32:
+            if (
+                self._warp_workspace is None
+                or self._warp_workspace.count != count
+                or self._warp_workspace.device != depth.device
+            ):
+                from .geometric_depth_events_warp import WarpDepthEventWorkspace
+
+                self._warp_workspace = WarpDepthEventWorkspace(count, self.height, self.width, depth.device)
+            base_var = 2.0 * self.depth_sigma**2 + self.pose_position_sigma**2
+            app_mask, dis_mask, world_now, world_old, app_str, dis_str, dual = self._warp_workspace.run(
+                depth=depth,
+                old_depth=old_depth,
+                pose=pose,
+                old_pose=old_pose,
+                intrinsic=intrinsic,
+                old_intrinsic=old_intrinsic,
+                active_u8=active.to(torch.uint8),
+                seen=self._seen,
+                history_frames=self.history_frames,
+                match_radius=self.match_radius,
+                edge_suppression=self.edge_suppression,
+                min_cluster_pixels=self.min_cluster_pixels,
+                max_depth=self.max_depth,
+                threshold=self.threshold,
+                relative_threshold=self.relative_threshold,
+                sigma_multiplier=self.sigma_multiplier,
+                base_var=base_var,
+                pose_rot_sigma=self.pose_rotation_sigma,
+            )
+            result = DepthEventBatch(
+                app_mask, dis_mask, world_now, world_old, time.clone(),
+                app_str, dis_str, _precomputed_dual=dual, _pose_ref=pose, _intrinsic_ref=intrinsic,
+            )
+            self._depth[rows, self._next] = torch.where(active[:, None, None], depth, old_depth)
+            self._pose[rows, self._next] = torch.where(active[:, None], pose, old_pose)
+            self._intrinsic[rows, self._next] = torch.where(active[:, None, None], intrinsic, old_intrinsic)
+            self._next = (self._next + active.long()) % self.history_frames
+            self._seen = (self._seen + active.long()).clamp_max(self.history_frames)
+            return result
 
         if self._pixels is None:
             v, u = torch.meshgrid(

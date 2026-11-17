@@ -69,3 +69,8 @@ Prioritize accuracy, independent judgment, practical usefulness, and respect for
 - Up to four concurrent tuning training/evaluation workers are authorized. Admit them according to measured memory headroom, preserving the existing total-start budget and deadline.
 - Do not pause other sessions for benchmarking or resume paused trials to fill slots. Record shared GPU contention; do not claim isolated speedups from shared-GPU measurements.
 - Adaptive proposals use terminal history; pending configurations are unmeasured. Baseline confirmation training may run early. Keep independent confirmation evaluations blinded until candidate selection is durably frozen.
+
+## Per-step mechanism infra acceleration
+
+- Follow `docs/NAVIGATION_ARCHITECTURE.md` ("Warp buffers and CUDA graphs cover fixed-shape control and task calculations"): whenever adding a new per-step, per-pixel, or per-obstacle mechanism (sensors, event/feature extractors, geometry queries, auxiliary supervision targets, or losses), implement the CUDA hot path as fused `@wp.kernel`s over pre-allocated, reusable fixed-shape GPU workspaces (`wp.from_torch` zero-copy) instead of launching unfused PyTorch tensor chains that allocate large `[B, H, W, C]` or `[B, M]` intermediates every rollout step.
+- Retain a clean PyTorch CPU/non-float32 reference implementation, verify exact numerical equivalence (`torch.testing.assert_close`) between the Warp fast path and PyTorch reference, and record a microbenchmark (latency in ms/step and peak VRAM) before launching multi-hour training or batch ablations.
