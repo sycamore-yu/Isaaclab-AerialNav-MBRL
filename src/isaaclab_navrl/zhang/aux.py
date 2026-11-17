@@ -179,7 +179,8 @@ def _forward_closing_risk_kernel(
                 norm_r = wp.max(wp.sqrt(rx * rx + ry * ry + rz * rz), 1.0e-3)
                 v_close = wp.max(-(rx * rvx_w + ry * rvy_w + rz * rvz_w) / norm_r, 0.0)
                 if v_close > 0.0:
-                    risk_m = (v_close / wp.max(surf_gap, 0.3)) * wp.exp(-wp.max(surf_gap, 0.0) / 2.5)
+                    inv_ttc = v_close / wp.max(surf_gap, 0.3)
+                    risk_m = wp.max(inv_ttc - 0.35, 0.0) * wp.exp(-wp.max(surf_gap, 0.0) / 3.0)
                     if risk_m > best:
                         best = risk_m
     out_risk[n] = best
@@ -535,7 +536,8 @@ def forward_closing_risk(
     in_cone = z_ok & (rel_ego[..., 0] > -rad_xy[None, :]) & (angle.abs() <= half_fov_rad) & (surf_gap < max_range_m)
     norm_r = rel_world.norm(dim=-1).clamp_min(1e-3)
     v_close = (-(rel_world * rel_vel_world).sum(dim=-1) / norm_r).clamp_min(0.0)
-    risk_m = (v_close / surf_gap.clamp_min(0.3)) * (-surf_gap.clamp_min(0.0) / 2.5).exp()
+    inv_ttc = v_close / surf_gap.clamp_min(0.3)
+    risk_m = (inv_ttc - 0.35).clamp_min(0.0) * (-surf_gap.clamp_min(0.0) / 3.0).exp()
     return torch.where(in_cone, risk_m, 0.0).amax(dim=-1)
 
 

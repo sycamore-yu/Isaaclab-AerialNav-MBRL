@@ -105,6 +105,7 @@ class ZhangPolicy(nn.Module):
         self.kinematic_proj = nn.Linear(192, 192, bias=False).to(device=ref.device, dtype=ref.dtype)
         with torch.no_grad():
             self.kinematic_proj.weight.zero_()
+        self.register_buffer("kinematic_residual_scale", torch.ones((), device=ref.device, dtype=ref.dtype))
 
     def enable_dynamic_aux_head(self, num_sectors: int = 8, *, from_perception: bool = False):
         """Attach training-only ego dynamic obstacle head on hidden or perception branch."""
@@ -133,7 +134,7 @@ class ZhangPolicy(nn.Module):
         base_depth = nn.functional.adaptive_max_pool2d(depth_features[:, :1], (12, 16))
         base_embed = self.stem(base_depth)
         kin_embed = self.kinematic_stem(depth_features[:, 1:])
-        return base_embed + self.kinematic_proj(kin_embed), kin_embed + base_embed.detach()
+        return base_embed + self.kinematic_residual_scale * self.kinematic_proj(kin_embed), kin_embed + base_embed.detach()
 
     def _step_recurrent(self, depth_features, state, hidden):
         visual_embed, perception_embed = self._encode_visual(depth_features)

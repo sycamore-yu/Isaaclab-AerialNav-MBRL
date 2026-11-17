@@ -35,11 +35,11 @@ COMMON_ARGS=(
   --dyn_aux_sectors 6
   --aux_from_perception 1
   --aux_inv_ttc 1
-  --aux_survival_gate_s 5.0
+  --aux_survival_gate_s 3.5
   --smooth_approach_gate 1
-  --temporal_yielding_lambda 1.5
-  --temporal_yielding_floor 0.2
-  --active_yaw_alignment 1.0
+  --temporal_yielding_lambda 1.0
+  --temporal_yielding_floor 0.3
+  --active_yaw_alignment 0.0
   --geometry_backend curobo_v2
   --timing unified_20hz
   --algorithm bptt

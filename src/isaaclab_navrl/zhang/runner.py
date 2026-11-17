@@ -178,6 +178,8 @@ class ZhangTrainer:
         self.model = self.model_type(cfg.recurrent_model).to(env.device)
         if cfg.depth_event_kinematic_field:
             self.model.enable_kinematic_residual_stream(3)
+            if cfg.aux_survival_gate_s > 0.0:
+                self.model.kinematic_residual_scale.zero_()
             self.observation_contract = KINEMATIC_EVENT_FIELD_OBSERVATION_CONTRACT
             self.checkpoint_observation_contracts = (self.observation_contract,)
         elif cfg.depth_event_dual_channel:
@@ -416,6 +418,8 @@ class ZhangTrainer:
             if self.cfg.max_iterations is None and not payload["curriculum"]["stage_passed"]:
                 raise ValueError("Formal training requires a checkpoint that passed the preceding stage")
         self.model.load_state_dict(payload["model_state_dict"], strict=True)
+        if not resume and self.cfg.aux_survival_gate_s > 0.0:
+            self._ema_survival_s = 2.0 * self.cfg.aux_survival_gate_s
         self.optimizer.load_state_dict(payload["optimizer_state_dict"])
         self.normalizer.load_state_dict(payload["normalizer_state_dict"], strict=True)
         self._pending_critic_state = payload["actor_critic_state_dict"]
@@ -1172,19 +1176,24 @@ class ZhangTrainer:
                 )
                 if history["done_survival_s"]:
                     batch_surv = float(torch.cat(history["done_survival_s"]).mean())
-                    self._ema_survival_s = batch_surv if self._ema_survival_s <= 0.0 else 0.7 * self._ema_survival_s + 0.3 * batch_surv
+                    self._ema_survival_s = (
+                        0.1 * batch_surv if self._ema_survival_s <= 0.0 else 0.9 * self._ema_survival_s + 0.1 * batch_surv
+                    )
                 else:
                     self._ema_survival_s = max(self._ema_survival_s, rollout_steps * self.cfg.policy_dt)
+                if self.cfg.aux_survival_gate_s > 0.0:
+                    aux_gate = max(
+                        0.0,
+                        min(1.0, (self._ema_survival_s - self.cfg.aux_survival_gate_s) / self.cfg.aux_survival_gate_s),
+                    )
+                else:
+                    aux_gate = 1.0
+                if hasattr(self.model, "kinematic_residual_scale") and self.cfg.depth_event_kinematic_field:
+                    self.model.kinematic_residual_scale.fill_(aux_gate)
                 if self.cfg.coef_dyn_aux > 0:
                     dyn_aux_raw = dynamic_aux_loss(
                         torch.stack(history["dyn_aux_pred"]), torch.stack(history["dyn_aux_target"])
                     )
-                    if self.cfg.aux_survival_gate_s > 0.0:
-                        aux_gate = max(
-                            0.0, min(1.0, (self._ema_survival_s - self.cfg.aux_survival_gate_s) / self.cfg.aux_survival_gate_s)
-                        )
-                    else:
-                        aux_gate = 1.0
                     losses["aux_survival_gate"] = dyn_aux_raw.new_tensor(aux_gate)
                     losses["dynamic_aux"] = (self.cfg.coef_dyn_aux * aux_gate) * dyn_aux_raw
                     losses["total"] = losses["total"] + losses["dynamic_aux"]

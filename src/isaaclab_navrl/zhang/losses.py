@@ -285,7 +285,11 @@ def zhang_transition_costs(history, cfg, velocity_history=None):
     raw_closing = -distance.diff(dim=2) * ((distance.shape[2] - 1) / cfg.policy_dt)
     if getattr(cfg, "smooth_approach_gate", False):
         beta = 4.0
-        approach = (F.softplus(beta * raw_closing) / beta + 0.05).detach()
+        approach = (
+            0.15
+            + 0.85 * torch.sigmoid(beta * (raw_closing + 0.5))
+            + F.softplus(beta * (raw_closing - 0.85)) / beta
+        ).detach()
     else:
         approach = raw_closing.clamp_min(1).detach()
     lateral_cost = 0.0

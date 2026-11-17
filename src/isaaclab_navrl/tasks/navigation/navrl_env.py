@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 import torch
 from isaaclab.utils.math import (
     convert_camera_frame_orientation_convention,
@@ -114,6 +116,16 @@ class NavRLEnv(_NavigationWarpLoop):
                 and not kinematic_field
                 and not naive_diff
             )
+            noise_on = bool(cfg.sim_to_real.enabled and cfg.sim_to_real.observation_noise)
+            k_depth_sigma = math.hypot(0.02, float(cfg.sim_to_real.depth_std)) if noise_on else 0.02
+            k_pos_sigma = (
+                math.hypot(0.01, math.sqrt(2.0) * float(cfg.sim_to_real.position_std)) if noise_on else 0.01
+            )
+            k_rot_sigma = (
+                math.hypot(0.002, math.sqrt(2.0) * math.radians(float(cfg.sim_to_real.attitude_std_deg)))
+                if noise_on
+                else 0.002
+            )
             self.depth_event_detector = DepthEventDetector(
                 shape.height,
                 shape.width,
@@ -122,10 +134,11 @@ class NavRLEnv(_NavigationWarpLoop):
                 relative_threshold=0.01 if (naive_diff or not temporal) else 0.002,
                 match_radius=0 if naive_diff else 1,
                 history_frames=history_frames,
-                depth_sigma=0.0 if (naive_diff or not temporal) else 0.02,
-                pose_position_sigma=0.0 if (naive_diff or not temporal) else 0.01,
-                pose_rotation_sigma=0.0 if (naive_diff or not temporal) else 0.002,
-                sigma_multiplier=0.0 if (naive_diff or not temporal) else 2.5,
+                depth_sigma=k_depth_sigma if kinematic_field else (0.0 if (naive_diff or not temporal) else 0.02),
+                pose_position_sigma=k_pos_sigma if kinematic_field else (0.0 if (naive_diff or not temporal) else 0.01),
+                pose_rotation_sigma=k_rot_sigma if kinematic_field else (0.0 if (naive_diff or not temporal) else 0.002),
+                sigma_multiplier=2.25 if kinematic_field else (0.0 if (naive_diff or not temporal) else 2.5),
+                min_cluster_pixels=2 if kinematic_field else 1,
                 edge_suppression=edge_suppression,
                 kinematic_field=kinematic_field,
                 step_dt=self.step_dt,

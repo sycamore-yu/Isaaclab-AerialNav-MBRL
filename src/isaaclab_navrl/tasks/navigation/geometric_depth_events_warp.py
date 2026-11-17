@@ -448,6 +448,36 @@ def _read_clamped(depth: wp.array3d(dtype=wp.float32), b: int, v: int, u: int, h
     return d if _valid_depth(d, max_depth) else max_depth
 
 
+@wp.func
+def _grad_sq_3d(
+    depth: wp.array3d(dtype=wp.float32), b: int, v: int, u: int, height: int, width: int, max_depth: float
+) -> float:
+    gx = 0.5 * (_read_clamped(depth, b, v, u + 1, height, width, max_depth) - _read_clamped(depth, b, v, u - 1, height, width, max_depth))
+    gy = 0.5 * (_read_clamped(depth, b, v + 1, u, height, width, max_depth) - _read_clamped(depth, b, v - 1, u, height, width, max_depth))
+    return gx * gx + gy * gy
+
+
+@wp.func
+def _grad_sq_4d(
+    depth_hist: wp.array4d(dtype=wp.float32), b: int, slot: int, v: int, u: int, height: int, width: int, max_depth: float
+) -> float:
+    ul = wp.clamp(u - 1, 0, width - 1)
+    ur = wp.clamp(u + 1, 0, width - 1)
+    vu = wp.clamp(v - 1, 0, height - 1)
+    vd = wp.clamp(v + 1, 0, height - 1)
+    dl = depth_hist[b, slot, v, ul]
+    dr = depth_hist[b, slot, v, ur]
+    du = depth_hist[b, slot, vu, u]
+    dd = depth_hist[b, slot, vd, u]
+    dl_v = dl if _valid_depth(dl, max_depth) else max_depth
+    dr_v = dr if _valid_depth(dr, max_depth) else max_depth
+    du_v = du if _valid_depth(du, max_depth) else max_depth
+    dd_v = dd if _valid_depth(dd, max_depth) else max_depth
+    gx = 0.5 * (dr_v - dl_v)
+    gy = 0.5 * (dd_v - du_v)
+    return gx * gx + gy * gy
+
+
 @wp.kernel(enable_backward=False)
 def _kinematic_event_field_kernel(
     depth_now: wp.array3d(dtype=wp.float32),
@@ -490,6 +520,7 @@ def _kinematic_event_field_kernel(
 
     d_n = depth_now[b, v, u]
     valid_n = _valid_depth(d_n, max_depth)
+    g2_n = _grad_sq_3d(depth_now, b, v, u, height, width, max_depth)
     w_n = _backproject_pixel(d_n if valid_n else 0.0, float(u), float(v), fx_n, fy_n, cx_n, cy_n, p_now, q_now)
     out_world_now[b, v, u, 0] = w_n[0]
     out_world_now[b, v, u, 1] = w_n[1]
@@ -549,29 +580,16 @@ def _kinematic_event_field_kernel(
                         valid_r = _valid_depth(d_r, max_depth)
                         d_r_val = d_r if valid_r else max_depth
 
-                        # Local gradient in past reference frame (inline over slot).
-                        pu_l = wp.clamp(pu - 1, 0, width - 1)
-                        pu_r = wp.clamp(pu + 1, 0, width - 1)
-                        pv_u = wp.clamp(pv - 1, 0, height - 1)
-                        pv_d = wp.clamp(pv + 1, 0, height - 1)
-                        dl = depth_hist[b, slot, pv, pu_l]
-                        dr = depth_hist[b, slot, pv, pu_r]
-                        du = depth_hist[b, slot, pv_u, pu]
-                        dd = depth_hist[b, slot, pv_d, pu]
-                        dl_v = dl if _valid_depth(dl, max_depth) else max_depth
-                        dr_v = dr if _valid_depth(dr, max_depth) else max_depth
-                        du_v = du if _valid_depth(du, max_depth) else max_depth
-                        dd_v = dd if _valid_depth(dd, max_depth) else max_depth
-                        gx_o = 0.5 * (dr_v - dl_v)
-                        gy_o = 0.5 * (dd_v - du_v)
-                        g2_o = gx_o * gx_o + gy_o * gy_o
+                        # Dual-endpoint spatial depth gradient (handles multi-pixel Sigma_xi jumps across edges).
+                        g2_o = _grad_sq_4d(depth_hist, b, slot, pv, pu, height, width, max_depth)
+                        g2_fwd = wp.max(g2_n, g2_o)
 
                         sig2_st_r = c0 + c2 * d_r_val * d_r_val
                         rot_term = proj_p[2] * rot_sigma
                         sig2_z_xi = pos_sigma * pos_sigma + rot_term * rot_term
                         j_px_r = fx_o * rot_sigma
                         j_px_p = fx_o * pos_sigma / wp.max(proj_p[2], 0.3)
-                        sig2_edge = g2_o * (j_px_r * j_px_r + j_px_p * j_px_p + 0.25)
+                        sig2_edge = g2_fwd * (j_px_r * j_px_r + j_px_p * j_px_p + 0.04)
                         sig_tot = wp.sqrt(sig2_st_n + sig2_st_r + sig2_z_xi + sig2_edge)
                         gate = threshold + sigma_multiplier * sig_tot + relative_threshold * proj_p[2]
                         innov = d_r_val - proj_p[2]
@@ -582,7 +600,7 @@ def _kinematic_event_field_kernel(
                             if w_app > wake_app:
                                 wake_app = w_app
                             # Interior continuous foreground surface looming (inverse TTC).
-                            if valid_r and innov <= 8.0 * dt and g2_o < 1.0:
+                            if valid_r and innov <= 8.0 * dt and g2_fwd < 0.35:
                                 inv_ttc = (innov - gate) / (wp.max(d_n_val, 0.3) * dt)
                                 loom_k = wp.clamp(inv_ttc / looming_max_rate, 0.0, 1.0)
                                 if loom_k > looming:
@@ -591,6 +609,7 @@ def _kinematic_event_field_kernel(
                 # 2) Backward check: past pixel into current view -> wake_disappear.
                 d_o_k = depth_hist[b, slot, v, u]
                 if _valid_depth(d_o_k, max_depth):
+                    g2_old_pix = _grad_sq_4d(depth_hist, b, slot, v, u, height, width, max_depth)
                     w_ok = _backproject_pixel(d_o_k, float(u), float(v), fx_o, fy_o, cx_o, cy_o, p_o, q_o)
                     proj_c = _project_world(w_ok, p_now, q_now, fx_n, fy_n, cx_n, cy_n, height, width, max_depth)
                     if proj_c[3] > 0.5:
@@ -598,16 +617,15 @@ def _kinematic_event_field_kernel(
                         cv_gs = wp.clamp(int(wp.floor(proj_c[1] + 0.5)), 0, height - 1)
                         dc = depth_now[b, cv_gs, cu_gs]
                         dc_val = dc if _valid_depth(dc, max_depth) else max_depth
-                        gx_c = 0.5 * (_read_clamped(depth_now, b, cv_gs, cu_gs + 1, height, width, max_depth) - _read_clamped(depth_now, b, cv_gs, cu_gs - 1, height, width, max_depth))
-                        gy_c = 0.5 * (_read_clamped(depth_now, b, cv_gs + 1, cu_gs, height, width, max_depth) - _read_clamped(depth_now, b, cv_gs - 1, cu_gs, height, width, max_depth))
-                        g2_c = gx_c * gx_c + gy_c * gy_c
+                        g2_c = _grad_sq_3d(depth_now, b, cv_gs, cu_gs, height, width, max_depth)
+                        g2_bwd = wp.max(g2_old_pix, g2_c)
                         sig2_st_o = c0 + c2 * d_o_k * d_o_k
                         sig2_st_c = c0 + c2 * dc_val * dc_val
                         rot_term_c = proj_c[2] * rot_sigma
                         sig2_z_xi_c = pos_sigma * pos_sigma + rot_term_c * rot_term_c
                         j_px_r_c = fx_n * rot_sigma
                         j_px_p_c = fx_n * pos_sigma / wp.max(proj_c[2], 0.3)
-                        sig2_edge_c = g2_c * (j_px_r_c * j_px_r_c + j_px_p_c * j_px_p_c + 0.25)
+                        sig2_edge_c = g2_bwd * (j_px_r_c * j_px_r_c + j_px_p_c * j_px_p_c + 0.04)
                         sig_tot_c = wp.sqrt(sig2_st_o + sig2_st_c + sig2_z_xi_c + sig2_edge_c)
                         gate_c = threshold + sigma_multiplier * sig_tot_c + relative_threshold * proj_c[2]
                         innov_c = dc_val - proj_c[2]
@@ -626,6 +644,32 @@ def _kinematic_event_field_kernel(
     out_dis_mask[b, v, u] = dis_any
 
 
+@wp.kernel(enable_backward=False)
+def _kinematic_despeckle_kernel(
+    raw_kinematic: wp.array4d(dtype=wp.float32),
+    min_cluster_pixels: int,
+    out_kinematic: wp.array4d(dtype=wp.float32),
+):
+    b, v, u = wp.tid()
+    height = raw_kinematic.shape[2]
+    width = raw_kinematic.shape[3]
+    v0 = wp.max(0, v - 1)
+    v1 = wp.min(height - 1, v + 1)
+    u0 = wp.max(0, u - 1)
+    u1 = wp.min(width - 1, u + 1)
+    for c in range(3):
+        val = raw_kinematic[b, c, v, u]
+        if val > 0.0 and min_cluster_pixels > 1:
+            cnt = wp.int32(0)
+            for vv in range(v0, v1 + 1):
+                for uu in range(u0, u1 + 1):
+                    if raw_kinematic[b, c, vv, uu] > 0.0:
+                        cnt += 1
+            if cnt < min_cluster_pixels:
+                val = 0.0
+        out_kinematic[b, c, v, u] = val
+
+
 class WarpKinematicFieldWorkspace:
     """Reusable GPU buffers for zero-allocation EG-TS + Radial Looming computation."""
 
@@ -633,6 +677,7 @@ class WarpKinematicFieldWorkspace:
         wp.init()
         self.count, self.height, self.width = count, height, width
         self.device = device
+        self.raw_kinematic = torch.zeros((count, 3, height, width), device=device, dtype=torch.float32)
         self.kinematic = torch.zeros((count, 3, height, width), device=device, dtype=torch.float32)
         self.world_now = torch.empty((count, height, width, 3), device=device, dtype=torch.float32)
         self.world_old = torch.empty((count, height, width, 3), device=device, dtype=torch.float32)
@@ -652,6 +697,7 @@ class WarpKinematicFieldWorkspace:
         seen: torch.Tensor,
         active_u8: torch.Tensor,
         history_frames: int,
+        min_cluster_pixels: int,
         max_depth: float,
         threshold: float,
         relative_threshold: float,
@@ -666,7 +712,8 @@ class WarpKinematicFieldWorkspace:
     ):
         wp_device = wp.device_from_torch(depth.device)
         stream = wp.stream_from_torch(depth.device)
-        self.kinematic[:, 1].zero_()
+        target = self.raw_kinematic if min_cluster_pixels > 1 else self.kinematic
+        target[:, 1].zero_()
         wp.launch(
             _kinematic_event_field_kernel,
             dim=(self.count, self.height, self.width),
@@ -694,7 +741,7 @@ class WarpKinematicFieldWorkspace:
                 looming_max_rate,
             ],
             outputs=[
-                wp.from_torch(self.kinematic, dtype=wp.float32),
+                wp.from_torch(target, dtype=wp.float32),
                 wp.from_torch(self.world_now, dtype=wp.float32),
                 wp.from_torch(self.world_old, dtype=wp.float32),
                 wp.from_torch(self.app_mask, dtype=wp.uint8),
@@ -703,6 +750,15 @@ class WarpKinematicFieldWorkspace:
             device=wp_device,
             stream=stream,
         )
+        if min_cluster_pixels > 1:
+            wp.launch(
+                _kinematic_despeckle_kernel,
+                dim=(self.count, self.height, self.width),
+                inputs=[wp.from_torch(self.raw_kinematic, dtype=wp.float32), min_cluster_pixels],
+                outputs=[wp.from_torch(self.kinematic, dtype=wp.float32)],
+                device=wp_device,
+                stream=stream,
+            )
         return (
             self.app_mask.bool(),
             self.dis_mask.bool(),

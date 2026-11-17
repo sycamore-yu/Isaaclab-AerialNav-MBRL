@@ -151,7 +151,7 @@ class DepthEventDetector:
         match_radius=1, history_frames=1, depth_sigma=0.0, pose_position_sigma=0.0,
         pose_rotation_sigma=0.0, sigma_multiplier=0.0, edge_suppression=False,
         edge_suppression_scale=0.0, min_cluster_pixels=1, kinematic_field=False,
-        eg_ts_decay=0.7, stereo_c2=4e-6, step_dt=0.05, looming_max_rate=2.0,
+        eg_ts_decay=0.7, stereo_c2=2e-5, step_dt=0.05, looming_max_rate=2.0,
     ):
         if height <= 0 or width <= 0 or max_depth <= 0 or threshold < 0 or relative_threshold < 0:
             raise ValueError("Invalid depth event configuration")
@@ -280,19 +280,20 @@ class DepthEventDetector:
                 puv, d_proj, in_prev = _project(world_now, old_p, old_k, self.height, self.width, self.max_depth)
                 d_r_gs = F.grid_sample(d_r_raw[:, None], puv, mode="nearest", align_corners=False)[:, 0]
                 g2_o_gs = F.grid_sample(g2_o[:, None], puv, mode="nearest", align_corners=False)[:, 0]
+                g2_fwd = torch.maximum(g2_now, g2_o_gs)
                 vr_gs = F.grid_sample(valid_r[:, None].to(depth.dtype), puv, mode="nearest", align_corners=False)[:, 0] > 0.5
                 fx_o = old_k[:, 0, 0, None, None]
                 sig2_st_r = c0 + self.stereo_c2 * d_r_gs * d_r_gs
                 sig2_z = self.pose_position_sigma**2 + (d_proj * self.pose_rotation_sigma) ** 2
-                j2 = (fx_o * self.pose_rotation_sigma) ** 2 + (fx_o * self.pose_position_sigma / d_proj.clamp_min(0.3)) ** 2 + 0.25
-                sig_tot = torch.sqrt(sig2_st_n + sig2_st_r + sig2_z + g2_o_gs * j2)
+                j2 = (fx_o * self.pose_rotation_sigma) ** 2 + (fx_o * self.pose_position_sigma / d_proj.clamp_min(0.3)) ** 2 + 0.04
+                sig_tot = torch.sqrt(sig2_st_n + sig2_st_r + sig2_z + g2_fwd * j2)
                 gate = self.threshold + self.sigma_multiplier * sig_tot + self.relative_threshold * d_proj
                 innov = d_r_gs - d_proj
                 hit = has_k[:, None, None] & valid_now & in_prev & (innov > gate)
                 app_any |= hit
                 s_app = ((innov - gate) / sig_tot.mul(2.0).clamp_min(0.25)).clamp(0.0, 1.0)
                 kinematic[:, 0] = torch.maximum(kinematic[:, 0], torch.where(hit, gamma * s_app, 0.0))
-                loom_hit = hit & vr_gs & (innov <= 8.0 * dt) & (g2_o_gs < 1.0)
+                loom_hit = hit & vr_gs & (innov <= 8.0 * dt) & (g2_fwd < 0.35)
                 inv_ttc = (innov - gate) / (d_now_val.clamp_min(0.3) * dt)
                 kinematic[:, 2] = torch.maximum(
                     kinematic[:, 2], torch.where(loom_hit, (inv_ttc / self.looming_max_rate).clamp(0.0, 1.0), 0.0)
@@ -302,11 +303,12 @@ class DepthEventDetector:
                 cuv, d_c_proj, in_cur = _project(w_ok, pose, intrinsic, self.height, self.width, self.max_depth)
                 dc_gs = F.grid_sample(d_now_val[:, None], cuv, mode="nearest", align_corners=False)[:, 0]
                 g2_c_gs = F.grid_sample(g2_now[:, None], cuv, mode="nearest", align_corners=False)[:, 0]
+                g2_bwd = torch.maximum(g2_o, g2_c_gs)
                 sig2_st_o = c0 + self.stereo_c2 * torch.where(valid_r, old_d, 0.0) ** 2
                 sig2_st_c = c0 + self.stereo_c2 * dc_gs * dc_gs
                 sig2_zc = self.pose_position_sigma**2 + (d_c_proj * self.pose_rotation_sigma) ** 2
-                j2c = (fx_n * self.pose_rotation_sigma) ** 2 + (fx_n * self.pose_position_sigma / d_c_proj.clamp_min(0.3)) ** 2 + 0.25
-                sig_tot_c = torch.sqrt(sig2_st_o + sig2_st_c + sig2_zc + g2_c_gs * j2c)
+                j2c = (fx_n * self.pose_rotation_sigma) ** 2 + (fx_n * self.pose_position_sigma / d_c_proj.clamp_min(0.3)) ** 2 + 0.04
+                sig_tot_c = torch.sqrt(sig2_st_o + sig2_st_c + sig2_zc + g2_bwd * j2c)
                 gate_c = self.threshold + self.sigma_multiplier * sig_tot_c + self.relative_threshold * d_c_proj
                 innov_c = dc_gs - d_c_proj
                 hit_d = has_k[:, None, None] & valid_r & in_cur & (innov_c > gate_c)
@@ -321,6 +323,10 @@ class DepthEventDetector:
                 )
                 kinematic[:, 1] = torch.maximum(kinematic[:, 1], neg.reshape(count, self.height, self.width))
             gamma *= self.eg_ts_decay
+
+        if self.min_cluster_pixels > 1:
+            support = F.avg_pool2d((kinematic > 0).float(), kernel_size=3, stride=1, padding=1) * 9.0
+            kinematic = torch.where(support >= self.min_cluster_pixels - 0.1, kinematic, 0.0)
 
         return DepthEventBatch(
             app_any, dis_any, world_now, world_old0, time.clone(),
@@ -387,6 +393,7 @@ class DepthEventDetector:
                     seen=self._seen,
                     active_u8=active.to(torch.uint8),
                     history_frames=self.history_frames,
+                    min_cluster_pixels=self.min_cluster_pixels,
                     max_depth=self.max_depth,
                     threshold=self.threshold,
                     relative_threshold=self.relative_threshold,

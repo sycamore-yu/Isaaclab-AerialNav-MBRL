@@ -102,9 +102,9 @@ run_zhang_arm() {
 run_zhang_arm v4_kinematic \
   --depth_event_channel 1 --depth_event_kinematic_field 1 --depth_event_history_frames 4 \
   --depth_event_pose_source estimated --coef_dyn_aux 0.5 --dyn_aux_sectors 6 \
-  --aux_from_perception 1 --aux_inv_ttc 1 --aux_survival_gate_s 5.0 \
-  --smooth_approach_gate 1 --temporal_yielding_lambda 1.5 --temporal_yielding_floor 0.2 \
-  --active_yaw_alignment 1.0
+  --aux_from_perception 1 --aux_inv_ttc 1 --aux_survival_gate_s 3.5 \
+  --smooth_approach_gate 1 --temporal_yielding_lambda 1.0 --temporal_yielding_floor 0.3 \
+  --active_yaw_alignment 0.0
 
 run_zhang_arm stack4_pose --depth_stack_frames 4
 run_zhang_arm naive_diff --depth_event_channel 1 --depth_event_naive_diff 1 --depth_event_history_frames 4 --depth_event_pose_source estimated
