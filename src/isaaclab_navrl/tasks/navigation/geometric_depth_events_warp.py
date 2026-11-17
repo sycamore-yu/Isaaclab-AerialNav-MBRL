@@ -71,7 +71,7 @@ def _edge_ref_kernel(
         out_ref[b, v, u] = near_1
         return
 
-    far_1 = 0.0
+    far_1 = wp.float32(0.0)
     v0 = wp.max(0, v - 1)
     v1 = wp.min(height - 1, v + 1)
     u0 = wp.max(0, u - 1)
@@ -205,7 +205,7 @@ def _depth_event_detect_kernel(
     out_world_old[b, v, u, 2] = w_o[2]
 
     app = wp.uint8(0)
-    app_s = 0.0
+    app_s = wp.float32(0.0)
     if eligible and valid_n:
         proj_prev = _project_world(w_n, p_old, q_old, fx_o, fy_o, cx_o, cy_o, height, width, max_depth)
         if proj_prev[3] > 0.5:
@@ -218,10 +218,10 @@ def _depth_event_detect_kernel(
                 app_s = wp.clamp((o_near - proj_prev[2]) / 0.5, 0.0, 1.0)
 
     dis = wp.uint8(0)
-    dis_s = 0.0
-    cu_i = 0
-    cv_i = 0
-    c_vis = 0
+    dis_s = wp.float32(0.0)
+    cu_i = wp.int32(0)
+    cv_i = wp.int32(0)
+    c_vis = wp.int32(0)
     if eligible and valid_o:
         proj_cur = _project_world(w_o, p_now, q_now, fx_n, fy_n, cx_n, cy_n, height, width, max_depth)
         if proj_cur[3] > 0.5:
@@ -269,7 +269,7 @@ def _filter_and_splat_kernel(
 
     app_keep = raw_app_mask[b, v, u]
     if app_keep != wp.uint8(0) and min_cluster_pixels > 1:
-        cnt_a = 0
+        cnt_a = wp.int32(0)
         for vv in range(v0, v1 + 1):
             for uu in range(u0, u1 + 1):
                 if raw_app_mask[b, vv, uu] != wp.uint8(0):
@@ -279,7 +279,7 @@ def _filter_and_splat_kernel(
 
     dis_keep = raw_dis_mask[b, v, u]
     if dis_keep != wp.uint8(0) and min_cluster_pixels > 1:
-        cnt_d = 0
+        cnt_d = wp.int32(0)
         for vv in range(v0, v1 + 1):
             for uu in range(u0, u1 + 1):
                 if raw_dis_mask[b, vv, uu] != wp.uint8(0):

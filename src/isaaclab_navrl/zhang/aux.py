@@ -55,9 +55,9 @@ def _ego_dynamic_sector_targets_kernel(
 
     for s in range(num_sectors):
         best_dist = max_range_m
-        best_vx = 0.0
-        best_vy = 0.0
-        found = 0
+        best_vx = wp.float32(0.0)
+        best_vy = wp.float32(0.0)
+        found = wp.int32(0)
         for m in range(num_obs):
             rx = obstacle_position[m, 0] - px
             ry = obstacle_position[m, 1] - py
