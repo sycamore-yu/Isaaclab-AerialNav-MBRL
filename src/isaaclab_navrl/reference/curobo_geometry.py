@@ -138,32 +138,39 @@ def _query_static(
 def _query_dynamic(
     points: wp.array(dtype=wp.vec3),
     poses: wp.array3d(dtype=wp.vec3),
+    bound_radii: wp.array(dtype=float),
     kinds: wp.array(dtype=wp.int32),
     cuboids: CuboidDataWarp,
     meshes: MeshDataWarp,
     count: int,
     query_count: int,
+    poses_b: int,
+    poses_q: int,
     distance: wp.array(dtype=float),
     gradient: wp.array(dtype=wp.vec3),
     winner: wp.array(dtype=wp.int64),
 ):
     i = wp.tid()
     batch, query = i // query_count, i % query_count
+    pb = 0 if poses_b == 1 else batch
+    pq = 0 if poses_q == 1 else query
+    pt = points[i]
     best = wp.float32(1.0e6)
     normal = wp.vec3(0.0)
     index = wp.int32(0)
     for obstacle in range(count):
-        local = points[i] - poses[batch, query, obstacle]
-        result = wp.vec4(1.0e6, 0.0, 0.0, 0.0)
-        if kinds[obstacle] == 0:
-            result = compute_local_sdf_with_grad(cuboids, 0, obstacle, local, 100.0)
-        else:
-            result = compute_local_sdf_with_grad(meshes, 0, obstacle, local, 100.0)
-        if result[0] < best:
-            best = result[0]
-            index = obstacle
-            # cuRobo's primitive/mesh helper returns the collision-cost direction (-dSDF/dp).
-            normal = -wp.vec3(result[1], result[2], result[3])
+        local = pt - poses[pb, pq, obstacle]
+        if wp.length(local) - bound_radii[obstacle] <= best + 1.0e-4:
+            result = wp.vec4(1.0e6, 0.0, 0.0, 0.0)
+            if kinds[obstacle] == 0:
+                result = compute_local_sdf_with_grad(cuboids, 0, obstacle, local, 100.0)
+            else:
+                result = compute_local_sdf_with_grad(meshes, 0, obstacle, local, 100.0)
+            if result[0] < best:
+                best = result[0]
+                index = obstacle
+                # cuRobo's primitive/mesh helper returns the collision-cost direction (-dSDF/dp).
+                normal = -wp.vec3(result[1], result[2], result[3])
     distance[i] = best
     gradient[i] = normal
     winner[i] = wp.int64(index)
@@ -196,20 +203,32 @@ class _Query(torch.autograd.Function):
         else:
             shape = query.shape[:-1]
             count = len(backend.sizes)
-            positions = torch.broadcast_to(positions.detach(), (*shape, count, 3)).contiguous()
+            batch = shape[0]
             queries = math.prod(shape[1:])
+            pos = positions.detach()
+            if pos.ndim == 2:
+                poses = pos.reshape(1, 1, count, 3).contiguous()
+            elif len(shape) == 1 and pos.ndim == 3 and pos.shape[0] in (1, batch):
+                poses = pos.reshape(pos.shape[0], 1, count, 3).contiguous()
+            elif len(shape) == 2 and pos.ndim == 4 and pos.shape[0] in (1, batch) and pos.shape[1] in (1, queries):
+                poses = pos.contiguous()
+            else:
+                poses = torch.broadcast_to(pos, (*shape, count, 3)).reshape(batch, queries, count, 3).contiguous()
             winner = torch.empty(len(points), dtype=torch.long, device=query.device)
             wp.launch(
                 _query_dynamic,
                 dim=len(points),
                 inputs=[
                     wp.from_torch(points, dtype=wp.vec3),
-                    wp.from_torch(positions.reshape(shape[0], queries, count, 3), dtype=wp.vec3),
+                    wp.from_torch(poses, dtype=wp.vec3),
+                    wp.from_torch(backend.bound_radii),
                     wp.from_torch(backend.kinds),
                     backend.cuboids.to_warp(),
                     backend.meshes.to_warp(),
                     count,
                     queries,
+                    poses.shape[0],
+                    poses.shape[1],
                     wp.from_torch(distance),
                     wp.from_torch(gradient, dtype=wp.vec3),
                     wp.from_torch(winner),
@@ -283,6 +302,7 @@ class CuroboGeometry:
         self.mapping_seconds = time.perf_counter() - started
         cfg = DeviceCfg(device=torch.device(self.device))
         self.kinds = (sizes[:, 2] > 1).to(torch.int32)
+        self.bound_radii = (0.5 * torch.linalg.vector_norm(sizes.float(), dim=-1)).contiguous()
         self.cuboids = CuboidData.create_cache(max(len(sizes), 1), 1, cfg)
         self.cuboids.dims[0, : len(sizes), :3] = sizes
         mesh_list = []

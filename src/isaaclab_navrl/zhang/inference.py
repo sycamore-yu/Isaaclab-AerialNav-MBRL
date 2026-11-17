@@ -60,6 +60,7 @@ class ZhangInference:
                     "temporal_yielding_lambda": float(payload["train_cfg"].get("temporal_yielding_lambda", 0.0)),
                     "temporal_yielding_floor": float(payload["train_cfg"].get("temporal_yielding_floor", 0.2)),
                     "active_yaw_alignment": float(payload["train_cfg"].get("active_yaw_alignment", 0.0)),
+                    "activation_checkpointing": bool(payload["train_cfg"].get("activation_checkpointing", True)),
                 }
             )
         )

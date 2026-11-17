@@ -34,6 +34,8 @@ COMMON_ZHANG=(
   --num_dynamic_obstacles "$DYNAMIC"
   --num_envs "$NUM_ENVS"
   --report_episodes "$NUM_ENVS"
+  --camera_batch_size 256
+  --activation_checkpointing 0
   --max_iterations "$UPDATES"
   --timesteps 96
   --geometry_backend curobo_v2

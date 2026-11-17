@@ -383,11 +383,18 @@ class ZhangTrainer:
                         "temporal_yielding_lambda": float(payload["train_cfg"].get("temporal_yielding_lambda", 0.0)),
                         "temporal_yielding_floor": float(payload["train_cfg"].get("temporal_yielding_floor", 0.2)),
                         "active_yaw_alignment": float(payload["train_cfg"].get("active_yaw_alignment", 0.0)),
+                        "activation_checkpointing": bool(payload["train_cfg"].get("activation_checkpointing", True)),
                     }
                 )
             )
         )
-        allowed_stage_changes = {"lr", "max_iterations", "stop_after_acceptance", "gradient_diagnostic_updates"}
+        allowed_stage_changes = {
+            "lr",
+            "max_iterations",
+            "stop_after_acceptance",
+            "gradient_diagnostic_updates",
+            "activation_checkpointing",
+        }
         allowed_stage_changes.update(getattr(self.cfg, "resume_runtime_fields", ()))
         if resume:
             allowed_stage_changes.remove("lr")
@@ -977,12 +984,15 @@ class ZhangTrainer:
                             "environment_ids": probe_ids.tolist(),
                             "clearance_m": clearance[probe_ids].tolist(),
                         }
+                    use_ckpt = getattr(self.cfg, "activation_checkpointing", True)
                     if self.cfg.coef_dyn_aux > 0 and self.cfg.aux_from_perception:
-                        output, hidden, aux_repr = self.model.forward_checkpointed_with_aux(
-                            normalized_depth, normalized_features, hidden
+                        forward_fn = (
+                            self.model.forward_checkpointed_with_aux if use_ckpt else self.model.forward_with_aux
                         )
+                        output, hidden, aux_repr = forward_fn(normalized_depth, normalized_features, hidden)
                     else:
-                        output, hidden = self.model.forward_checkpointed(normalized_depth, normalized_features, hidden)
+                        forward_fn = self.model.forward_checkpointed if use_ckpt else self.model
+                        output, hidden = forward_fn(normalized_depth, normalized_features, hidden)
                         aux_repr = hidden
                     if self.cfg.coef_dyn_aux > 0:
                         history["dyn_aux_pred"].append(self.model.predict_dynamic_aux(aux_repr))
@@ -1019,13 +1029,15 @@ class ZhangTrainer:
                             )
                         )
                     if self.cfg.variant == "dcol":
-                        collision_lookahead = self._collision_gap(
-                            query[:, 1:-1],
-                            parameters["margin"],
-                            static_distance=static_distance[:, 1:-1],
-                            query_time=lookahead[:, 1:-1, 0],
-                        )
-                    if self.cfg.variant == "dcol":
+                        if type(self)._collision_gap is ZhangTrainer._collision_gap and "_collision_gap" not in self.__dict__:
+                            collision_lookahead = obstacle_distance[:, 1:-1] - parameters["margin"][:, None]
+                        else:
+                            collision_lookahead = self._collision_gap(
+                                query[:, 1:-1],
+                                parameters["margin"],
+                                static_distance=static_distance[:, 1:-1],
+                                query_time=lookahead[:, 1:-1, 0],
+                            )
                         history["collision_lookahead"].append(collision_lookahead)
                     history["margin"].append(parameters["margin"])
                     history["target_velocity"].append(target_velocity)

@@ -98,6 +98,7 @@ class ZhangTrainCfg:
     seed: int = 0
     gradient_diagnostic_updates: tuple[int, ...] = ()
     gradient_projection: Literal["none", "height_priority"] = "none"
+    activation_checkpointing: bool = True
     loss_timing: Literal["deferred", "pre_reset"] | None = None
 
     def __post_init__(self):

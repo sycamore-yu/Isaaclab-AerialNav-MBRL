@@ -89,6 +89,7 @@ TRAIN_ARG_TYPES = {
     "height_target_min": float,
     "height_target_max": float,
     "gradient_projection": str,
+    "activation_checkpointing": parse_binary_flag,
     "max_grad_norm": float,
     "grad_decay": float,
     "coef_obj_avoidance": float,

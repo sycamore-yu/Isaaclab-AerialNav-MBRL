@@ -24,6 +24,8 @@ printf 'DiffNav v4 (Kinematic Event Field + Zero-Init Dual Stream + LoS Inv-TTC 
 COMMON_ARGS=(
   --num_envs "$NUM_ENVS"
   --report_episodes "$NUM_ENVS"
+  --camera_batch_size 256
+  --activation_checkpointing 0
   --seed 0
   --terrain_seed 0
   --timesteps 96

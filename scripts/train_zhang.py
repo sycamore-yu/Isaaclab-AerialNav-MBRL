@@ -138,13 +138,19 @@ def main():
 
     import torch
 
-    from isaaclab_navrl.tasks.navigation.depth_history import (
-        DEPTH_EVENT_OBSERVATION_CONTRACT,
-        KINEMATIC_EVENT_FIELD_OBSERVATION_CONTRACT,
-        OBSERVATION_CONTRACT,
-        STACK_DEPTH_POSE_OBSERVATION_CONTRACT,
-        TEMPORAL_DEPTH_EVENT_OBSERVATION_CONTRACT,
-        TEMPORAL_DUAL_DEPTH_EVENT_OBSERVATION_CONTRACT,
+    from isaaclab_navrl.tasks.navigation import depth_history as _depth_history
+
+    OBSERVATION_CONTRACT = _depth_history.OBSERVATION_CONTRACT
+    DEPTH_EVENT_OBSERVATION_CONTRACT = getattr(_depth_history, "DEPTH_EVENT_OBSERVATION_CONTRACT", None)
+    KINEMATIC_EVENT_FIELD_OBSERVATION_CONTRACT = getattr(
+        _depth_history, "KINEMATIC_EVENT_FIELD_OBSERVATION_CONTRACT", None
+    )
+    STACK_DEPTH_POSE_OBSERVATION_CONTRACT = getattr(_depth_history, "STACK_DEPTH_POSE_OBSERVATION_CONTRACT", None)
+    TEMPORAL_DEPTH_EVENT_OBSERVATION_CONTRACT = getattr(
+        _depth_history, "TEMPORAL_DEPTH_EVENT_OBSERVATION_CONTRACT", None
+    )
+    TEMPORAL_DUAL_DEPTH_EVENT_OBSERVATION_CONTRACT = getattr(
+        _depth_history, "TEMPORAL_DUAL_DEPTH_EVENT_OBSERVATION_CONTRACT", None
     )
 
     config_type = type(recipe)
