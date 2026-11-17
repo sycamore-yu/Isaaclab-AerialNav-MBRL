@@ -3,9 +3,11 @@
 # + Zero-Init Residual Dual-Stream + LoS Inv-TTC Aux + Spatio-Temporal BPTT).
 set -euo pipefail
 cd "$(dirname "$0")/.."
-export PYTHONPATH=src OMNI_KIT_ACCEPT_EULA=YES
+export PYTHONPATH=src OMNI_KIT_ACCEPT_EULA=YES PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 NUM_ENVS="${NUM_ENVS:-1024}"
+CAMERA_BATCH_SIZE="${CAMERA_BATCH_SIZE:-64}"
+ACTIVATION_CHECKPOINTING="${ACTIVATION_CHECKPOINTING:-1}"
 S0_MAX_UPDATES="${S0_MAX_UPDATES:-500}"
 S1_MAX_UPDATES="${S1_MAX_UPDATES:-512}"
 ROOT="${ROOT:-logs/depth_event_v4_s0_s1_20261117}"
@@ -24,8 +26,8 @@ printf 'DiffNav v4 (Kinematic Event Field + Zero-Init Dual Stream + LoS Inv-TTC 
 COMMON_ARGS=(
   --num_envs "$NUM_ENVS"
   --report_episodes "$NUM_ENVS"
-  --camera_batch_size 256
-  --activation_checkpointing 0
+  --camera_batch_size "$CAMERA_BATCH_SIZE"
+  --activation_checkpointing "$ACTIVATION_CHECKPOINTING"
   --seed 0
   --terrain_seed 0
   --timesteps 96
