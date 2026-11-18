@@ -9,7 +9,7 @@ import torch.nn.functional as F
 
 from isaaclab_navrl.tasks.navigation.context import ObservationContext
 from isaaclab_navrl.tasks.navigation.depth_history import (
-    STACK_DEPTH_POSE_OBSERVATION_CONTRACT,
+    KINEMATIC_EVENT_FIELD_OBSERVATION_CONTRACT,
     pooled_event_channels,
     reproject_depth,
     reproject_event_channels,
@@ -171,26 +171,38 @@ def test_v4_and_stack_cli_and_inference_roundtrip(tmp_path):
     assert parsed["dyn_aux_sectors"] == 6
     assert parsed["temporal_yielding_lambda"] == 1.5
 
-    # Also test 4-frame depth+delta-pose stacking contract + ZhangInference load.
-    stack_parsed = parse_train_args(["--depth_stack_frames", "4"])
-    assert stack_parsed["depth_stack_frames"] == 4
+    # Also test v4 kinematic event field contract + ZhangInference load.
+    v4_parsed = parse_train_args(
+        ["--depth_event_channel", "1", "--depth_event_history_frames", "4", "--coef_dyn_aux", "0.5"]
+    )
+    assert v4_parsed["depth_event_channel"] is True
     model = ZhangPolicy()
-    model.enable_depth_stack_channels(4 + 6 * 3)
-    cfg = ZhangTrainCfg(depth_stack_frames=4, goal_speed_profile="linear")
+    model.enable_kinematic_residual_stream(3)
+    model.enable_dynamic_aux_head(num_sectors=6, from_perception=True)
+    cfg = ZhangTrainCfg(
+        depth_event_channel=True,
+        depth_event_history_frames=4,
+        depth_event_kinematic_field=True,
+        coef_dyn_aux=0.5,
+        dyn_aux_sectors=6,
+        aux_from_perception=True,
+        aux_inv_ttc=True,
+        goal_speed_profile="linear",
+    )
     cfg.validate()
     norm = PolicyObservationNormalizer(enabled=True)
-    x = torch.randn(2, 22, 12, 16)
+    x = torch.randn(2, 4, 24, 32)
     s = torch.randn(2, 10)
     norm.observe(x, s)
     nx, _ = norm.normalize(x, s, norm.begin_rollout())
     torch.testing.assert_close(nx[:, 1:], x[:, 1:])
 
-    ckpt = tmp_path / "stack.pt"
+    ckpt = tmp_path / "v4_kinematic.pt"
     torch.save(
         {
             "format_version": 3,
             "method": "zhang",
-            "environment": {"observation_contract": STACK_DEPTH_POSE_OBSERVATION_CONTRACT},
+            "environment": {"observation_contract": KINEMATIC_EVENT_FIELD_OBSERVATION_CONTRACT},
             "train_cfg": asdict(cfg),
             "model_state_dict": model.state_dict(),
             "normalizer_state_dict": norm.state_dict(),
@@ -201,8 +213,9 @@ def test_v4_and_stack_cli_and_inference_roundtrip(tmp_path):
         num_envs=2,
         device="cpu",
         cfg=SimpleNamespace(
-            depth_event_channel=False,
-            depth_stack_frames=4,
+            depth_event_channel=True,
+            depth_event_history_frames=4,
+            depth_event_kinematic_field=True,
             sim_to_real=SimpleNamespace(enabled=False, input_delay=False),
         ),
         zhang_parameters={
@@ -216,7 +229,7 @@ def test_v4_and_stack_cli_and_inference_roundtrip(tmp_path):
                 "velocity": torch.zeros(2, 3),
                 "quaternion": torch.tensor([[0.0, 0.0, 0.0, 1.0]]).expand(2, -1),
                 "target": torch.tensor([[8.0, 0.0, 1.0]]).expand(2, -1),
-                "depth_features": torch.zeros(2, 22, 12, 16),
+                "depth_features": torch.zeros(2, 4, 24, 32),
             },
             privileged={
                 "episode_id": torch.zeros(2, dtype=torch.long),
@@ -228,6 +241,7 @@ def test_v4_and_stack_cli_and_inference_roundtrip(tmp_path):
     inf = ZhangInference(env, ckpt)
     act = inf()
     assert act.shape == (2, 3)
+    assert torch.isfinite(act).all()
 
 
 def test_reproject_and_pool_3ch_kinematic_channels():

@@ -1,11 +1,8 @@
 #!/usr/bin/env bash
-# Paper-grade pure-dynamic & S1 ablation matrix + odometry drift stress test:
+# Pure-dynamic & S1 evaluation matrix (v4.1 mainline vs depth_only + odometry drift stress test):
 #   1. depth_only
-#   2. stack4_pose (4-Frame Depth + Delta-Pose Stacking)
-#   3. naive_diff (Naive Reprojection Diff without Mahalanobis edge Jacobian)
-#   4. v2_binary (U-GDE Binary 4-frame signed event)
-#   5. v4_kinematic (EG-TS + Radial Looming + Zero-Init Dual Stream + Inv-TTC Aux + Yielding + Yaw)
-#   6. ppo_navrl (Model-Free RSL-RL PPO baseline)
+#   2. v4_kinematic (EG-TS + Radial Looming + Zero-Init Dual Stream + Inv-TTC Aux + Yielding)
+#   3. ppo_navrl (optional, RUN_PPO=1)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 export PYTHONPATH=src OMNI_KIT_ACCEPT_EULA=YES
@@ -93,7 +90,7 @@ run_zhang_arm() {
     trace_flag=(--trace_output "$ROOT/${name}-traces.json" --trace_episodes 16)
   fi
   eval_arm "$name" "$ckpt" "0.0" "best" "${trace_flag[@]}"
-  if [[ "$name" == "stack4_pose" || "$name" == "naive_diff" || "$name" == "v2_binary" || "$name" == "v4_kinematic" ]]; then
+  if [[ "$name" == "v4_kinematic" ]]; then
     for ns in $NOISE_SCALES; do
       eval_arm "$name" "$ckpt" "$ns" "noise${ns}"
     done
@@ -108,9 +105,6 @@ run_zhang_arm v4_kinematic \
   --smooth_approach_gate 1 --temporal_yielding_lambda 1.0 --temporal_yielding_floor 0.3 \
   --active_yaw_alignment 0.0
 
-run_zhang_arm stack4_pose --depth_stack_frames 4
-run_zhang_arm naive_diff --depth_event_channel 1 --depth_event_naive_diff 1 --depth_event_history_frames 4 --depth_event_pose_source estimated
-run_zhang_arm v2_binary --depth_event_channel 1 --depth_event_history_frames 4 --depth_event_pose_source estimated
 run_zhang_arm depth_only --depth_event_channel 0 --depth_event_history_frames 1
 
 if [[ "${RUN_PPO:-0}" == "1" ]]; then
@@ -131,13 +125,13 @@ fi
 
 # Generate figures & comparison summary.
 eval_args=()
-for arm in depth_only stack4_pose naive_diff v2_binary v4_kinematic ppo_navrl; do
+for arm in depth_only v4_kinematic ppo_navrl; do
   if [[ -f "$ROOT/${arm}-best-evaluation.json" ]]; then
     eval_args+=(--eval "${arm}=$ROOT/${arm}-best-evaluation.json")
   fi
 done
 noise_args=()
-for arm in stack4_pose naive_diff v2_binary v4_kinematic; do
+for arm in v4_kinematic; do
   if [[ -f "$ROOT/${arm}-best-evaluation.json" ]]; then
     noise_args+=(--noise "${arm}:0.0=$ROOT/${arm}-best-evaluation.json")
     for ns in $NOISE_SCALES; do

@@ -44,46 +44,6 @@ class ZhangPolicy(nn.Module):
             self.v_proj.weight.mul_(0.5)
             self.fc.weight.mul_(0.01)
 
-    def enable_depth_event_channel(self):
-        """Expand the original depth kernel; initial actions match the 1-channel policy."""
-        old = self.stem[0]
-        if not isinstance(old, nn.Conv2d) or old.in_channels != 1:
-            raise ValueError("Depth-event expansion can only be applied once")
-        new = nn.Conv2d(2, old.out_channels, old.kernel_size, old.stride, bias=False).to(old.weight)
-        with torch.no_grad():
-            new.weight[:, :1].copy_(old.weight)
-            new.weight[:, 1:].zero_()
-        self.stem[0] = new
-
-    def enable_depth_stack_channels(self, num_channels: int):
-        """Expand 12x16 stem input for stacked depth + delta-pose baseline; starts equal to depth_only."""
-        old = self.stem[0]
-        if not isinstance(old, nn.Conv2d) or old.in_channels != 1:
-            raise ValueError("Depth-stack expansion can only be applied once")
-        if num_channels < 2:
-            raise ValueError("Depth stack requires at least 2 channels")
-        new = nn.Conv2d(num_channels, old.out_channels, old.kernel_size, old.stride, bias=False).to(old.weight)
-        with torch.no_grad():
-            new.weight[:, :1].copy_(old.weight)
-            new.weight[:, 1:].zero_()
-        self.stem[0] = new
-
-    def enable_dual_depth_event_early_conv(self):
-        """Replace 12x16 patch stem with 24x32 early spatial convolutions over (depth, appeared, disappeared)."""
-        old = self.stem[0]
-        if not isinstance(old, nn.Conv2d) or old.in_channels != 1:
-            raise ValueError("Dual depth-event early conv expansion can only be applied once")
-        early = nn.Sequential(
-            nn.Conv2d(3, 16, kernel_size=3, stride=2, padding=1, bias=False),
-            nn.LeakyReLU(0.05),
-            nn.Conv2d(16, 32, kernel_size=3, stride=1, padding=1, bias=False),
-            nn.LeakyReLU(0.05),
-            nn.Conv2d(32, old.out_channels, kernel_size=2, stride=2, bias=False),
-        ).to(old.weight)
-        with torch.no_grad():
-            early[0].weight[:, 1:].zero_()
-        self.stem[0] = early
-
     def enable_kinematic_residual_stream(self, kinematic_channels: int = 3):
         """Keep 1x12x16 inv-depth stem intact and add zero-initialized 24x32 kinematic branch."""
         if self.kinematic_stem is not None:

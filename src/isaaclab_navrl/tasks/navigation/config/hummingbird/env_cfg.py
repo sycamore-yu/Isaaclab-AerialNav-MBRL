@@ -130,13 +130,9 @@ class NavRLEnvCfg(DirectRLEnvCfg):
     num_dynamic_obstacles: int = STAGE_CONFIG[DEFAULT_STAGE]["dynamic_obstacles"]
     depth_camera_batch_size: int = 16
     depth_event_channel: bool = False
-    depth_event_dual_channel: bool = False
     depth_event_kinematic_field: bool = False
-    depth_event_naive_diff: bool = False
-    depth_event_edge_suppression: bool = False
     depth_event_history_frames: int = 1
     depth_event_pose_source: str = "estimated"
-    depth_stack_frames: int = 1
     active_yaw_alignment: float = 0.0
     training_curriculum: bool = True
     training_stage: str | None = DEFAULT_STAGE
@@ -195,8 +191,6 @@ class NavRLEnvCfg(DirectRLEnvCfg):
             raise ValueError("wait_before_truncate must be finite and nonnegative")
         if self.depth_event_history_frames < 1:
             raise ValueError("depth_event_history_frames must be a positive integer")
-        if self.depth_stack_frames < 1:
-            raise ValueError("depth_stack_frames must be a positive integer")
         if self.depth_event_pose_source not in ("estimated", "truth"):
             raise ValueError("depth_event_pose_source must be estimated or truth")
         stage = self.training_stage_config or STAGE_CONFIG.get(self.training_stage)

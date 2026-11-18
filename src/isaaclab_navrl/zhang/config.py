@@ -32,13 +32,9 @@ class ZhangTrainCfg:
     avoidance_gradient: Literal["original", "reshaped"] = "original"
     perception: Literal["depth"] = "depth"
     depth_event_channel: bool = False
-    depth_event_dual_channel: bool = False
     depth_event_kinematic_field: bool = False
-    depth_event_naive_diff: bool = False
-    depth_event_edge_suppression: bool = False
     depth_event_history_frames: int = 1
     depth_event_pose_source: Literal["estimated", "truth"] = "estimated"
-    depth_stack_frames: int = 1
     coef_dyn_aux: float = 0.0
     dyn_aux_sectors: int = 8
     aux_from_perception: bool = False
@@ -155,27 +151,15 @@ class ZhangTrainCfg:
             raise ValueError("Original Zhang uses depth observations")
         if type(self.depth_event_channel) is not bool:
             raise ValueError("depth_event_channel must be boolean")
-        if type(self.depth_event_dual_channel) is not bool:
-            raise ValueError("depth_event_dual_channel must be boolean")
         if type(self.depth_event_kinematic_field) is not bool:
             raise ValueError("depth_event_kinematic_field must be boolean")
-        if type(self.depth_event_naive_diff) is not bool:
-            raise ValueError("depth_event_naive_diff must be boolean")
-        if type(self.depth_event_edge_suppression) is not bool:
-            raise ValueError("depth_event_edge_suppression must be boolean")
         if any(
             type(v) is not bool
             for v in (self.aux_from_perception, self.aux_inv_ttc, self.smooth_approach_gate)
         ):
             raise ValueError("aux_from_perception, aux_inv_ttc, smooth_approach_gate must be boolean")
-        if (self.depth_event_dual_channel or self.depth_event_kinematic_field or self.depth_event_naive_diff) and not self.depth_event_channel:
-            raise ValueError("Event field modes require depth_event_channel")
-        if self.depth_event_kinematic_field and self.depth_event_dual_channel:
-            raise ValueError("Select either depth_event_kinematic_field or depth_event_dual_channel")
-        if type(self.depth_stack_frames) is not int or self.depth_stack_frames < 1:
-            raise ValueError("depth_stack_frames must be a positive integer")
-        if self.depth_stack_frames > 1 and self.depth_event_channel:
-            raise ValueError("depth_stack_frames > 1 cannot be combined with depth_event_channel")
+        if self.depth_event_kinematic_field and not self.depth_event_channel:
+            raise ValueError("depth_event_kinematic_field requires depth_event_channel")
         if not math.isfinite(self.coef_dyn_aux) or self.coef_dyn_aux < 0:
             raise ValueError("coef_dyn_aux must be finite and nonnegative")
         if type(self.dyn_aux_sectors) is not int or self.dyn_aux_sectors < 1:

@@ -23,10 +23,8 @@ from .curriculum import TrainingCurriculum, active_obstacle_indices
 from .depth_history import (
     compensated_depth_features,
     pooled_event_channels,
-    pooled_signed_event_channel,
     reproject_depth,
     reproject_event_channels,
-    reproject_signed_event_channel,
 )
 from .geometry import TerrainDistance, query_clearance
 from .randomization import PolicyPerturbation
@@ -100,22 +98,11 @@ class NavRLEnv(_NavigationWarpLoop):
         self._terms = None
         self._stepping = False
         self.depth_event_detector = None
-        self._depth_stack = None
-        self._depth_stack_poses = None
-        self._depth_stack_seen = None
         if cfg.method == "zhang" and getattr(cfg, "depth_event_channel", False):
             from .geometric_depth_events import DepthEventDetector
 
             shape = cfg.scene.depth_camera.pattern_cfg
-            history_frames = getattr(cfg, "depth_event_history_frames", 1)
-            temporal = history_frames > 1
-            kinematic_field = bool(getattr(cfg, "depth_event_kinematic_field", False))
-            naive_diff = bool(getattr(cfg, "depth_event_naive_diff", False))
-            edge_suppression = bool(
-                (getattr(cfg, "depth_event_edge_suppression", False) or getattr(cfg, "depth_event_dual_channel", False))
-                and not kinematic_field
-                and not naive_diff
-            )
+            history_frames = getattr(cfg, "depth_event_history_frames", 4)
             noise_on = bool(cfg.sim_to_real.enabled and cfg.sim_to_real.observation_noise)
             k_depth_sigma = math.hypot(0.02, float(cfg.sim_to_real.depth_std)) if noise_on else 0.02
             k_pos_sigma = (
@@ -130,17 +117,16 @@ class NavRLEnv(_NavigationWarpLoop):
                 shape.height,
                 shape.width,
                 max_depth=cfg.scene.depth_camera.max_distance,
-                threshold=0.25 if (naive_diff or not temporal) else 0.0,
-                relative_threshold=0.01 if (naive_diff or not temporal) else 0.002,
-                match_radius=0 if naive_diff else 1,
+                threshold=0.0,
+                relative_threshold=0.002,
+                match_radius=1,
                 history_frames=history_frames,
-                depth_sigma=k_depth_sigma if kinematic_field else (0.0 if (naive_diff or not temporal) else 0.02),
-                pose_position_sigma=k_pos_sigma if kinematic_field else (0.0 if (naive_diff or not temporal) else 0.01),
-                pose_rotation_sigma=k_rot_sigma if kinematic_field else (0.0 if (naive_diff or not temporal) else 0.002),
-                sigma_multiplier=2.25 if kinematic_field else (0.0 if (naive_diff or not temporal) else 2.5),
-                min_cluster_pixels=2 if kinematic_field else 1,
-                edge_suppression=edge_suppression,
-                kinematic_field=kinematic_field,
+                depth_sigma=k_depth_sigma,
+                pose_position_sigma=k_pos_sigma,
+                pose_rotation_sigma=k_rot_sigma,
+                sigma_multiplier=2.25,
+                min_cluster_pixels=2,
+                kinematic_field=True,
                 step_dt=self.step_dt,
             )
         self._warp_term_bindings = {}
@@ -233,8 +219,6 @@ class NavRLEnv(_NavigationWarpLoop):
         self.previous_actions.index_fill_(0, reset_ids, 0)
         if getattr(self, "depth_event_detector", None) is not None:
             self.depth_event_detector.reset(env_ids)
-        if getattr(self, "_depth_stack_seen", None) is not None:
-            self._depth_stack_seen[env_ids] = 0
         self._terms = None
 
     def reset(self, *args, **kwargs):
@@ -432,13 +416,8 @@ class NavRLEnv(_NavigationWarpLoop):
         measured_depth = camera.data.output["distance_to_image_plane"].torch.permute(0, 3, 1, 2)
 
         event_enabled = self.depth_event_detector is not None
-        temporal_event = event_enabled and getattr(self.cfg, "depth_event_history_frames", 1) > 1
-        kinematic_event = event_enabled and bool(getattr(self.cfg, "depth_event_kinematic_field", False))
-        dual_event = event_enabled and bool(getattr(self.cfg, "depth_event_dual_channel", False)) and not kinematic_event
-        highres_event = kinematic_event or dual_event
-        event_channels = 3 if kinematic_event else (2 if dual_event else (1 if event_enabled else 0))
-        feature_size = (24, 32) if highres_event else (12, 16)
-        stack_frames = int(getattr(self.cfg, "depth_stack_frames", 1))
+        event_channels = 3 if event_enabled else 0
+        feature_size = (24, 32) if event_enabled else (12, 16)
         raw_count = measured_depth[0].numel()
         pose_source = getattr(self.cfg, "depth_event_pose_source", "estimated")
         if pose_source not in ("estimated", "truth"):
@@ -469,12 +448,7 @@ class NavRLEnv(_NavigationWarpLoop):
                     camera.data.intrinsic_matrices.torch,
                     float(self.common_step_counter) * self.step_dt,
                 )
-                if kinematic_event:
-                    event_map = result.kinematic_image(pose, camera.data.intrinsic_matrices.torch, camera.cfg.max_distance)
-                elif dual_event:
-                    event_map = result.dual_image(pose, camera.data.intrinsic_matrices.torch, camera.cfg.max_distance)
-                else:
-                    event_map = result.signed_image(pose, camera.data.intrinsic_matrices.torch, camera.cfg.max_distance)
+                event_map = result.kinematic_image(pose, camera.data.intrinsic_matrices.torch, camera.cfg.max_distance)
                 pieces.append(event_map.flatten(1))
             return torch.cat(pieces, dim=-1)
 
@@ -484,7 +458,7 @@ class NavRLEnv(_NavigationWarpLoop):
         current = self.perturbation.latest_observation
         age = self.perturbation.observation_age_s
         delivered_raw_depth = policy[:, 205 : 205 + raw_count].reshape_as(measured_depth)
-        if highres_event:
+        if event_enabled:
             unwarped_known = torch.isfinite(delivered_raw_depth) & (delivered_raw_depth > 0)
             policy_depth = compensated_depth_features(
                 delivered_raw_depth, unwarped_known, output_size=feature_size
@@ -494,9 +468,7 @@ class NavRLEnv(_NavigationWarpLoop):
             )
         else:
             policy_depth = policy[:, 13:205].reshape(self.num_envs, 1, 12, 16)
-            delivered_event = (
-                policy[:, 205 + raw_count : 205 + 2 * raw_count].reshape_as(measured_depth) if event_enabled else None
-            )
+            delivered_event = None
         known_fraction = age.new_ones(self.num_envs)
         if self.cfg.sim_to_real.enabled and self.cfg.sim_to_real.input_delay:
             # Use calibrated nominal mounting; hidden pitch perturbations remain
@@ -530,84 +502,32 @@ class NavRLEnv(_NavigationWarpLoop):
             )
             known_fraction = torch.where(age > 0, known.float().mean((1, 2, 3)), known_fraction)
             if event_enabled:
-                if highres_event:
-                    aligned_event = reproject_event_channels(
-                        delivered_raw_depth,
-                        delivered_event,
-                        camera.data.intrinsic_matrices.torch,
-                        source_rotation,
-                        source_position,
-                        target_rotation,
-                        target_position,
-                        warped,
-                        known,
-                    )
-                    pooled_event = pooled_event_channels(
-                        warped, aligned_event, known, output_size=feature_size, region_pool=temporal_event
-                    )
-                    original_event = pooled_event_channels(
-                        measured_depth, delivered_event, output_size=feature_size, region_pool=temporal_event
-                    )
-                else:
-                    aligned_event = reproject_signed_event_channel(
-                        delivered_raw_depth,
-                        delivered_event,
-                        camera.data.intrinsic_matrices.torch,
-                        source_rotation,
-                        source_position,
-                        target_rotation,
-                        target_position,
-                        warped,
-                        known,
-                    )
-                    pooled_event = pooled_signed_event_channel(warped, aligned_event, known, region_pool=temporal_event)
-                    original_event = pooled_signed_event_channel(
-                        measured_depth, delivered_event, region_pool=temporal_event
-                    )
+                aligned_event = reproject_event_channels(
+                    delivered_raw_depth,
+                    delivered_event,
+                    camera.data.intrinsic_matrices.torch,
+                    source_rotation,
+                    source_position,
+                    target_rotation,
+                    target_position,
+                    warped,
+                    known,
+                )
+                pooled_event = pooled_event_channels(
+                    warped, aligned_event, known, output_size=feature_size, region_pool=True
+                )
+                original_event = pooled_event_channels(
+                    measured_depth, delivered_event, output_size=feature_size, region_pool=True
+                )
                 delivered_event_feature = torch.where((age > 0)[:, None, None, None], pooled_event, original_event)
                 delivered_motion_pixels = torch.where((age > 0)[:, None, None, None], aligned_event, delivered_event)
         if event_enabled:
             if not (self.cfg.sim_to_real.enabled and self.cfg.sim_to_real.input_delay):
-                delivered_event_feature = (
-                    pooled_event_channels(
-                        measured_depth, delivered_event, output_size=feature_size, region_pool=temporal_event
-                    )
-                    if highres_event
-                    else pooled_signed_event_channel(measured_depth, delivered_event, region_pool=temporal_event)
+                delivered_event_feature = pooled_event_channels(
+                    measured_depth, delivered_event, output_size=feature_size, region_pool=True
                 )
                 delivered_motion_pixels = delivered_event
             policy_depth = torch.cat((policy_depth, delivered_event_feature), dim=1)
-        elif stack_frames > 1:
-            # 4-Frame Depth + Delta-Pose Stacking baseline (no explicit geometric reprojection).
-            cur_pose = torch.cat((current[:, :3], current[:, 6:10]), dim=-1)
-            if self._depth_stack is None or self._depth_stack.shape[0] != self.num_envs:
-                self._depth_stack = policy_depth[:, :1].unsqueeze(1).repeat(1, stack_frames, 1, 1, 1).clone()
-                self._depth_stack_poses = cur_pose[:, None, :].repeat(1, stack_frames, 1).clone()
-                self._depth_stack_seen = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
-            fresh_env = self._depth_stack_seen == 0
-            if bool(fresh_env.any()):
-                self._depth_stack[fresh_env] = policy_depth[fresh_env, :1].unsqueeze(1).repeat(1, stack_frames, 1, 1, 1)
-                self._depth_stack_poses[fresh_env] = cur_pose[fresh_env, None, :].repeat(1, stack_frames, 1)
-            # Shift older frames right and store newest at slot 0.
-            self._depth_stack[:, 1:] = self._depth_stack[:, :-1].clone()
-            self._depth_stack[:, 0] = policy_depth[:, :1]
-            self._depth_stack_poses[:, 1:] = self._depth_stack_poses[:, :-1].clone()
-            self._depth_stack_poses[:, 0] = cur_pose
-            self._depth_stack_seen.add_(1)
-            # Build relative 6-DoF delta pose (dx, dy, dz, rx, ry, rz) between consecutive frames in current frame.
-            delta_channels = []
-            for s_idx in range(stack_frames - 1):
-                p_newer = self._depth_stack_poses[:, s_idx]
-                p_older = self._depth_stack_poses[:, s_idx + 1]
-                dp_w = p_older[:, :3] - p_newer[:, :3]
-                q_new = p_newer[:, 3:7]
-                q_inv = torch.cat((-q_new[:, :3], q_new[:, 3:4]), dim=-1)
-                dp_local = quat_apply(q_inv, dp_w)
-                dq = quat_mul(q_inv, p_older[:, 3:7])
-                dr_local = 2.0 * dq[:, :3] * torch.where(dq[:, 3:4] < 0, -1.0, 1.0)
-                pose6 = torch.cat((dp_local, dr_local), dim=-1)[:, :, None, None].expand(-1, -1, 12, 16)
-                delta_channels.append(pose6)
-            policy_depth = torch.cat((self._depth_stack[:, :, 0], *delta_channels), dim=1)
         privileged = {
             "depth_features": depth,
             "measured_depth": measured_depth[:, 0],

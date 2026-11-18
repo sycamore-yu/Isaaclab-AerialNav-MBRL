@@ -13,12 +13,8 @@ from torch.utils.tensorboard import SummaryWriter
 
 from isaaclab_navrl.physics import runtime_metadata
 from isaaclab_navrl.tasks.navigation.depth_history import (
-    DEPTH_EVENT_OBSERVATION_CONTRACT,
     KINEMATIC_EVENT_FIELD_OBSERVATION_CONTRACT,
     OBSERVATION_CONTRACT,
-    STACK_DEPTH_POSE_OBSERVATION_CONTRACT,
-    TEMPORAL_DEPTH_EVENT_OBSERVATION_CONTRACT,
-    TEMPORAL_DUAL_DEPTH_EVENT_OBSERVATION_CONTRACT,
 )
 from isaaclab_navrl.tasks.navigation.randomization import DifferentiableDelay
 from isaaclab_navrl.training import (
@@ -176,27 +172,11 @@ class ZhangTrainer:
         self.env, self.cfg = env, cfg
         self.log_dir = Path(log_dir).resolve()
         self.model = self.model_type(cfg.recurrent_model).to(env.device)
-        if cfg.depth_event_kinematic_field:
+        if cfg.depth_event_channel or cfg.depth_event_kinematic_field:
             self.model.enable_kinematic_residual_stream(3)
             if cfg.aux_survival_gate_s > 0.0:
                 self.model.kinematic_residual_scale.zero_()
             self.observation_contract = KINEMATIC_EVENT_FIELD_OBSERVATION_CONTRACT
-            self.checkpoint_observation_contracts = (self.observation_contract,)
-        elif cfg.depth_event_dual_channel:
-            self.model.enable_dual_depth_event_early_conv()
-            self.observation_contract = TEMPORAL_DUAL_DEPTH_EVENT_OBSERVATION_CONTRACT
-            self.checkpoint_observation_contracts = (self.observation_contract,)
-        elif cfg.depth_event_channel:
-            self.model.enable_depth_event_channel()
-            self.observation_contract = (
-                TEMPORAL_DEPTH_EVENT_OBSERVATION_CONTRACT
-                if cfg.depth_event_history_frames > 1
-                else DEPTH_EVENT_OBSERVATION_CONTRACT
-            )
-            self.checkpoint_observation_contracts = (self.observation_contract,)
-        elif cfg.depth_stack_frames > 1:
-            self.model.enable_depth_stack_channels(cfg.depth_stack_frames + 6 * (cfg.depth_stack_frames - 1))
-            self.observation_contract = STACK_DEPTH_POSE_OBSERVATION_CONTRACT
             self.checkpoint_observation_contracts = (self.observation_contract,)
         if cfg.coef_dyn_aux > 0:
             self.model.enable_dynamic_aux_head(cfg.dyn_aux_sectors, from_perception=cfg.aux_from_perception)
@@ -363,17 +343,9 @@ class ZhangTrainer:
                         "avoidance_gradient": payload["train_cfg"].get("avoidance_gradient", "original"),
                         "goal_speed_profile": payload["train_cfg"].get("goal_speed_profile", "linear"),
                         "depth_event_pose_source": payload["train_cfg"].get("depth_event_pose_source", "estimated"),
-                        "depth_event_dual_channel": bool(
-                            payload["train_cfg"].get("depth_event_dual_channel", False)
-                        ),
                         "depth_event_kinematic_field": bool(
                             payload["train_cfg"].get("depth_event_kinematic_field", False)
                         ),
-                        "depth_event_naive_diff": bool(payload["train_cfg"].get("depth_event_naive_diff", False)),
-                        "depth_event_edge_suppression": bool(
-                            payload["train_cfg"].get("depth_event_edge_suppression", False)
-                        ),
-                        "depth_stack_frames": int(payload["train_cfg"].get("depth_stack_frames", 1)),
                         "coef_dyn_aux": float(payload["train_cfg"].get("coef_dyn_aux", 0.0)),
                         "dyn_aux_sectors": int(payload["train_cfg"].get("dyn_aux_sectors", 8)),
                         "aux_from_perception": bool(payload["train_cfg"].get("aux_from_perception", False)),
@@ -1325,15 +1297,10 @@ class ZhangTrainer:
                 except RuntimeError:
                     self.nonfinite_grad_events += 1
                     raise
-                if self.cfg.depth_event_channel:
-                    if self.cfg.depth_event_kinematic_field:
-                        first_conv = self.model.kinematic_stem[0]
-                        event_grad = first_conv.weight.grad
-                        grad_norm_val = float(event_grad.norm()) if event_grad is not None else 0.0
-                    else:
-                        first_conv = self.model.stem[0][0] if self.cfg.depth_event_dual_channel else self.model.stem[0]
-                        event_grad = first_conv.weight.grad
-                        grad_norm_val = float(event_grad[:, 1:].norm()) if event_grad is not None else 0.0
+                if self.cfg.depth_event_channel and self.model.kinematic_stem is not None:
+                    first_conv = self.model.kinematic_stem[0]
+                    event_grad = first_conv.weight.grad
+                    grad_norm_val = float(event_grad.norm()) if event_grad is not None else 0.0
                     algorithm_metrics["DepthEvent/conv_gradient_norm"] = grad_norm_val
                 self.optimizer_monitor.before_step()
                 self.optimizer.step()
